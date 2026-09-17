@@ -146,13 +146,22 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
     """
 
 
-    private func waitForContent(until deadline: ContinuousClock.Instant) async throws {
+    /// Internal, not private, so `MathExportTests` can watch it return on a page whose math was
+    /// skipped rather than rendered.
+    func waitForContent(until deadline: ContinuousClock.Instant) async throws {
         // Diagrams settle as "rendered" or "error"; "stale" means an older diagram is still shown.
+        // Math settles as "math-done", which preview.js sets whether KaTeX rendered the
+        // expression, showed an error for it or skipped it for being too long or too numerous.
+        // So this waits for every expression to have been dealt with and can't hang on one.
+        // KaTeX renders synchronously inside the same update, so in practice this is already
+        // true at the first poll; no new timer, just one more term in the same readiness pass.
+        // The KaTeX fonts are covered by the `document.fonts` check like any other font.
         let script = """
         const diagramsReady = [...document.querySelectorAll(".mermaid-block")]
           .every((b) => (b.classList.contains("rendered") || b.classList.contains("error")) && !b.classList.contains("stale"));
+        const mathReady = document.querySelectorAll(".math-inline:not(.math-done), .math-block:not(.math-done)").length === 0;
         const imagesReady = [...document.images].every((img) => img.complete);
-        return diagramsReady && imagesReady && document.fonts.status === "loaded";
+        return diagramsReady && mathReady && imagesReady && document.fonts.status === "loaded";
         """
         let signpost = Self.signposter.beginInterval("waitForContent", id: Self.signposter.makeSignpostID())
         var polls = 0

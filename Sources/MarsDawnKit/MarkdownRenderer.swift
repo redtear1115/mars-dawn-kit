@@ -10,6 +10,11 @@ import Markdown
 /// collapsed `details.front-matter` block holding a table of its `key: value` pairs or its
 /// escaped text, and the body's `data-line` values stay file line numbers. Print and PDF
 /// export hide the block (preview.css).
+///
+/// TeX math is lifted out of the body by `MathExtractor` before the body is parsed, and comes
+/// back as elements holding only the HTML-escaped TeX; `preview.js` hands each one to KaTeX.
+/// See `mathHTML` for the shape. A body with no `$` in it is not scanned at all and renders
+/// exactly as it did before math existed.
 public enum MarkdownRenderer {
     public struct Options: Sendable {
         /// Maps an image `src` as written in the document to the URL the preview should load.
@@ -69,18 +74,25 @@ public enum MarkdownRenderer {
     /// Like `render`, also saying whether the source fallback was used and why.
     public static func renderResult(_ markdown: String, options: Options = Options()) -> RenderResult {
         if let tooLarge = tooLargeResult(markdown, options: options) { return tooLarge }
-        let split = SplitSource(markdown, options: options)
-        return MarkdownParsing.withDocument(split.body, options: options.parseLimits) { outcome in
-            renderResult(outcome, split: split, options: options)
-        }
+        return renderSplit(markdown, options: options)
     }
 
     /// Like `render`, waiting for a parsing worker without blocking.
     /// Returns `nil` only if the task was cancelled before rendering started.
     public static func renderResult(_ markdown: String, options: Options = Options()) async -> RenderResult? {
         if let tooLarge = tooLargeResult(markdown, options: options) { return tooLarge }
+        // Pulling the math out parses the body itself, so it has to happen on a worker too,
+        // and this overload must not block its caller doing it. Inside `onWorker` every
+        // nested `withDocument` runs inline on that one worker, so the extraction and the
+        // render still take one worker slot between them, as the render alone did before.
+        return await MarkdownParsing.onWorker { renderSplit(markdown, options: options) }
+    }
+
+    /// Splits off the front matter, lifts the math out and renders what is left. Parses, so it
+    /// blocks unless it is already on a parsing worker.
+    private static func renderSplit(_ markdown: String, options: Options) -> RenderResult {
         let split = SplitSource(markdown, options: options)
-        return await MarkdownParsing.withDocument(split.body, options: options.parseLimits) { outcome in
+        return MarkdownParsing.withDocument(split.parsedBody, options: options.parseLimits) { outcome in
             renderResult(outcome, split: split, options: options)
         }
     }
@@ -94,7 +106,13 @@ public enum MarkdownRenderer {
     private struct SplitSource: Sendable {
         /// The rendered front matter, or "" when there is none.
         let frontMatterHTML: String
+        /// The body as written. This, not `parsedBody`, is what the source fallback shows.
         let body: String
+        /// `body` with its math swapped for placeholders: the source that is parsed. Has the
+        /// same number of lines as `body`, so `data-line` numbers still address the file.
+        let parsedBody: String
+        /// The expressions `parsedBody`'s placeholders stand for.
+        let math: MathExtractor.Extraction
         let bodyLineOffset: Int
 
         init(_ markdown: String, options: Options) {
@@ -106,6 +124,8 @@ public enum MarkdownRenderer {
                 frontMatterHTML = ""
                 self.body = markdown
             }
+            math = MathExtractor.extract(from: self.body)
+            parsedBody = math.markdown
             bodyLineOffset = offset
         }
     }
@@ -120,7 +140,7 @@ public enum MarkdownRenderer {
     private static func renderResult(_ outcome: ParseOutcome, split: SplitSource, options: Options) -> RenderResult {
         switch outcome {
         case .document(let document):
-            var visitor = HTMLVisitor(options: options, lineOffset: split.bodyLineOffset)
+            var visitor = HTMLVisitor(options: options, lineOffset: split.bodyLineOffset, math: split.math)
             return RenderResult(html: split.frontMatterHTML + visitor.visit(document), fallback: nil)
         case .tooDeep(let depth):
             return sourceFallback(split, reason: .tooDeep(depth: depth))
@@ -161,6 +181,28 @@ public enum MarkdownRenderer {
         return html + "</details>\n"
     }
 
+    /// One TeX expression, as the element `preview.js` hands to KaTeX.
+    ///
+    /// Three shapes, and the class is the whole of what the page reads besides the text:
+    ///   - `<span class="math-inline">` — `$…$`;
+    ///   - `<span class="math-inline math-display">` — `$$…$$` that stayed inside a
+    ///     paragraph, heading or cell, so it has to be an inline element, but is still set
+    ///     in display mode;
+    ///   - `<div class="math-block" data-line="N">` — a `math` fence, written or rewritten
+    ///     from a top-level `$$` paragraph.
+    ///
+    /// The element holds the TeX and nothing else, escaped by the same `escapeHTML` as any
+    /// other text: `preview.js` reads it back with `textContent`, so `</span><script>` in an
+    /// expression is TeX to KaTeX and never markup to the parser. There is no attribute
+    /// carrying TeX and none carrying options.
+    static func mathHTML(tex: String, display: Bool, lineAttribute: String?) -> String {
+        guard let lineAttribute else {
+            let classes = display ? "math-inline math-display" : "math-inline"
+            return "<span class=\"\(classes)\">\(escapeHTML(tex))</span>"
+        }
+        return "<div class=\"math-block\"\(lineAttribute)>\(escapeHTML(tex))</div>\n"
+    }
+
     /// Escaped text for the front-matter block, through the shared `escapeHTML`. NUL becomes
     /// U+FFFD first, as cmark does for the Markdown body, so no raw NUL reaches the page.
     private static func frontMatterText(_ text: String) -> String {
@@ -179,12 +221,15 @@ private struct HTMLVisitor: MarkupVisitor {
     let options: MarkdownRenderer.Options
     /// Source lines before the parsed text (the front matter), added to every `data-line`.
     let lineOffset: Int
+    /// The math taken out of the body before it was parsed.
+    let math: MathExtractor.Extraction
     private var usedSlugs: [String: Int] = [:]
     private var tightListStack: [Bool] = []
 
-    init(options: MarkdownRenderer.Options, lineOffset: Int) {
+    init(options: MarkdownRenderer.Options, lineOffset: Int, math: MathExtractor.Extraction) {
         self.options = options
         self.lineOffset = lineOffset
+        self.math = math
     }
 
     mutating func defaultVisit(_ markup: any Markup) -> String {
@@ -220,7 +265,7 @@ private struct HTMLVisitor: MarkupVisitor {
 
     mutating func visitHeading(_ heading: Heading) -> String {
         let level = min(max(heading.level, 1), 6)
-        let id = uniqueSlug(for: heading.plainText)
+        let id = uniqueSlug(for: withoutMath(heading.plainText))
         return "<h\(level) id=\"\(escapeAttribute(id))\"\(lineAttribute(heading))>\(visitChildren(heading))</h\(level)>\n"
     }
 
@@ -233,6 +278,12 @@ private struct HTMLVisitor: MarkupVisitor {
     }
 
     mutating func visitCodeBlock(_ codeBlock: CodeBlock) -> String {
+        // Before the language is cleaned up: a rewritten `$$` block carries its placeholder in
+        // the info string, which the clean-up would strip.
+        if MathExtractor.isMathFence(language: codeBlock.language) {
+            let tex = math.tex(forMathFence: codeBlock.language, code: codeBlock.code)
+            return MarkdownRenderer.mathHTML(tex: tex, display: true, lineAttribute: lineAttribute(codeBlock))
+        }
         let language = codeBlock.language?
             .split(whereSeparator: \.isWhitespace).first
             .map(String.init)?
@@ -295,8 +346,22 @@ private struct HTMLVisitor: MarkupVisitor {
 
     // MARK: Inlines
 
+    /// Text is the only place a math placeholder is ever expanded: not in a link destination
+    /// or title, not in an image's alt text, not in raw HTML, not in a heading slug. Anything
+    /// that looks like a placeholder but isn't one of this render's comes back as text and is
+    /// escaped like the rest.
     mutating func visitText(_ text: Text) -> String {
-        escapeHTML(text.string)
+        guard math.expressionCount > 0 else { return escapeHTML(text.string) }
+        var html = ""
+        for segment in math.segments(in: text.string) {
+            switch segment {
+            case .text(let string):
+                html += escapeHTML(string)
+            case .math(let tex, let display):
+                html += MarkdownRenderer.mathHTML(tex: tex, display: display, lineAttribute: nil)
+            }
+        }
+        return html
     }
 
     mutating func visitEmphasis(_ emphasis: Emphasis) -> String {
@@ -368,6 +433,19 @@ private struct HTMLVisitor: MarkupVisitor {
         case .left: return " style=\"text-align:left\""
         case .center: return " style=\"text-align:center\""
         case .right: return " style=\"text-align:right\""
+        }
+    }
+
+    /// A heading's plain text with this render's math placeholders dropped, for the slug.
+    ///
+    /// Dropped, not expanded: S5-2 keeps expansion to `visitText`. And a placeholder carries
+    /// the per-render nonce, so leaving it in would give a heading with math in it a different
+    /// `id` on every render — a moving anchor, and a block the preview's diff could never
+    /// match against the one already on the page.
+    private func withoutMath(_ text: String) -> String {
+        guard math.expressionCount > 0 else { return text }
+        return math.segments(in: text).reduce(into: "") { result, segment in
+            if case .text(let string) = segment { result += string }
         }
     }
 
