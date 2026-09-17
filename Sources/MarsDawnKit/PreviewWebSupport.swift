@@ -157,8 +157,16 @@ public enum PreviewWebView {
 /// Content rule lists that keep the preview web views off the network.
 ///
 /// The page's CSP is the first layer; these lists are the second, and also cover requests the
-/// CSP doesn't govern, such as `<link rel=preconnect>`. Attach the list for the page's
-/// remote-image state before loading the page.
+/// CSP doesn't govern, such as `<link rel=preconnect>` (`PreconnectRuleBehaviorTests` watches a
+/// real preconnect being stopped). Attach the list for the page's remote-image state before
+/// loading the page.
+///
+/// `<link rel=dns-prefetch>` is not known to be covered. WebKit hands it to `prefetchDNSIfNeeded`,
+/// which is not a resource load and so plausibly never reaches the content-rule check. Watching
+/// mDNSResponder's log on one Mac saw no lookup with or without the rules, but that same watch
+/// saw none for an ordinary `<img>` load either, so it shows nothing. Treat dns-prefetch as
+/// unverified here: the guards that hold are `RawHTMLSafety`'s rename and preview.js's element
+/// filter, which keep a real `link` element out of the page.
 @MainActor
 public enum PreviewContentRules {
     /// Bump when the rules change, so a list compiled from older rules is never reused.
