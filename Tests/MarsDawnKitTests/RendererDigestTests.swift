@@ -43,8 +43,12 @@ struct RendererDigestTests {
     /// later line is exactly `---` or `...`, and at least one line between them isn't blank.
     /// Written out here rather than calling `FrontMatter`, so the same helper can run against
     /// a pre-front-matter build to take the reference digest.
+    ///
+    /// Lines break at LF and CR only, as CommonMark and `LineScanner` do. `Character.isNewline`
+    /// would also break at U+2028, U+2029 and U+0085, and this helper would then disagree with
+    /// the splitter the moment one appeared in the corpus.
     static func hasFrontMatter(_ document: String) -> Bool {
-        var lines = document.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline)
+        var lines = document.split(omittingEmptySubsequences: false) { $0 == "\n" || $0 == "\r" || $0 == "\r\n" }
         guard lines.first == "---" else { return false }
         lines.removeFirst()
         guard let closing = lines.firstIndex(where: { $0 == "---" || $0 == "..." }) else { return false }
