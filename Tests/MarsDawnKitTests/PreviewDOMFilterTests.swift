@@ -30,8 +30,8 @@ struct PreviewDOMFilterTests {
     /// Elements the page must never hold outside its own `<head>`.
     static let blockedSelector = "link, meta, base, iframe, frame, object, embed, portal, fencedframe"
 
-    /// The page's own stylesheets (themes.css and preview.css) and meta tags.
-    static let pageStylesheets = 2
+    /// The page's own stylesheets (themes.css, KaTeX's and preview.css) and meta tags.
+    static let pageStylesheets = 3
     static let pageMetaTags = 3
 
     private func loadedPreview() async throws -> PreviewWKWebView {

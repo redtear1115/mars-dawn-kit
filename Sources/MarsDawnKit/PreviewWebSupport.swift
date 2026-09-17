@@ -1,14 +1,35 @@
 import Foundation
-import UniformTypeIdentifiers
 import WebKit
 
-/// Serves the bundled preview page (HTML, CSS, mermaid.js, highlight.js) from a private
-/// URL scheme so the page can run under a strict Content-Security-Policy.
+/// Serves the bundled preview page (HTML, CSS, mermaid.js, highlight.js, KaTeX and its
+/// fonts) from a private URL scheme so the page can run under a strict
+/// Content-Security-Policy.
 public final class PreviewSchemeHandler: NSObject, WKURLSchemeHandler {
     public nonisolated static let scheme = "marsdawn-app"
     public nonisolated static let pageURL = URL(string: "\(scheme)://preview/index.html")!
     /// Generated from `PreviewTheme.all` rather than read from the bundle.
     nonisolated static let themesStylesheetName = "themes.css"
+
+    /// Content types for the file kinds the Preview folder holds, by lower-case extension.
+    ///
+    /// A fixed table, not `UTType(filenameExtension:)`: that has no answer for `woff2`
+    /// (`preferredMIMEType` is nil), so KaTeX's fonts would be served as
+    /// `application/octet-stream` and, with `nosniff` below, never load. The html, css and
+    /// js spellings are the ones `UTType` gave before, so nothing else changes.
+    ///
+    /// An extension not listed here is served as `application/octet-stream`, which
+    /// `nosniff` then stops the page from using as script, style or font. Add a kind here
+    /// deliberately rather than widening the fallback.
+    nonisolated static let contentTypes: [String: String] = [
+        "html": "text/html",
+        "css": "text/css",
+        "js": "text/javascript",
+        "woff2": "font/woff2",
+    ]
+
+    nonisolated static func contentType(forPathExtension pathExtension: String) -> String {
+        contentTypes[pathExtension.lowercased()] ?? "application/octet-stream"
+    }
 
     /// Placeholder in index.html's CSP `img-src`, filled per load.
     nonisolated static let remoteImagesToken = "__REMOTE_IMAGE_SOURCES__"
@@ -72,12 +93,17 @@ public final class PreviewSchemeHandler: NSObject, WKURLSchemeHandler {
             urlSchemeTask.didFailWithError(URLError(.fileDoesNotExist))
             return
         }
-        let mimeType = UTType(filenameExtension: pathExtension)?.preferredMIMEType ?? "application/octet-stream"
         let response = HTTPURLResponse(
             url: requestURL,
             statusCode: 200,
             httpVersion: "HTTP/1.1",
-            headerFields: ["Content-Type": mimeType, "Content-Length": "\(data.count)"]
+            headerFields: [
+                "Content-Type": Self.contentType(forPathExtension: pathExtension),
+                "Content-Length": "\(data.count)",
+                // The types above are the page's whole contract; never let WebKit guess
+                // another one from the bytes.
+                "X-Content-Type-Options": "nosniff",
+            ]
         )!
         urlSchemeTask.didReceive(response)
         urlSchemeTask.didReceive(data)
