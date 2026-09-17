@@ -40,7 +40,10 @@ swift run marsdawn export notes.md -o notes.pdf --theme classic --paper a4
   - The theme defaults to `$MARSDAWN_THEME`, then `dawn`.
   - Existing files are only overwritten with `--force`.
   - `--json` prints `ok`, `output`, `pages` and `diagramErrors`.
-- Exit codes: 2 input not found, 3 MarsDawn not installed, 4 output exists, 5 export failed, 64 usage error.
+  - It renders on its own: the MarsDawn app does not have to be installed. Only `open` needs the app.
+- `--version` prints the release number and nothing else, so a package manager can compare it against its own. Bumping it is part of cutting a release; see [RELEASING.md](RELEASING.md).
+- `--generate-completion-script bash|zsh|fish` writes a shell completion script to stdout.
+- Exit codes: 2 input not found, 3 MarsDawn not installed (`open` only), 4 output exists, 5 export failed, 64 usage error.
 - `MARSDAWN_APP_PATH` overrides where the tool looks for the MarsDawn app. It exists for testing.
 
 ## Use as a package

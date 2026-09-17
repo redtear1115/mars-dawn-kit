@@ -11,11 +11,13 @@ struct MarsDawnCommand: AsyncParsableCommand {
         commandName: "marsdawn",
         abstract: "Open Markdown documents in MarsDawn or export them to PDF.",
         discussion: """
-        Both commands need MarsDawn installed from the Mac App Store.
+        export renders on its own and needs nothing else installed. open hands the files to the \
+        MarsDawn app, so it needs MarsDawn from the Mac App Store.
         Pass --json for machine-readable results. Exit codes: 0 success, \(CLIFailure.Code.inputNotFound.rawValue) input not found, \
-        \(CLIFailure.Code.appNotInstalled.rawValue) MarsDawn not installed, \(CLIFailure.Code.outputExists.rawValue) output exists \
-        (use --force), \(CLIFailure.Code.exportFailed.rawValue) export failed.
+        \(CLIFailure.Code.appNotInstalled.rawValue) MarsDawn not installed (open only), \(CLIFailure.Code.outputExists.rawValue) output exists \
+        (use --force), \(CLIFailure.Code.exportFailed.rawValue) export failed, 64 usage error.
         """,
+        version: MarsDawnCLI.version,
         subcommands: [Open.self, Export.self]
     )
 }
@@ -222,7 +224,11 @@ extension MarsDawnCommand {
     struct Export: AsyncParsableCommand {
         static let configuration = CommandConfiguration(
             abstract: "Export a Markdown file to a paginated PDF, rendered like MarsDawn's preview.",
-            discussion: "Relative images resolve against the input file's folder. Web images are left out unless --allow-remote-images is given."
+            discussion: """
+            Runs on its own: the MarsDawn app does not have to be installed. Relative images \
+            resolve against the input file's folder. Web images are left out unless \
+            --allow-remote-images is given.
+            """
         )
 
         @Argument(help: "The Markdown file to export.")
@@ -258,8 +264,10 @@ extension MarsDawnCommand {
 
         @MainActor
         func run() async throws {
+            // No MarsDawnApp.require() here: export is the same rendering the app does, and it
+            // ships in this package, so it must work with nothing else installed (Homebrew builds
+            // and tests the tool on machines that have no MarsDawn.app). `open` still needs it.
             let input = try existingFile(file)
-            _ = try MarsDawnApp.require()
             let destination = outputURL(for: input)
             if FileManager.default.fileExists(atPath: destination.path), !force {
                 throw CLIFailure(code: .outputExists, message: "\(destination.path) already exists. Pass --force to replace it.")

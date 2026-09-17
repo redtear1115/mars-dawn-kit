@@ -45,13 +45,51 @@ struct CLITests {
         } throws: { ($0 as? CLIFailure)?.code == .inputNotFound }
     }
 
-    @Test func aMissingAppIsReportedWithItsOwnExitCode() {
+}
+
+// MARK: - the tool on its own
+
+@MainActor
+@Suite(.timeLimit(.minutes(1)))
+struct StandaloneToolTests {
+    /// `export` must not need MarsDawn.app: it is the same rendering the app does, it ships in
+    /// this package, and Homebrew builds and tests the tool on machines that have no app at all.
+    /// Before C0 this threw `app_not_installed` and wrote nothing.
+    @Test func exportRendersAPDFWithNoAppInstalled() async throws {
+        let original = MarsDawnApp.locate
+        defer { MarsDawnApp.locate = original }
+        MarsDawnApp.locate = { nil }
+
+        let root = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("marsdawn-export-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let input = root.appendingPathComponent("doc.md")
+        try Data("# Title\n\nA paragraph.\n".utf8).write(to: input)
+        let output = root.appendingPathComponent("out.pdf")
+
+        try await MarsDawnCommand.Export.parse([input.path, "-o", output.path]).run()
+
+        let pdf = try Data(contentsOf: output)
+        #expect(pdf.prefix(5) == Data("%PDF-".utf8))
+        #expect(pdf.count > 1000)
+    }
+
+    /// `open` keeps the check; that is deliberate, and exit code 3 is its alone now.
+    @Test func openStillNeedsTheApp() {
         let original = MarsDawnApp.locate
         defer { MarsDawnApp.locate = original }
         MarsDawnApp.locate = { nil }
         #expect {
             _ = try MarsDawnApp.require()
         } throws: { ($0 as? CLIFailure)?.code == .appNotInstalled }
+    }
+
+    /// The Homebrew formula asserts `marsdawn --version` equals its own `version`, so this has
+    /// to stay a plain release number with nothing around it.
+    @Test func versionIsAPlainReleaseNumber() {
+        #expect(MarsDawnCommand.configuration.version == MarsDawnCLI.version)
+        #expect(MarsDawnCLI.version.wholeMatch(of: /\d+\.\d+\.\d+/) != nil)
     }
 }
 
