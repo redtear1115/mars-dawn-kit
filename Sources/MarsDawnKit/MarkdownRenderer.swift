@@ -92,7 +92,7 @@ private struct HTMLVisitor: MarkupVisitor {
     }
 
     mutating func visitHTMLBlock(_ html: HTMLBlock) -> String {
-        "<div class=\"html-block\"\(lineAttribute(html))>\(html.rawHTML)</div>\n"
+        "<div class=\"html-block\"\(lineAttribute(html))>\(neutralizingLinkTags(html.rawHTML))</div>\n"
     }
 
     mutating func visitUnorderedList(_ list: UnorderedList) -> String {
@@ -162,7 +162,7 @@ private struct HTMLVisitor: MarkupVisitor {
     }
 
     mutating func visitInlineHTML(_ inlineHTML: InlineHTML) -> String {
-        inlineHTML.rawHTML
+        neutralizingLinkTags(inlineHTML.rawHTML)
     }
 
     mutating func visitSoftBreak(_ softBreak: SoftBreak) -> String {

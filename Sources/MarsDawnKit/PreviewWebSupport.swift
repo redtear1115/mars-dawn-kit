@@ -99,6 +99,7 @@ public enum PreviewWebView {
         }
         configuration.websiteDataStore = .nonPersistent()
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
+        configuration.mediaTypesRequiringUserActionForPlayback = .all
         return configuration
     }
 
@@ -150,5 +151,69 @@ public enum PreviewWebView {
     nonisolated static func jsonStringLiteral(_ string: String) -> String {
         let data = try! JSONSerialization.data(withJSONObject: string, options: [.fragmentsAllowed])
         return String(decoding: data, as: UTF8.self)
+    }
+}
+
+/// Content rule lists that keep the preview web views off the network.
+///
+/// The page's CSP is the first layer; these lists are the second, and also cover requests the
+/// CSP doesn't govern, such as `<link rel=preconnect>`. Attach the list for the page's
+/// remote-image state before loading the page.
+@MainActor
+public enum PreviewContentRules {
+    /// Bump when the rules change, so a list compiled from older rules is never reused.
+    nonisolated static let version = 1
+    nonisolated static let identifierPrefix = "dev.southern-light.marsdawn.preview-rules"
+    /// Every web and WebSocket URL, whatever the case of the scheme. WebKit's rule regexes
+    /// have no alternation (`|`), so the schemes take one filter each.
+    nonisolated static let networkURLFilters = ["^https?:", "^wss?:"]
+
+    /// The store identifier of the list for a remote-image state.
+    public nonisolated static func identifier(allowRemoteImages: Bool) -> String {
+        "\(identifierPrefix).v\(version).\(allowRemoteImages ? "remote-images-allowed" : "blocked")"
+    }
+
+    /// Rule list JSON. Blocked: every web request. Allowed: every web request except images.
+    public nonisolated static func encodedRules(allowRemoteImages: Bool) -> String {
+        var rules: [[String: Any]] = networkURLFilters.map { filter in
+            ["trigger": ["url-filter": filter], "action": ["type": "block"]]
+        }
+        if allowRemoteImages {
+            // Rules apply in order: lift the block for images only, so every other type stays blocked.
+            rules += networkURLFilters.map { filter in
+                ["trigger": ["url-filter": filter, "resource-type": ["image"]], "action": ["type": "ignore-previous-rules"]]
+            }
+        }
+        let data = try! JSONSerialization.data(withJSONObject: rules, options: [.sortedKeys])
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    private static var compiled: [Bool: Task<WKContentRuleList, any Error>] = [:]
+
+    public enum CompileError: Error {
+        case noList
+    }
+
+    /// The compiled list for a remote-image state, compiled once per process.
+    /// A failed compile isn't cached, so a later call tries again.
+    public static func ruleList(allowRemoteImages: Bool) async throws -> WKContentRuleList {
+        if let task = compiled[allowRemoteImages] {
+            return try await task.value
+        }
+        let identifier = identifier(allowRemoteImages: allowRemoteImages)
+        let rules = encodedRules(allowRemoteImages: allowRemoteImages)
+        let task = Task { @MainActor () throws -> WKContentRuleList in
+            guard let list = try await WKContentRuleListStore.default()
+                .compileContentRuleList(forIdentifier: identifier, encodedContentRuleList: rules)
+            else { throw CompileError.noList }
+            return list
+        }
+        compiled[allowRemoteImages] = task
+        do {
+            return try await task.value
+        } catch {
+            if compiled[allowRemoteImages] == task { compiled[allowRemoteImages] = nil }
+            throw error
+        }
     }
 }
