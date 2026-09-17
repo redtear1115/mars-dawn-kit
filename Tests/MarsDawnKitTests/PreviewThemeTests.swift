@@ -52,6 +52,36 @@ struct PreviewThemeTests {
         #expect(PreviewWebView.themeScript(.classic) == #"window.MarsDawn && MarsDawn.setTheme("classic");"#)
     }
 
+    @Test func singleThemePageURLHasNoDarkThemeItem() {
+        let url = PreviewSchemeHandler.pageURL(theme: .vivid, allowRemoteImages: true)
+        let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        #expect(items.contains { $0.name == "theme" && $0.value == "vivid" })
+        #expect(!items.contains { $0.name == "darkTheme" })
+    }
+
+    @Test func lightAndDarkPageURLCarriesBothIDs() {
+        let url = PreviewSchemeHandler.pageURL(lightTheme: .classic, darkTheme: .vivid)
+        #expect(url.absoluteString == "marsdawn-app://preview/index.html?theme=classic&darkTheme=vivid")
+        let itemsWithRemote = URLComponents(
+            url: PreviewSchemeHandler.pageURL(lightTheme: .classic, darkTheme: .vivid, allowRemoteImages: true),
+            resolvingAgainstBaseURL: false
+        )?.queryItems ?? []
+        #expect(itemsWithRemote.contains { $0.name == "remote-images" && $0.value == "1" })
+    }
+
+    @Test func lightAndDarkThemeScriptEscapesAndCallsSetThemes() {
+        let script = PreviewWebView.themeScript(light: .classic, dark: .vivid)
+        #expect(script == #"window.MarsDawn && MarsDawn.setThemes("classic", "vivid");"#)
+        #expect(script.contains("setThemes"))
+
+        struct QuoteTheme {
+            static let id = #"a"b\c"#
+        }
+        // themeScript quotes and backslash-escapes ids the same way the single-id script does.
+        let literal = PreviewWebView.jsonStringLiteral(QuoteTheme.id)
+        #expect(literal == #""a\"b\\c""#)
+    }
+
     // MARK: Helpers
 
     private func allColors(_ p: PreviewTheme.Palette) -> [String] {

@@ -3,6 +3,23 @@
 (() => {
   const content = () => document.getElementById("content");
   const darkQuery = window.matchMedia("(prefers-color-scheme: dark)");
+  const themeIDPattern = /^[a-z0-9-]+$/;
+
+  // The light/dark theme pair (S2). Initialized from theme-boot's query so a scheme flip
+  // before any `setThemes` call still picks the right one.
+  function initialThemePair() {
+    const params = new URLSearchParams(location.search);
+    const theme = params.get("theme");
+    const darkTheme = params.get("darkTheme");
+    const light = theme && themeIDPattern.test(theme) ? theme : (document.documentElement.dataset.theme || "dawn");
+    const dark = darkTheme && themeIDPattern.test(darkTheme) ? darkTheme : light;
+    return { light, dark };
+  }
+  let themePair = initialThemePair();
+
+  function pickTheme(pair) {
+    return darkQuery.matches && pair.dark ? pair.dark : pair.light;
+  }
 
   // Rendered mermaid SVG keyed by diagram source, so unchanged diagrams never re-render.
   const svgCache = new Map();
@@ -455,12 +472,23 @@
   }
 
   function setTheme(theme) {
-    if (!/^[a-z0-9-]+$/.test(theme)) return;
-    document.documentElement.dataset.theme = theme;
+    setThemes(theme, theme);
+  }
+
+  // Stores a separate light and dark theme (S2); an invalid or missing dark id falls back to
+  // the light id. Sets `data-theme` to whichever one matches the current color scheme.
+  function setThemes(light, dark) {
+    if (!themeIDPattern.test(light)) return;
+    const validDark = dark && themeIDPattern.test(dark) ? dark : light;
+    themePair = { light, dark: validDark };
+    document.documentElement.dataset.theme = pickTheme(themePair);
     refreshTheme();
   }
 
-  darkQuery.addEventListener("change", refreshTheme);
+  darkQuery.addEventListener("change", () => {
+    document.documentElement.dataset.theme = pickTheme(themePair);
+    refreshTheme();
+  });
 
   document.addEventListener("DOMContentLoaded", () => {
     configureMermaid();
@@ -478,5 +506,5 @@
     window.scrollTo(0, y);
   }
 
-  window.MarsDawn = { update, setTheme, scrollToLine, setAssetState, setRemoteImageState, restoreScroll, idle };
+  window.MarsDawn = { update, setTheme, setThemes, scrollToLine, setAssetState, setRemoteImageState, restoreScroll, idle };
 })();
