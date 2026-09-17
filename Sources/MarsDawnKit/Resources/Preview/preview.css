@@ -94,6 +94,8 @@ pre {
   overflow: auto;
   line-height: 1.5;
 }
+/* Documents nested too deeply to render safely show their escaped source instead. */
+.source-fallback { white-space: pre-wrap; overflow-wrap: anywhere; }
 pre code {
   display: block;
   background: transparent;
