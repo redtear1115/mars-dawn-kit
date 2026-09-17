@@ -25,6 +25,21 @@ public final class PreviewSchemeHandler: NSObject, WKURLSchemeHandler {
         return components.url!
     }
 
+    /// The page URL with separate light and dark themes applied before first paint (S2).
+    /// `theme-boot.js` picks between them by `prefers-color-scheme`. Remote (https) images
+    /// are blocked by the page's CSP unless `allowRemoteImages` is set.
+    public nonisolated static func pageURL(lightTheme: PreviewTheme, darkTheme: PreviewTheme, allowRemoteImages: Bool = false) -> URL {
+        var components = URLComponents(url: pageURL, resolvingAgainstBaseURL: false)!
+        components.queryItems = [
+            URLQueryItem(name: "theme", value: lightTheme.id),
+            URLQueryItem(name: "darkTheme", value: darkTheme.id),
+        ]
+        if allowRemoteImages {
+            components.queryItems?.append(URLQueryItem(name: remoteImagesQueryItem, value: "1"))
+        }
+        return components.url!
+    }
+
     /// index.html with its CSP completed for the requested remote-image policy.
     nonisolated static func page(_ html: Data, for requestURL: URL) -> Data {
         let items = URLComponents(url: requestURL, resolvingAgainstBaseURL: false)?.queryItems ?? []
@@ -118,6 +133,12 @@ public enum PreviewWebView {
     /// JavaScript that switches the page to another theme, re-rendering diagrams.
     public nonisolated static func themeScript(_ theme: PreviewTheme) -> String {
         "window.MarsDawn && MarsDawn.setTheme(\(jsonStringLiteral(theme.id)));"
+    }
+
+    /// JavaScript that switches the page to separate light and dark themes (S2), re-rendering
+    /// diagrams. The page keeps whichever one matches the current color scheme.
+    public nonisolated static func themeScript(light: PreviewTheme, dark: PreviewTheme) -> String {
+        "window.MarsDawn && MarsDawn.setThemes(\(jsonStringLiteral(light.id)), \(jsonStringLiteral(dark.id)));"
     }
 
     /// Message handler the page calls when the user asks to load remote images.
