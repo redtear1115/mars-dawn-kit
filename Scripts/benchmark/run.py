@@ -21,7 +21,7 @@ import statistics
 import subprocess
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 SCHEMA_VERSION = 1
@@ -234,7 +234,141 @@ def sample_webcontent_processes():
     return result
 
 
-def run_one_export(binary_path, input_path, output_pdf):
+def find_child_pid(parent_pid, name_hint):
+    """The pid of a direct child of `parent_pid` whose comm contains `name_hint`.
+
+    `/usr/bin/time -l <cmd>` runs <cmd> as its own child, not in its own place, so the
+    pid we get from Popen is /usr/bin/time's, not marsdawn's. This is how we recover
+    the real one - exactly, by pid, rather than by a time-window guess - for the
+    signpost query below.
+    """
+    out = run_text(["ps", "-eo", "pid,ppid,comm"])
+    for line in out.splitlines()[1:]:
+        parts = line.strip().split(None, 2)
+        if len(parts) != 3:
+            continue
+        pid, ppid, comm = parts
+        if ppid == str(parent_pid) and name_hint in comm:
+            return int(pid)
+    return None
+
+
+# subsystem/category the exporter's signposts are logged under (see
+# Sources/MarsDawnExport/DocumentExporter.swift's doc comment).
+SIGNPOST_SUBSYSTEM = "dev.southern-light.marsdawn"
+SIGNPOST_CATEGORY = "Performance"
+SIGNPOST_INTERVALS = ["template", "render", "push", "waitForContent", "paginate"]
+
+# unified logging is not instantaneous: an event can take a moment to become queryable
+# by `log show` after it's emitted. This is how long we wait, once, after an export
+# finishes, before querying - not per interval.
+SIGNPOST_FLUSH_SECONDS = 1.5
+# Padding on the queried time window, to tolerate the flush delay and clock granularity
+# without depending on it being exact - processID is what actually isolates this run.
+SIGNPOST_WINDOW_PAD_SECONDS = 2
+
+WAIT_FOR_CONTENT_MESSAGE_RE = re.compile(r"polls=(\d+)\s+outcome=(\w+)")
+
+
+def capture_export_signposts(pid, wall_start, wall_end):
+    """Parse this run's export signposts from the unified log, by pid.
+
+    Queries dev.southern-light.marsdawn/Performance events for exactly this pid, within
+    a padded window around the run. Returns per-interval start/end/duration, waitForContent's
+    poll count and outcome, and the gap between waitForContent ending and paginate starting -
+    time in the "keep headings with the next block" pass and anything else between them that
+    has no signpost of its own. If nothing comes back, this says so instead of guessing.
+    """
+    time.sleep(SIGNPOST_FLUSH_SECONDS)
+    start_str = (wall_start - timedelta(seconds=SIGNPOST_WINDOW_PAD_SECONDS)).strftime("%Y-%m-%d %H:%M:%S")
+    end_str = (wall_end + timedelta(seconds=SIGNPOST_WINDOW_PAD_SECONDS)).strftime("%Y-%m-%d %H:%M:%S")
+    predicate = (
+        f'subsystem == "{SIGNPOST_SUBSYSTEM}" AND category == "{SIGNPOST_CATEGORY}" AND processID == {pid}'
+    )
+    proc = subprocess.run(
+        [
+            "/usr/bin/log", "show",
+            "--predicate", predicate,
+            "--style", "ndjson", "--signpost",
+            "--start", start_str, "--end", end_str,
+        ],
+        capture_output=True, text=True, timeout=60,
+    )
+    if proc.returncode != 0:
+        return {"status": "log_show_failed", "detail": proc.stderr.strip()[:500]}
+
+    # begin/end pairs, matched by (signpostName, signpostID) - each interval got its
+    # own id in this kit commit, so pairing by name alone would be wrong if two same-
+    # named intervals ever overlapped for one pid (they don't here, but pairing by id
+    # is the correct match regardless).
+    opens = {}
+    closed = {name: [] for name in SIGNPOST_INTERVALS}
+    for line in proc.stdout.splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        name = event.get("signpostName")
+        if name not in SIGNPOST_INTERVALS:
+            continue
+        key = (name, event.get("signpostID"))
+        kind = event.get("signpostType")
+        if kind == "begin":
+            opens[key] = event
+        elif kind == "end" and key in opens:
+            closed[name].append((opens.pop(key), event))
+
+    if not any(closed.values()):
+        return {
+            "status": "none_observed",
+            "detail": "No matching signpost events for this pid in the queried window. "
+            "Either this build predates the exporter's signposts, or the log daemon "
+            "hadn't flushed them yet - see README.md's Signposts section.",
+        }
+
+    def parse_ts(event):
+        return datetime.strptime(event["timestamp"], "%Y-%m-%d %H:%M:%S.%f%z")
+
+    intervals = {}
+    for name in SIGNPOST_INTERVALS:
+        pairs = closed[name]
+        if not pairs:
+            intervals[name] = {"status": "not_observed"}
+            continue
+        begin_event, end_event = pairs[0]  # one export = one interval per name, normally
+        begin_ts, end_ts = parse_ts(begin_event), parse_ts(end_event)
+        entry = {
+            "status": "observed",
+            "duration_seconds": (end_ts - begin_ts).total_seconds(),
+            "end_message": end_event.get("eventMessage", ""),
+        }
+        if name == "waitForContent":
+            match = WAIT_FOR_CONTENT_MESSAGE_RE.search(entry["end_message"])
+            entry["polls"] = int(match.group(1)) if match else None
+            entry["outcome"] = match.group(2) if match else None
+        if len(pairs) > 1:
+            entry["extra_occurrences"] = len(pairs) - 1
+        intervals[name] = entry
+
+    gap_seconds = None
+    if intervals.get("waitForContent", {}).get("status") == "observed" and intervals.get("paginate", {}).get("status") == "observed":
+        wfc_end = parse_ts(closed["waitForContent"][0][1])
+        paginate_begin = parse_ts(closed["paginate"][0][0])
+        gap_seconds = (paginate_begin - wfc_end).total_seconds()
+
+    return {
+        "status": "observed",
+        "intervals": intervals,
+        "gap_seconds": gap_seconds,
+        "gap_label": "unnamed pass between readiness and pagination (heading keep-with-next)",
+        "raw_event_count": sum(len(v) for v in closed.values()) * 2,
+    }
+
+
+def run_one_export(binary_path, input_path, output_pdf, capture_signposts=True):
     cmd = [
         "/usr/bin/time", "-l",
         str(binary_path), "export", str(input_path),
@@ -252,7 +386,9 @@ def run_one_export(binary_path, input_path, output_pdf):
     # See README.md's "Process-tree CPU" section.
     baseline_webcontent = set(sample_webcontent_processes().keys())
     tracked_webcontent = {}  # pid -> last-seen TIME string
+    marsdawn_pid = None
 
+    wall_start = datetime.now()
     start = time.perf_counter()
     try:
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -263,6 +399,8 @@ def run_one_export(binary_path, input_path, output_pdf):
     timed_out = False
     while True:
         ret = proc.poll()
+        if marsdawn_pid is None:
+            marsdawn_pid = find_child_pid(proc.pid, Path(binary_path).name)
         for pid, time_str in sample_webcontent_processes().items():
             if pid not in baseline_webcontent:
                 tracked_webcontent[pid] = time_str
@@ -280,6 +418,7 @@ def run_one_export(binary_path, input_path, output_pdf):
         proc.kill()
         stdout, stderr = proc.communicate()
     elapsed = time.perf_counter() - start
+    wall_end = datetime.now()
 
     if timed_out:
         return _export_failure(elapsed, f"timed out after {EXPORT_TIMEOUT_SECONDS}s")
@@ -319,6 +458,14 @@ def run_one_export(binary_path, input_path, output_pdf):
         parse_error = str(exc)
 
     ok = proc.returncode == 0 and isinstance(parsed, dict) and parsed.get("ok") is True
+
+    signposts = {"status": "skipped", "detail": "capture_signposts=False for this run."}
+    if capture_signposts:
+        if marsdawn_pid is None:
+            signposts = {"status": "no_pid", "detail": "couldn't find marsdawn's own pid as a child of /usr/bin/time."}
+        else:
+            signposts = capture_export_signposts(marsdawn_pid, wall_start, wall_end)
+
     return {
         "ok": ok,
         "elapsed_seconds": elapsed,
@@ -330,6 +477,8 @@ def run_one_export(binary_path, input_path, output_pdf):
         "webcontent_cpu_seconds": webcontent_cpu_seconds,
         "webcontent_attribution": webcontent_attribution,
         "process_tree_cpu_seconds": process_tree_cpu_seconds,
+        "marsdawn_pid": marsdawn_pid,
+        "signposts": signposts,
         "pages": parsed.get("pages") if isinstance(parsed, dict) else None,
         "diagram_errors": parsed.get("diagramErrors") if isinstance(parsed, dict) else None,
         "json": parsed,
@@ -350,6 +499,8 @@ def _export_failure(elapsed, detail):
         "webcontent_cpu_seconds": None,
         "webcontent_attribution": None,
         "process_tree_cpu_seconds": None,
+        "marsdawn_pid": None,
+        "signposts": {"status": "skipped", "detail": "run failed before a marsdawn process could be measured."},
         "pages": None,
         "diagram_errors": None,
         "json": None,
@@ -387,7 +538,58 @@ def cell_stats(elapsed_values):
     }
 
 
-def run_cell(binary_path, input_path, size_name, run_count, work_dir, seen_inputs):
+def summarize_signposts(runs):
+    """Per-cell medians across every run whose signposts were observed.
+
+    Not split by cold/warm - the dry run's per-cell n is small enough (3) that another
+    split would leave too little to summarize; the per-run detail stays in runs[i] for
+    anyone who needs it.
+    """
+    observed = [r["signposts"] for r in runs if r.get("signposts", {}).get("status") == "observed"]
+    if not observed:
+        statuses = {r.get("signposts", {}).get("status", "unknown") for r in runs}
+        return {
+            "status": "none_observed",
+            "detail": f"No run in this cell had observable signposts (per-run statuses: {sorted(statuses)}).",
+        }
+
+    summary = {"status": "observed", "n_runs_with_signposts": len(observed), "n_runs_total": len(runs), "intervals": {}}
+    for name in SIGNPOST_INTERVALS:
+        durations = [
+            o["intervals"][name]["duration_seconds"]
+            for o in observed
+            if o["intervals"].get(name, {}).get("status") == "observed"
+        ]
+        if not durations:
+            summary["intervals"][name] = {"status": "not_observed"}
+            continue
+        entry = {"status": "observed", "n": len(durations), "median_seconds": statistics.median(durations)}
+        if name == "waitForContent":
+            polls = [
+                o["intervals"][name]["polls"]
+                for o in observed
+                if o["intervals"].get(name, {}).get("polls") is not None
+            ]
+            outcomes = [
+                o["intervals"][name]["outcome"]
+                for o in observed
+                if o["intervals"].get(name, {}).get("outcome") is not None
+            ]
+            if polls:
+                entry["polls_median"] = statistics.median(polls)
+                entry["polls_min"] = min(polls)
+                entry["polls_max"] = max(polls)
+                entry["polls_all"] = polls
+            entry["outcomes"] = outcomes
+        summary["intervals"][name] = entry
+
+    gaps = [o["gap_seconds"] for o in observed if o.get("gap_seconds") is not None]
+    summary["gap_seconds_median"] = statistics.median(gaps) if gaps else None
+    summary["gap_label"] = "unnamed pass between readiness and pagination (heading keep-with-next)"
+    return summary
+
+
+def run_cell(binary_path, input_path, size_name, run_count, work_dir, seen_inputs, capture_signposts=True):
     runs = []
     is_first_read_this_session = input_path not in seen_inputs
     seen_inputs.add(input_path)
@@ -395,7 +597,7 @@ def run_cell(binary_path, input_path, size_name, run_count, work_dir, seen_input
     for i in range(run_count):
         state = "cold" if i == 0 and is_first_read_this_session else "warm"
         output_pdf = work_dir / f"{size_name}-run{i}.pdf"
-        result = run_one_export(binary_path, input_path, output_pdf)
+        result = run_one_export(binary_path, input_path, output_pdf, capture_signposts=capture_signposts)
         result["run_index"] = i
         result["state"] = state
         runs.append(result)
@@ -442,6 +644,7 @@ def run_cell(binary_path, input_path, size_name, run_count, work_dir, seen_input
         entry["warm"]["process_tree_cpu_seconds_median"] = statistics.median(tree_cpu_values) if tree_cpu_values else None
         entry["warm"]["webcontent_attributions"] = [r["webcontent_attribution"] for r in warm_runs]
     entry["pages"] = runs[0]["pages"]
+    entry["signpost_summary"] = summarize_signposts(runs)
     return entry
 
 
@@ -515,11 +718,12 @@ def failure_row(inputs_dir, sentinel, probe_build, build_error):
 #              content-process spawn, empty-page layout/pagination) that isn't
 #              "parsing this document" and isn't proportional to its size.
 #   remainder - total - parse - baseline, reported as one number: "layout,
-#              scripts and pagination combined." DocumentExporter has no
-#              existing phase-level logging (only error-path os_log calls; see
-#              Sources/MarsDawnExport/DocumentExporter.swift), so there is no
-#              cheap, already-shipping signal to split that remainder further.
-#              A finer split needs signposts from another workstream (B1-app).
+#              scripts and pagination combined." This predates DocumentExporter's
+#              own signposts (merged in kit commit 81af5c6) and is kept as a
+#              cross-check; signpost_summary (see capture_export_signposts) now
+#              gives the same span broken into template/render/push/waitForContent/
+#              paginate plus the gap between waitForContent and paginate, for kit
+#              commits at or after 81af5c6.
 
 
 def measure_parse_seconds(probe_binary, input_path, samples=3):
@@ -682,6 +886,43 @@ def write_markdown_summary(results):
         "could be attributed (see README.md's Process-tree CPU section); it is not the same as wall "
         "time and a value above wall time is possible and expected once WebContent runs concurrently.",
         "",
+        "## Signpost stage split",
+        "",
+        "| size | template | render | push | waitForContent | polls | paginate | gap |",
+        "|---|---|---|---|---|---|---|---|",
+    ]
+    for cell in results["cells"]:
+        if cell.get("aborted"):
+            continue
+        sp = cell.get("signpost_summary")
+        if not sp or sp["status"] != "observed":
+            detail = sp["detail"] if sp else "not captured"
+            lines.append(f"| {cell['size']} | {detail} | | | | | | |")
+            continue
+        iv = sp["intervals"]
+
+        def s(name):
+            entry = iv.get(name, {})
+            return f"{entry['median_seconds']:.3f}" if entry.get("status") == "observed" else "n/a"
+
+        wfc = iv.get("waitForContent", {})
+        polls_str = str(wfc.get("polls_all")) if wfc.get("polls_all") else "n/a"
+        gap = sp.get("gap_seconds_median")
+        gap_str = f"{gap:.3f}" if gap is not None else "n/a"
+        lines.append(
+            f"| {cell['size']} | {s('template')} | {s('render')} | {s('push')} | "
+            f"{s('waitForContent')} | {polls_str} | {s('paginate')} | {gap_str} |"
+        )
+    lines += [
+        "",
+        "Medians in seconds across every run in the cell whose signposts were captured "
+        "(see README.md's Signposts section for method and limits). \"gap\" is "
+        "paginate.start - waitForContent.end: the unnamed pass between readiness and "
+        "pagination (heading keep-with-next), which has no signpost of its own. "
+        "\"polls\" lists every run's poll count for waitForContent - a high count on an "
+        "ordinary document (4a's corpus saw polls=1 on 27 of 29, and polls=346 only on a "
+        "forced timeout) is itself a finding worth flagging, not noise.",
+        "",
         "## Failure row: dense-Markdown fallback boundary",
         "",
         f"Status: **{results['failure_row']['status']}**",
@@ -719,6 +960,10 @@ def main(argv):
     parser.add_argument(
         "--skip-fallback-check", action="store_true",
         help="Skip building/running the fallback-probe helper (also skips stage breakdown).",
+    )
+    parser.add_argument(
+        "--skip-signposts", action="store_true",
+        help="Skip capturing DocumentExporter's signposts (log show) per run.",
     )
     parser.add_argument("--label", default=None, help="Note to embed in the result (e.g. 'dry run').")
     args = parser.parse_args(argv)
@@ -765,7 +1010,10 @@ def main(argv):
         run_count = size_runs.get(size, args.runs)
         input_path = inputs_dir / f"{size}.md"
         print(f"Benchmarking {size} ({run_count} runs)...")
-        cell = run_cell(binary["path"], input_path, size, run_count, work_dir, seen_inputs)
+        cell = run_cell(
+            binary["path"], input_path, size, run_count, work_dir, seen_inputs,
+            capture_signposts=not args.skip_signposts,
+        )
         if not args.skip_fallback_check:
             cell["stage_breakdown"] = stage_breakdown(cell, probe_build, input_path, baseline_seconds)
         cells.append(cell)
@@ -775,6 +1023,20 @@ def main(argv):
             print(f"  cold {cell['cold']['elapsed_seconds']:.3f}s, warm median {cell['warm']['median_seconds']:.3f}s")
         else:
             print(f"  cold {cell['cold']['elapsed_seconds']:.3f}s, no warm runs requested")
+        sp = cell.get("signpost_summary")
+        if sp and sp["status"] == "observed":
+            iv = sp["intervals"]
+            wfc = iv.get("waitForContent", {})
+            print(
+                f"    signposts: template {iv.get('template', {}).get('median_seconds', 'n/a')}s, "
+                f"render {iv.get('render', {}).get('median_seconds', 'n/a')}s, "
+                f"push {iv.get('push', {}).get('median_seconds', 'n/a')}s, "
+                f"waitForContent {wfc.get('median_seconds', 'n/a')}s (polls={wfc.get('polls_all')}), "
+                f"paginate {iv.get('paginate', {}).get('median_seconds', 'n/a')}s, "
+                f"gap {sp.get('gap_seconds_median', 'n/a')}s"
+            )
+        elif sp:
+            print(f"    signposts: {sp['status']}: {sp.get('detail', '')}")
         sb = cell.get("stage_breakdown")
         if sb and sb["status"] == "measured":
             print(
@@ -822,8 +1084,14 @@ def main(argv):
             "webcontent_attribution says how confident that attribution is. See README.md.",
             "stage_breakdown splits each cell's total into parse (MarkdownRenderer.render via "
             "fallback-probe), a process-start baseline, and a remainder covering layout, scripts "
-            "and pagination together - DocumentExporter has no existing phase-level logging to "
-            "split the remainder further. See README.md.",
+            "and pagination together. signpost_summary (below) now splits that remainder further "
+            "for kit commits at or after 81af5c6, using DocumentExporter's own signposts. See "
+            "README.md.",
+            "signpost_summary/signposts come from `log show --signpost`, filtered to this run's "
+            "exact pid. gap_seconds is paginate.start - waitForContent.end: the 'keep headings "
+            "with the next block' pass and anything else between them that has no signpost of "
+            "its own. A cell with status other than 'observed' means no usable signposts were "
+            "found for that cell - never guessed. See README.md's Signposts section.",
         ],
     }
 

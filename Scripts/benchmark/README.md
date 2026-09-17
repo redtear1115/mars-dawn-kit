@@ -39,7 +39,11 @@ by itself put a number anywhere public.
   9. Breaks each cell's total down into parse time, a process-start baseline, and a
      remainder covering layout, scripts and pagination together (see "Stage breakdown"
      below) — input for the app-side performance issue, not a shipped feature.
-  10. Writes `results/<iso-date>-<machine-id>.json` (the full, versioned record) and a
+  10. For kit commits at or after `81af5c6` (the exporter's own signposts), captures
+      `template`/`render`/`push`/`waitForContent`/`paginate` per run from the unified
+      log, plus the poll count and outcome `waitForContent` ends with, and the gap
+      between `waitForContent` ending and `paginate` starting — see "Signposts" below.
+  11. Writes `results/<iso-date>-<machine-id>.json` (the full, versioned record) and a
       `.md` summary next to it. **Nothing under `results/` is committed** — see
       "Results are not committed" below.
 - `Scripts/benchmark/fallback_probe/` is a small standalone SwiftPM package (its own
@@ -109,6 +113,58 @@ What `run.py` does instead, per cell:
   left over after subtracting two independently-measured numbers from the cell's total,
   so its own error bars are wider than either input's. Treat it as a rough share, not a
   precise measurement of any one phase.
+- As of kit commit `81af5c6`, that remainder has a real split — see "Signposts" next.
+  This stage breakdown is kept anyway, as an independent cross-check computed a
+  different way (timing, not logging) on the same total.
+
+## Signposts
+
+`DocumentExporter` (kit commit `81af5c6` onward) marks five intervals with
+`OSSignposter`, subsystem `dev.southern-light.marsdawn`, category `Performance`:
+`template` (the offscreen page's navigation), `render` (the `MarkdownRenderer` call),
+`push` (the `evaluateJavaScript` call that updates the page), `waitForContent` (the
+readiness poll loop — its end event carries `polls=<n> outcome=ready|timeout|error`),
+and `paginate` (`NSPrintOperation.runModal`, which produces the PDF). Each interval gets
+its own signpost id per run, so two exports (or an export and a live preview) never
+tangle into one interval.
+
+**What captures them**: `run.py` finds the real `marsdawn` process's pid (it is a child
+of `/usr/bin/time`, not the pid `Popen` hands back — see `find_child_pid`), waits
+~1.5s after the export exits for the unified log to flush, then runs
+`log show --predicate 'subsystem == "..." AND category == "Performance" AND processID == <pid>' --signpost --style ndjson`
+over a padded window around the run and pairs up `begin`/`end` events by
+`(signpostName, signpostID)`. Attribution is **exact** (by pid, not a time-window
+guess), unlike the WebContent CPU attribution above — every event `log show` returns
+for that predicate belongs to this run's `marsdawn` process, on this or any other
+machine.
+
+**What this can't see**: a run whose signposts never got flushed before the query
+(rare — the harness waits for it, but unified logging has no publish acknowledgment to
+poll instead), a kit commit before `81af5c6` (no signposts exist to find), or an export
+that failed before `marsdawn`'s pid could be resolved. Each of these is recorded as its
+own `status` (`"none_observed"`, `"no_pid"`, `"log_show_failed"`) rather than folded into
+a silent zero or a guessed duration. `capture_export_signposts` and `summarize_signposts`
+in `run.py` are the two functions to read for the exact logic.
+
+**The gap**: `waitForContent` ending and `paginate` beginning aren't adjacent —
+`DocumentExporter` also checks each Mermaid diagram's error state and runs a "keep
+headings with the next block" pass (walks every heading, reads its next sibling's
+`offsetHeight`) in between, and neither has a signpost of its own. `run.py` computes
+`gap_seconds = paginate.start - waitForContent.end` and reports it labeled as this
+unnamed pass, per cell. If this pass is significant on large documents, that is exactly
+the finding to hand to whoever owns hardening the DOM-walk hot paths (4a, as of this
+harness's introduction).
+
+**Overhead**: 4a's corpus measured signpost overhead at about 0.3% — negligible next to
+render/layout/pagination time. This harness's own measurement of a run's `elapsed_seconds`
+happens entirely before the `log show` query runs (the query is a separate, later step,
+timed on its own), so the signpost capture step never inflates the timing numbers above —
+it does add its own wall-clock cost (the ~1.5s flush wait, once per run) to how long the
+whole harness run takes, which is why the full-run time estimate accounts for it.
+
+**Reading `polls`**: 4a measured `polls=1` on 27 of 29 ordinary documents, and `polls=346`
+only on a forced timeout. A run with `polls` well above 1 on an otherwise-successful,
+non-timeout export is itself worth flagging, not averaging away quietly.
 
 ## Cold vs. warm, and their honest limits
 
@@ -182,7 +238,10 @@ Useful flags on `run.py`:
 - `--size-runs 1mb=1` — override the run count for one size; repeatable.
 - `--inputs-dir DIR` / `--out-dir DIR` — point at fixtures and results elsewhere, e.g. a
   scratch directory for a dry run that should not touch this repository.
-- `--skip-fallback-check` — skip building/running `fallback_probe`.
+- `--skip-fallback-check` — skip building/running `fallback_probe` (also skips the
+  stage breakdown, which reuses that build).
+- `--skip-signposts` — skip the per-run `log show` signpost capture (saves the ~1.5s
+  flush wait per run; useful for a quick timing-only pass).
 - `--label TEXT` — a free-text note embedded in the result (e.g. `"dry run"`).
 
 `run.py` verifies every input it is about to use against `manifest.json`'s sha256

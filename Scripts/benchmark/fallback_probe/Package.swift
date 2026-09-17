@@ -7,7 +7,9 @@ import PackageDescription
 // document rendered normally or hit the dense-Markdown fallback (see Scripts/benchmark/README.md).
 let package = Package(
     name: "FallbackProbe",
-    platforms: [.macOS(.v14)],
+    // Must track the kit's own minimum (Package.swift's `platforms:`) - a path dependency
+    // does not relax this, and a mismatch fails the build with a version-mismatch error.
+    platforms: [.macOS(.v15)],
     dependencies: [
         .package(name: "MarsDawnKit", path: "../../..")
     ],
