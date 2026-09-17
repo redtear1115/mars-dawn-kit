@@ -7,3 +7,6 @@
 "Clean and familiar" = "清爽又熟悉";
 "Vivid" = "活潑";
 "Playful, bright and rounded" = "俏皮、明亮又圓潤";
+
+/* Label of a blocked web image in exported documents (KitStrings.webImage) */
+"Web image" = "網路圖片";
