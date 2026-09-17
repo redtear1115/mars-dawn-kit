@@ -313,13 +313,14 @@ struct HTMLDocumentEndToEndTests {
         for name in forbiddenNames {
             #expect(forbidden[name]!.accepts == 0, "\(name) connected")
         }
-        if Handler.upgradesInsecureRequests {
-            // Upgraded to https on the plain listener: a TLS handshake arrives, no HTTP request.
-            #expect(plain.accepts > 0)
-            #expect(plain.paths.isEmpty)
-        } else {
-            #expect(plain.accepts == 0, "plain http image connected")
-        }
+        // MarsDawn supports https only. The `plain` listener is HTTP, and `<img src=http://…>`
+        // must not reach it in any form: not as an HTTP request, and not as the TLS handshake
+        // `upgrade-insecure-requests` would have sent instead. The same markup does connect when
+        // nothing protects it: `withoutProtectionTheVectorsConnect` records its `httpImage`
+        // vector reaching a plain listener.
+        #expect(plain.accepts == 0, "plain http image connected")
+        #expect(plain.paths.isEmpty)
+        #expect(!Handler.upgradesInsecureRequests)
         #expect(harness.other.requests.isEmpty)
     }
 

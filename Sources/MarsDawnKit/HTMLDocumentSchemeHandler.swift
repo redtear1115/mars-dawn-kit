@@ -57,9 +57,13 @@ public final class HTMLDocumentSchemeHandler: NSObject, WKURLSchemeHandler {
     /// P3-9: `sandbox` directive added to the page's CSP (nil: none). Not adopted: WebKit then
     /// refuses the app's own script in the page, which the media checks need.
     nonisolated static let documentSandboxDirective: String? = nil
-    /// P3-9: whether the remote-allowed page CSP adds `upgrade-insecure-requests`. Adopted: http
-    /// images, styles, fonts and media are fetched over https instead of being blocked.
-    nonisolated static let upgradesInsecureRequests = true
+    /// P3-9: whether the remote-allowed page CSP adds `upgrade-insecure-requests`. Not adopted,
+    /// for two reasons. MarsDawn supports https only, and plaintext http is blocked rather than
+    /// upgraded: the directive would turn a page's `http://` reference into a TLS connection to
+    /// the same host instead of stopping it, so a document could reach a host the reader was
+    /// never told about. And the plan's condition for adopting it — the remote case still
+    /// passing with its HTTP listener — was never met, because that case moved to TLS listeners.
+    nonisolated static let upgradesInsecureRequests = false
 
     /// The CSP header for the page.
     nonisolated static func documentCSP(allowsRemoteContent: Bool) -> String {
