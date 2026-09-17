@@ -85,11 +85,17 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         let options = MarkdownRenderer.Options { source in
             DocumentAssetSchemeHandler.previewURL(forImageSource: source, hasBaseDirectory: hasBaseDirectory) ?? source
         }
-        let html = await Task.detached(priority: .userInitiated) {
-            MarkdownRenderer.render(markdown, options: options)
-        }.value
-        _ = try await webView.evaluateJavaScript(PreviewWebView.updateScript(html: html))
-        try await waitForContent()
+        // One deadline covers rendering, updating the page and waiting for its content.
+        let deadline = ContinuousClock.now + Self.contentTimeout
+        let rendered = try await withExportDeadline(deadline, timeoutError: ExportError.contentTimedOut) {
+            await MarkdownRenderer.renderResult(markdown, options: options)
+        }
+        guard let html = rendered?.html else { throw CancellationError() }
+        let updateScript = PreviewWebView.updateScript(html: html)
+        try await withExportDeadline(deadline, timeoutError: ExportError.contentTimedOut) { @MainActor [webView] in
+            _ = try await webView.evaluateJavaScript(updateScript)
+        }
+        try await waitForContent(until: deadline)
         let errors = try? await webView.evaluateJavaScript(
             #"[...document.querySelectorAll(".mermaid-block.error")].map((b) => b.getAttribute("data-error") || "")"#
         )
@@ -118,7 +124,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
     """
 
 
-    private func waitForContent() async throws {
+    private func waitForContent(until deadline: ContinuousClock.Instant) async throws {
         // Diagrams settle as "rendered" or "error"; "stale" means an older diagram is still shown.
         let script = """
         const diagramsReady = [...document.querySelectorAll(".mermaid-block")]
@@ -126,7 +132,6 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         const imagesReady = [...document.images].every((img) => img.complete);
         return diagramsReady && imagesReady && document.fonts.status === "loaded";
         """
-        let deadline = ContinuousClock.now + Self.contentTimeout
         while ContinuousClock.now < deadline {
             let ready = try await webView.callAsyncJavaScript(script, contentWorld: .page) as? Bool ?? false
             if ready { return }
