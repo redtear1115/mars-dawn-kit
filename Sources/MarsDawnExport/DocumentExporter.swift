@@ -98,6 +98,22 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
             }
         }
         _ = try? await webView.evaluateJavaScript(PreviewWebView.themeScript(theme))
+        // The export page has no window to offer a "Load Images" or "Grant Access" button (both
+        // are hidden by print CSS anyway), so it only needs placeholder labels. A blocked remote
+        // image gets the app's "Web image" wording; a local image the exporter couldn't read gets
+        // one neutral label, since the exporter can't tell a missing file from an ungranted folder.
+        _ = try? await webView.evaluateJavaScript(PreviewWebView.remoteImagesScript(
+            blocked: !allowRemoteImages,
+            message: "",
+            buttonLabel: "",
+            placeholderLabel: PreviewWebView.webImagePlaceholderLabel
+        ))
+        _ = try? await webView.evaluateJavaScript(PreviewWebView.assetStateScript(
+            needsAccess: false,
+            grantLabel: "",
+            missingLabel: PreviewWebView.unloadableImagePlaceholderLabel,
+            blockedLabel: PreviewWebView.unloadableImagePlaceholderLabel
+        ))
 
         let hasBaseDirectory = assets.baseDirectory != nil
         let options = MarkdownRenderer.Options { source in
