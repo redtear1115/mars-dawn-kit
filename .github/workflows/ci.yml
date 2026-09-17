@@ -7,6 +7,11 @@ on:
 
 permissions: {}
 
+# A newer push to the same branch supersedes an older run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     # The package requires macOS 26 (and swift-tools 6.2, so Xcode 26).
@@ -20,6 +25,8 @@ jobs:
       - run: swift --version
       - run: swift build
       - run: swift test
+      # Release builds inline more, so stack use per nesting level differs from debug.
+      - run: swift test -c release
 
   ios:
     # The core library still supports iOS 17; make sure it keeps building for it.
