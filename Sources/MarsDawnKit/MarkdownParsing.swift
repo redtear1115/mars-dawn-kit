@@ -10,10 +10,14 @@ import cmark_gfm_extensions
 // cooperative-pool thread, or a test runner's worker thread. This file is the only place
 // in the package that parses Markdown into nodes, and it does so under two guards:
 //
-// 1. A depth pre-scan with cmark-gfm's own C parser, configured exactly as swift-markdown
-//    configures it, walked without recursion. Input nested past `ParseLimits.maxDepth` is
-//    never turned into nodes.
-// 2. The parse and every walk over its nodes run on a dedicated thread with a 64 MB stack.
+// 1. A depth and size pre-scan with cmark-gfm's own C parser, configured exactly as
+//    swift-markdown configures it, walked without recursion. Input nested past
+//    `ParseLimits.maxDepth`, or with more than `ParseLimits.maxNodes` nodes, is never turned
+//    into Swift nodes.
+// 2. Before that, a linear scan of the source bounds what cmark's table extension would
+//    build and how long it would take (see `TableCostBound`), so hostile tables are refused
+//    before cmark sees them.
+// 3. The parse and every walk over its nodes run on a dedicated thread with a 64 MB stack.
 //    That thread gives stack headroom; it is not crash isolation.
 
 /// Limits applied before a document is parsed.
@@ -37,9 +41,24 @@ public struct ParseLimits: Sendable, Equatable {
     /// Documents larger than this many UTF-8 bytes are rejected. `nil` means no limit.
     public let maxBytes: Int?
 
-    public init(maxDepth: Int = ParseLimits.depthCeiling, maxBytes: Int? = nil) {
+    /// The default node budget.
+    ///
+    /// Measured 2026-09-17 (release build, Apple silicon, macOS 26.6): parsing and rendering
+    /// costs about 1.35 µs and 450 bytes per node. A table padded to 537,000 nodes renders in
+    /// 0.72 s with a 245 MB peak; 1,070,000 nodes take 1.45 s and 479 MB. Ordinary Markdown
+    /// has 20-45 nodes per KB (a 1 MB document is about 200,000 nodes and renders in 0.34 s),
+    /// and a 10,000 x 10 table is 210,000 nodes (0.31 s, 102 MB). 500,000 nodes keeps the
+    /// worst case near 0.7 s and 250 MB, and admits dense documents up to about 2.4 MB.
+    public static let defaultMaxNodes = 500_000
+
+    /// Documents that would have more nodes than this (table cells included) are rejected.
+    /// At least 1.
+    public let maxNodes: Int
+
+    public init(maxDepth: Int = ParseLimits.depthCeiling, maxBytes: Int? = nil, maxNodes: Int = ParseLimits.defaultMaxNodes) {
         self.maxDepth = min(max(maxDepth, 1), Self.depthCeiling)
         self.maxBytes = maxBytes.map { max($0, 0) }
+        self.maxNodes = max(maxNodes, 1)
     }
 
     public static let `default` = ParseLimits()
@@ -56,6 +75,9 @@ public enum ParseOutcome {
     case tooDeep(depth: Int)
     /// The input is larger than `ParseLimits.maxBytes`; it was not parsed.
     case tooLarge
+    /// The input would have more than `ParseLimits.maxNodes` nodes, or its tables would take
+    /// too long to build; it was not parsed.
+    case tooComplex
 }
 
 @available(*, unavailable, message: "Parsed nodes must stay on the parsing worker")
@@ -187,10 +209,17 @@ public enum MarkdownParsing {
         if let maxBytes = limits.maxBytes, source.utf8.count > maxBytes {
             return .tooLarge
         }
-        let depth = CMarkDepthScan.maximumDepth(of: source)
+        let tables = TableCostBound.measure(source)
+        if tables.cells > limits.maxNodes || tables.work > TableCostBound.maxWork {
+            return .tooComplex
+        }
+        let scan = CMarkDepthScan.measure(source)
         // swift-markdown adds one level cmark doesn't have (a table body); keep one more spare.
-        if depth > limits.maxDepth - 2 {
-            return .tooDeep(depth: depth)
+        if scan.depth > limits.maxDepth - 2 {
+            return .tooDeep(depth: scan.depth)
+        }
+        if scan.nodes > limits.maxNodes {
+            return .tooComplex
         }
         return .document(Document(parsing: source))
     }
@@ -225,33 +254,40 @@ private let workerKey: pthread_key_t = {
 
 // MARK: - Depth pre-scan
 
-/// Measures a document's nesting depth with cmark-gfm directly, without recursion.
+/// Measures a document's nesting depth and node count with cmark-gfm directly, without recursion.
 enum CMarkDepthScan {
     /// The depth of the deepest node, counting the document node as 1.
-    /// Returns `Int.max` if cmark fails to allocate, so a failure is always rejected.
     static func maximumDepth(of source: String) -> Int {
+        measure(source).depth
+    }
+
+    /// The depth of the deepest node (the document node counts as 1) and the number of nodes.
+    /// Both are `Int.max` if cmark fails to allocate, so a failure is always rejected.
+    static func measure(_ source: String) -> (depth: Int, nodes: Int) {
         // The same setup as swift-markdown's MarkupParser.parseString (swift-markdown 0.8.0):
         // TABLE_SPANS | SMART | SOURCEPOS; table, strikethrough and tasklist; fed by length.
         cmark_gfm_core_extensions_ensure_registered()
         let options = CMARK_OPT_TABLE_SPANS | CMARK_OPT_SMART | CMARK_OPT_SOURCEPOS
-        guard let parser = cmark_parser_new(options) else { return .max }
+        guard let parser = cmark_parser_new(options) else { return (.max, .max) }
         defer { cmark_parser_free(parser) }
         cmark_parser_attach_syntax_extension(parser, cmark_find_syntax_extension("table"))
         cmark_parser_attach_syntax_extension(parser, cmark_find_syntax_extension("strikethrough"))
         cmark_parser_attach_syntax_extension(parser, cmark_find_syntax_extension("tasklist"))
         cmark_parser_feed(parser, source, source.utf8.count)
-        guard let root = cmark_parser_finish(parser) else { return .max }
+        guard let root = cmark_parser_finish(parser) else { return (.max, .max) }
         defer { cmark_node_free(root) }
-        guard let iterator = cmark_iter_new(root) else { return .max }
+        guard let iterator = cmark_iter_new(root) else { return (.max, .max) }
         defer { cmark_iter_free(iterator) }
 
         // Leaves get only an ENTER event and empty containers get ENTER then EXIT, so only
         // nodes with children open a level.
         var open = 0
         var deepest = 0
+        var nodes = 0
         while true {
             switch cmark_iter_next(iterator) {
             case CMARK_EVENT_ENTER:
+                nodes += 1
                 deepest = max(deepest, open + 1)
                 if cmark_node_first_child(cmark_iter_get_node(iterator)) != nil {
                     open += 1
@@ -261,11 +297,169 @@ enum CMarkDepthScan {
                     open -= 1
                 }
             case CMARK_EVENT_DONE:
-                return deepest
+                return (deepest, nodes)
             default:
-                return .max
+                return (.max, .max)
             }
         }
+    }
+}
+
+// MARK: - Table cost bound
+
+/// An upper bound, from the source alone, on what cmark-gfm's table extension (swift-cmark
+/// 0.8.0, extensions/table.c) builds and on its two superlinear loops. Linear in the source.
+///
+/// cmark would otherwise be the problem itself: it pads every table row to the header's
+/// width (up to 524,288 padded cells per table), so 28 tables of 128 columns and 4,200
+/// one-cell rows (243 KB) make 15 million nodes and take 1.5 s and 3.7 GB inside cmark alone.
+/// Two table loops are quadratic besides: each empty cell (`||`) scans the cells before it
+/// in its row (a 63 KB row of pipes takes 1.7 s), and each row-span marker cell (`^`) walks
+/// up through the marker rows above it (2,000 rows of 64 markers, 250 KB, take 13 s).
+///
+/// What the bound relies on, all from table.c and blocks.c:
+/// - cmark reads lines ended by `\n`, `\r\n` or `\r`. A line of only spaces and tabs is
+///   blank and ends any table. So a table's delimiter row, its body rows and the paragraph
+///   that holds its header all lie in one run of consecutive non-blank lines.
+/// - A delimiter row is one line whose tail (after container markers) is
+///   `|? marker (| marker)* |? spacechar*`, with markers made of spaces, tabs, `:` and `-`.
+///   So its column count is at most 1 + the pipes in the line's trailing run of
+///   `| - : space tab \v \f`, and that run holds a `-`.
+/// - The header has as many columns as the delimiter row, and every body row gets exactly
+///   that many cells, so a line after a delimiter candidate has at most as many cells as the
+///   widest candidate before it in its run. The header row's cells are counted at the
+///   delimiter line.
+/// - A row is parsed cell by cell, and the cells start over on each line. A row with `p`
+///   pipes has at most `p + 1` cells, and its empty-cell loop runs at most `(p + 1)^2 / 2`
+///   times. A line is parsed as a row at most three times (a failed continuation check, then
+///   twice as part of a header paragraph; or a continuation check and a row), so each line in
+///   a run with a delimiter candidate is charged `2 (p + 1)^2`.
+/// - A marker cell is exactly `^` after trimming, so it is followed, past spaces, tabs, `\v`
+///   and `\f`, by a pipe or the end of the line; each such `^` is counted. A marker's walk
+///   goes up one row per step while the cell above is a marker, so through at most the lines
+///   directly above it that hold a counted `^` (the delimiter row holds none) plus the header,
+///   and each step finds the cell by walking the row, at most (columns + 1) cells.
+/// - A paragraph is tried as a table header at most once (cmark marks it visited when that
+///   fails), except where cmark can't turn a paragraph into a table, which can't happen in the
+///   containers swift-markdown enables.
+///
+/// `MarkdownNestingTests` and `TableBudgetTests` check the cell bound against cmark's real
+/// counts over a corpus and generated tables.
+enum TableCostBound {
+    /// The largest `work` accepted.
+    ///
+    /// Measured 2026-09-17 (release, Apple silicon): cmark spends 0.13-0.2 ns per unit of
+    /// empty-cell work and 0.8-1.6 ns per unit of row-span work, so this limit keeps those
+    /// loops under about 0.05 s and 0.4 s. Real tables stay far below it: 2,000 x 64 filled
+    /// cells is 17 million units, 50,000 x 10 is 14 million, and 10,000 x 100 about 204 million.
+    static let maxWork = 250_000_000
+
+    /// `cells`: at most the table cells cmark creates. `work`: at most the iterations of the
+    /// empty-cell and row-span loops.
+    static func measure(_ source: String) -> (cells: Int, work: Int) {
+        var copy = source
+        return copy.withUTF8 { measure(bytes: $0) }
+    }
+
+    static func measure(bytes: UnsafeBufferPointer<UInt8>) -> (cells: Int, work: Int) {
+        let newline = UInt8(ascii: "\n"), carriageReturn = UInt8(ascii: "\r")
+        let pipe = UInt8(ascii: "|"), dash = UInt8(ascii: "-"), colon = UInt8(ascii: ":")
+        let caret = UInt8(ascii: "^"), space = UInt8(ascii: " "), tab = UInt8(ascii: "\t")
+        let verticalTab: UInt8 = 0x0B, formFeed: UInt8 = 0x0C
+
+        var cells = 0
+        var work = 0
+        // State of the current run of non-blank lines.
+        var widest = 0              // widest delimiter candidate so far; 0 if none
+        var pendingWork = 0         // empty-cell work of lines before the first candidate
+        var markerLinesAbove = 0    // consecutive lines just above that hold a marker
+
+        func add(_ total: inout Int, _ amount: Int) {
+            let (sum, overflow) = total.addingReportingOverflow(amount)
+            total = overflow ? .max : sum
+        }
+        func product(_ values: Int...) -> Int {
+            var result = 1
+            for value in values {
+                let (next, overflow) = result.multipliedReportingOverflow(by: value)
+                if overflow { return .max }
+                result = next
+            }
+            return result
+        }
+
+        var start = 0
+        let count = bytes.count
+        while start < count || (start == count && count == 0) {
+            // Find the end of the line.
+            var end = start
+            while end < count, bytes[end] != newline, bytes[end] != carriageReturn { end += 1 }
+            var next = end
+            if next < count {
+                next += (bytes[next] == carriageReturn && next + 1 < count && bytes[next + 1] == newline) ? 2 : 1
+            }
+
+            var pipes = 0
+            var blank = true
+            var markers = 0
+            var index = start
+            while index < end {
+                let byte = bytes[index]
+                if byte == pipe { pipes += 1 }
+                if byte != space && byte != tab { blank = false }
+                if byte == caret {
+                    var after = index + 1
+                    while after < end, bytes[after] == space || bytes[after] == tab
+                            || bytes[after] == verticalTab || bytes[after] == formFeed {
+                        after += 1
+                    }
+                    if after == end || bytes[after] == pipe { markers += 1 }
+                }
+                index += 1
+            }
+
+            if blank {
+                widest = 0
+                pendingWork = 0
+                markerLinesAbove = 0
+            } else {
+                // Delimiter candidate: the trailing run of delimiter characters holds a dash.
+                var runPipes = 0
+                var runHasDash = false
+                var back = end
+                while back > start {
+                    let byte = bytes[back - 1]
+                    guard byte == pipe || byte == dash || byte == colon || byte == space
+                        || byte == tab || byte == verticalTab || byte == formFeed else { break }
+                    if byte == pipe { runPipes += 1 }
+                    if byte == dash { runHasDash = true }
+                    back -= 1
+                }
+                let columns = runHasDash ? runPipes + 1 : 0
+
+                if widest > 0 {
+                    add(&cells, widest)
+                    add(&work, product(markers, widest + 1, markerLinesAbove + 1))
+                }
+                if columns > 0 {
+                    add(&cells, columns)
+                }
+                let emptyCellWork = product(2, pipes + 1, pipes + 1)
+                if widest > 0 || columns > 0 {
+                    add(&work, pendingWork)
+                    pendingWork = 0
+                    add(&work, emptyCellWork)
+                } else {
+                    add(&pendingWork, emptyCellWork)
+                }
+                widest = max(widest, columns)
+                markerLinesAbove = markers > 0 ? markerLinesAbove + 1 : 0
+            }
+
+            if next >= count { break }
+            start = next
+        }
+        return (cells, work)
     }
 }
 

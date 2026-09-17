@@ -38,7 +38,14 @@ let package = Package(
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
             ]
         ),
-        .testTarget(name: "MarsDawnKitTests", dependencies: ["MarsDawnKit"]),
+        .testTarget(
+            name: "MarsDawnKitTests",
+            dependencies: [
+                "MarsDawnKit",
+                .product(name: "cmark-gfm", package: "swift-cmark"),
+                .product(name: "cmark-gfm-extensions", package: "swift-cmark"),
+            ]
+        ),
         .testTarget(name: "MarsDawnExportTests", dependencies: ["MarsDawnExport", "MarsDawnKit"]),
         .testTarget(name: "MarsDawnCLITests", dependencies: ["marsdawn"]),
     ]

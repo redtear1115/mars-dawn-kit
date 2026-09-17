@@ -365,23 +365,30 @@ struct MarkdownParsingTimingTests {
         #expect(perCall < 0.005 * Self.slack)
     }
 
-    @Test func fiveMegabyteDocument() {
-        let repeats = 5_000_000 / Self.sampleDocument.utf8.count + 1
-        let source = String(repeating: Self.sampleDocument, count: repeats)
+    @Test func largeDocuments() {
+        // 2 MB of dense Markdown is about 400,000 nodes, within the default budget.
+        let accepted = String(repeating: Self.sampleDocument, count: 2_000_000 / Self.sampleDocument.utf8.count + 1)
+        // 5 MB is about a million nodes, past it: it falls back after the pre-scan.
+        let refused = String(repeating: Self.sampleDocument, count: 5_000_000 / Self.sampleDocument.utf8.count + 1)
         let clock = ContinuousClock()
-        var scanDepth = 0
-        let scan = clock.measure { scanDepth = CMarkDepthScan.maximumDepth(of: source) }
-        var result: MarkdownRenderer.RenderResult?
-        let total = clock.measure { result = MarkdownRenderer.renderResult(source) }
-        print("K1 timing: \(source.utf8.count / 1_000_000) MB document: pre-scan \(Self.seconds(scan)) s, guarded render \(Self.seconds(total)) s")
-        #expect(scanDepth == 7)  // document > list > item > quote > paragraph > emphasis > text
-        #expect(result?.fallback == nil)
-        #expect(Self.seconds(total) < 3 * Self.slack)
+        var scan = (depth: 0, nodes: 0)
+        let scanTime = clock.measure { scan = CMarkDepthScan.measure(refused) }
+        var acceptedResult: MarkdownRenderer.RenderResult?
+        var refusedResult: MarkdownRenderer.RenderResult?
+        let acceptedTime = clock.measure { acceptedResult = MarkdownRenderer.renderResult(accepted) }
+        let refusedTime = clock.measure { refusedResult = MarkdownRenderer.renderResult(refused) }
+        print("K1 timing: 2 MB document rendered in \(Self.seconds(acceptedTime)) s; 5 MB document: pre-scan \(Self.seconds(scanTime)) s, fell back in \(Self.seconds(refusedTime)) s")
+        #expect(scan.depth == 7)  // document > list > item > quote > paragraph > emphasis > text
+        #expect(scan.nodes > ParseLimits.defaultMaxNodes)
+        #expect(acceptedResult?.fallback == nil)
+        #expect(refusedResult?.fallback == .tooComplex)
+        #expect(Self.seconds(acceptedTime) < 1.5 * Self.slack)
+        #expect(Self.seconds(refusedTime) < 1.0 * Self.slack)
     }
 
     @Test func deepestAcceptedDocumentWithAFiveMegabytePayload() {
-        // Plain text and inline HTML only: emphasis would add a level.
-        let line = "lorem ipsum dolor sit amet & <consectetur>\n"
+        // Long plain lines: emphasis would add a level, and short lines would pass the node budget.
+        let line = String(repeating: "lorem ipsum dolor sit amet & consectetur ", count: 5) + "<adipiscing>\n"
         let payload = String(repeating: line, count: 5_000_000 / line.utf8.count + 1)
         let shallow = "> start\n" + payload
         let deep = String(repeating: ">", count: ParseLimits.default.maxDepth - 5) + " start\n" + payload

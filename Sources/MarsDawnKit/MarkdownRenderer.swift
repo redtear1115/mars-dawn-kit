@@ -12,14 +12,21 @@ public enum MarkdownRenderer {
         /// Documents larger than this many UTF-8 bytes render as their escaped source.
         /// `nil` (the default) means no limit.
         public var maxBytes: Int?
+        /// Documents with more nodes than this render as their escaped source.
+        public var maxNodes: Int
 
-        public init(maxBytes: Int? = nil, resolveImageSource: @escaping @Sendable (String) -> String = { $0 }) {
+        public init(
+            maxBytes: Int? = nil,
+            maxNodes: Int = ParseLimits.defaultMaxNodes,
+            resolveImageSource: @escaping @Sendable (String) -> String = { $0 }
+        ) {
             self.maxBytes = maxBytes
+            self.maxNodes = maxNodes
             self.resolveImageSource = resolveImageSource
         }
 
         var parseLimits: ParseLimits {
-            ParseLimits(maxBytes: maxBytes)
+            ParseLimits(maxBytes: maxBytes, maxNodes: maxNodes)
         }
     }
 
@@ -29,6 +36,8 @@ public enum MarkdownRenderer {
         case tooDeep(depth: Int)
         /// The document is larger than `Options.maxBytes`.
         case tooLarge
+        /// The document has more nodes than `Options.maxNodes`, or tables too costly to build.
+        case tooComplex
     }
 
     public struct RenderResult: Sendable, Equatable {
@@ -66,10 +75,17 @@ public enum MarkdownRenderer {
             var visitor = HTMLVisitor(options: options)
             return RenderResult(html: visitor.visit(document), fallback: nil)
         case .tooDeep(let depth):
-            return RenderResult(html: sourceFallbackHTML(source), fallback: .tooDeep(depth: depth))
+            return sourceFallback(source, reason: .tooDeep(depth: depth))
         case .tooLarge:
-            return RenderResult(html: sourceFallbackHTML(source), fallback: .tooLarge)
+            return sourceFallback(source, reason: .tooLarge)
+        case .tooComplex:
+            return sourceFallback(source, reason: .tooComplex)
         }
+    }
+
+    /// The one fallback for every document that isn't rendered; only the reason differs.
+    private static func sourceFallback(_ source: String, reason: FallbackReason) -> RenderResult {
+        RenderResult(html: sourceFallbackHTML(source), fallback: reason)
     }
 
     static func sourceFallbackHTML(_ source: String) -> String {
