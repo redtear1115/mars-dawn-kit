@@ -138,6 +138,16 @@ guess), unlike the WebContent CPU attribution above — every event `log show` r
 for that predicate belongs to this run's `marsdawn` process, on this or any other
 machine.
 
+**Pitfall found while building this: `log show`'s own `--process <pid>` flag does not
+filter.** A test run passed `--process 1` (`launchd`, obviously the wrong process) and
+`log show` still returned every matching event, unfiltered — the flag was silently a
+no-op rather than an error. That is why `processID == <pid>` is written **inside** the
+`--predicate` string above instead of passed as `--process <pid>`: only the predicate
+form actually restricts results to one pid (verified: exactly 10 events — 5 begin + 5
+end — for one run, versus everything in the log for a bare `--process` filter). Anyone
+reusing `log show --signpost` for per-process attribution should use the predicate form;
+the `--process` flag looked correct and would have silently invalidated the measurement.
+
 **What this can't see**: a run whose signposts never got flushed before the query
 (rare — the harness waits for it, but unified logging has no publish acknowledgment to
 poll instead), a kit commit before `81af5c6` (no signposts exist to find), or an export
