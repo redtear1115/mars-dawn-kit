@@ -339,17 +339,13 @@ struct FrontMatterRenderingTests {
         #expect(MarkdownRenderer.render("---\na: b\n---\nA\u{FEFF}B\n").unicodeScalars.contains("\u{FEFF}"))
     }
 
-    /// `escapeHTML` compares `Character`s, so a Prepend scalar (U+0600) fuses with the "<"
-    /// after it and the "<" goes out unescaped. The fix lands on kit main separately; this
-    /// starts failing as "known issue not recorded" once F1 is rebased onto it, and the
-    /// `withKnownIssue` wrapper should then be removed.
+    /// A Prepend scalar (U+0600) fuses with the "<" after it into one `Character`, which used
+    /// to hide it from `escapeHTML`. The byte-level escaper (0.2.1) escapes it, and the
+    /// front-matter path inherits that because it uses the shared escaper.
     @Test func prependScalarBeforeALessThanSign() {
         let html = MarkdownRenderer.render("---\na: \u{0600}<script>alert(1)</script>\n---\n")
         let block = html as NSString
-        withKnownIssue("escapeHTML skips a \"<\" fused with a Prepend scalar (hotfix pending on kit main)") {
-            #expect(block.range(of: "<script").location == NSNotFound)
-        }
-        // Either way the value went through the shared escaper: the closing tag is escaped.
+        #expect(block.range(of: "<script").location == NSNotFound)
         #expect(block.range(of: "&lt;/script&gt;").location != NSNotFound)
     }
 

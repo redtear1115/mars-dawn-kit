@@ -159,7 +159,6 @@ public enum MarkdownRenderer {
             html += "<pre>" + frontMatterText(frontMatter.lines.joined(separator: "\n")) + "</pre>"
         }
         return html + "</details>\n"
->>>>>>> 70bd13a (Show YAML front matter as a collapsed Document info block)
     }
 
     /// Escaped text for the front-matter block, through the shared `escapeHTML`. NUL becomes
