@@ -16,3 +16,11 @@ It bundles the following third-party software, each under its own license:
   BSD 3-Clause License, Copyright (c) 2006, Ivan Sagalaev
   Sources/MarsDawnKit/Resources/Preview/vendor/highlight.min.js
   License: Sources/MarsDawnKit/Resources/Preview/vendor/LICENSE-highlightjs.txt
+
+- KaTeX 0.18.7
+  https://github.com/KaTeX/KaTeX
+  MIT License, Copyright (c) 2013-2020 Khan Academy and other contributors
+  Sources/MarsDawnKit/Resources/Preview/vendor/katex.min.js
+  Sources/MarsDawnKit/Resources/Preview/vendor/katex.min.css (font sources reduced to woff2)
+  Sources/MarsDawnKit/Resources/Preview/vendor/fonts/*.woff2
+  License: Sources/MarsDawnKit/Resources/Preview/vendor/LICENSE-katex.txt
