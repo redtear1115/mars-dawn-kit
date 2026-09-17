@@ -14,14 +14,25 @@ concurrency:
 
 jobs:
   test:
-    # The package requires macOS 26 (and swift-tools 6.2, so Xcode 26).
-    runs-on: macos-26
+    # macOS 15 is the package's floor; macOS 26 is what the app ships on.
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-15, macos-26]
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # swift-tools 6.2 needs Xcode 26, which isn't the default on the macOS 15 image.
+      - name: Use Xcode 26
+        run: |
+          set -euo pipefail
+          app=$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)
+          echo "Selecting $app"
+          sudo xcode-select -s "$app"
       - run: swift --version
       - run: swift build
       - run: swift test
