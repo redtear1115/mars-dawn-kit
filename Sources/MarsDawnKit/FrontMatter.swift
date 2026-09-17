@@ -65,6 +65,12 @@ public struct FrontMatter: Sendable {
         while let line = lines.next() {
             let content = utf8[line.content]
             if content.elementsEqual("---".utf8) || content.elementsEqual("...".utf8) {
+                // A block with nothing but blank lines carries no information, so it stays
+                // ordinary Markdown (`---\n---` is two thematic breaks, as it always was)
+                // rather than becoming an empty Document info block.
+                guard inner.contains(where: { !utf8[$0].allSatisfy(Self.isBlank) }) else {
+                    return noFrontMatter
+                }
                 let closingLine = inner.count + 2
                 // The bounds are next to ASCII line endings, so the bytes are whole scalars.
                 let innerLines = inner.map { String(decoding: utf8[$0], as: UTF8.self) }
@@ -150,9 +156,14 @@ public struct FrontMatter: Sendable {
         return previous != nil && previous != " "
     }
 
+    /// A byte that makes a line blank: spaces and tabs only, matching CommonMark.
+    static func isBlank(_ byte: UInt8) -> Bool {
+        byte == UInt8(ascii: " ") || byte == UInt8(ascii: "\t")
+    }
+
     private static func parsePairs(_ lines: [String]) -> [Pair]? {
         var pairs: [Pair] = []
-        for line in lines where !line.utf8.allSatisfy({ $0 == UInt8(ascii: " ") || $0 == UInt8(ascii: "\t") }) {
+        for line in lines where !line.utf8.allSatisfy(isBlank) {
             guard let pair = keyValue(in: line) else { return nil }
             pairs.append(Pair(key: pair.key, value: pair.value))
         }
