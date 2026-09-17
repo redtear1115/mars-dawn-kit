@@ -20,6 +20,8 @@ jobs:
       matrix:
         runner: [macos-15, macos-26]
     runs-on: ${{ matrix.runner }}
+    # A nesting or table regression hangs rather than fails, so don't wait the 6-hour default.
+    timeout-minutes: 30
     permissions:
       contents: read
     steps:
@@ -42,11 +44,19 @@ jobs:
   ios:
     # The core library still supports iOS 17; make sure it keeps building for it.
     runs-on: macos-26
+    timeout-minutes: 30
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # Pick Xcode 26 here too, so this job doesn't drift if the runner's default changes.
+      - name: Use Xcode 26
+        run: |
+          set -euo pipefail
+          app=$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)
+          echo "Selecting $app"
+          sudo xcode-select -s "$app"
       - run: xcodebuild -version
       - run: xcodebuild -scheme MarsDawnKit -destination 'generic/platform=iOS' build
