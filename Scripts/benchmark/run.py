@@ -191,11 +191,47 @@ def git_commit(repo_dir):
 
 MAX_RSS_RE = re.compile(r"^\s*(\d+)\s+maximum resident set size", re.MULTILINE)
 FOOTPRINT_RE = re.compile(r"^\s*(\d+)\s+peak memory footprint", re.MULTILINE)
-
+TIME_HEADER_RE = re.compile(r"([\d.]+)\s+real\s+([\d.]+)\s+user\s+([\d.]+)\s+sys")
 
 # Generous ceiling for one export. The 10 MB cell has been observed to take several
 # minutes; this exists only to stop a genuinely hung process, not to bound normal runs.
 EXPORT_TIMEOUT_SECONDS = 1800
+
+# How often to poll `ps` for the WebContent process while an export runs. See
+# README.md's "Process-tree CPU" section for what this can and cannot see.
+WEBCONTENT_POLL_SECONDS = 0.15
+
+
+def ps_time_to_seconds(time_str):
+    """Parse ps's TIME field: '[[DD-]HH:]MM:SS[.ss]'."""
+    days = 0
+    rest = time_str
+    if "-" in time_str:
+        days_str, rest = time_str.split("-", 1)
+        days = int(days_str)
+    parts = [float(p) for p in rest.split(":")]
+    while len(parts) < 3:
+        parts.insert(0, 0.0)
+    hours, minutes, seconds = parts[-3], parts[-2], parts[-1]
+    return days * 86400 + hours * 3600 + minutes * 60 + seconds
+
+
+def sample_webcontent_processes():
+    """pid -> ps TIME string, for every process whose comm names WebKit's WebContent.
+
+    Matches both the plain XPC service and the ExtensionKit .appex form seen on this
+    OS version; both show up with "WebKit.WebContent" somewhere in their comm path.
+    """
+    out = run_text(["ps", "-A", "-o", "pid,time,comm"])
+    result = {}
+    for line in out.splitlines()[1:]:
+        parts = line.strip().split(None, 2)
+        if len(parts) != 3:
+            continue
+        pid, time_str, comm = parts
+        if "WebKit.WebContent" in comm:
+            result[pid] = time_str
+    return result
 
 
 def run_one_export(binary_path, input_path, output_pdf):
@@ -206,27 +242,69 @@ def run_one_export(binary_path, input_path, output_pdf):
         "--theme", "dawn", "--paper", "a4",
         "--force", "--json",
     ]
+
+    # WebContent processes are spawned via XPC/launchd, not as direct children of
+    # `marsdawn` (their ppid is 1, not ours) - macOS exposes no sudo-free "responsible
+    # pid" lookup from the command line. So: snapshot which WebContent pids already
+    # exist, then treat any WebContent pid that appears while our export is running as
+    # "probably ours." On a quiet machine this is reliable; on this shared machine,
+    # another session's export running at the exact same moment could be misattributed.
+    # See README.md's "Process-tree CPU" section.
+    baseline_webcontent = set(sample_webcontent_processes().keys())
+    tracked_webcontent = {}  # pid -> last-seen TIME string
+
     start = time.perf_counter()
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=EXPORT_TIMEOUT_SECONDS)
-    except subprocess.TimeoutExpired as exc:
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    except OSError as exc:
         elapsed = time.perf_counter() - start
-        return {
-            "ok": False,
-            "elapsed_seconds": elapsed,
-            "returncode": None,
-            "peak_rss_bytes": None,
-            "peak_memory_footprint_bytes": None,
-            "pages": None,
-            "diagram_errors": None,
-            "json": None,
-            "parse_error": None,
-            "stderr_tail": f"timed out after {EXPORT_TIMEOUT_SECONDS}s: {exc}",
-        }
+        return _export_failure(elapsed, f"couldn't start process: {exc}")
+
+    timed_out = False
+    while True:
+        ret = proc.poll()
+        for pid, time_str in sample_webcontent_processes().items():
+            if pid not in baseline_webcontent:
+                tracked_webcontent[pid] = time_str
+        if ret is not None:
+            break
+        if time.perf_counter() - start > EXPORT_TIMEOUT_SECONDS:
+            proc.kill()
+            timed_out = True
+            break
+        time.sleep(WEBCONTENT_POLL_SECONDS)
+
+    try:
+        stdout, stderr = proc.communicate(timeout=30)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        stdout, stderr = proc.communicate()
     elapsed = time.perf_counter() - start
 
-    rss_match = MAX_RSS_RE.search(proc.stderr)
-    footprint_match = FOOTPRINT_RE.search(proc.stderr)
+    if timed_out:
+        return _export_failure(elapsed, f"timed out after {EXPORT_TIMEOUT_SECONDS}s")
+
+    # marsdawn's own CPU time, from /usr/bin/time's "real/user/sys" header line.
+    # This is the CLI process only - it does not include the WebContent child.
+    time_header = TIME_HEADER_RE.search(stderr)
+    marsdawn_user = float(time_header.group(2)) if time_header else None
+    marsdawn_sys = float(time_header.group(3)) if time_header else None
+
+    webcontent_cpu_seconds = None
+    webcontent_attribution = "none_observed"
+    if len(tracked_webcontent) == 1:
+        webcontent_cpu_seconds = ps_time_to_seconds(next(iter(tracked_webcontent.values())))
+        webcontent_attribution = "single_new_process"
+    elif len(tracked_webcontent) > 1:
+        webcontent_cpu_seconds = sum(ps_time_to_seconds(t) for t in tracked_webcontent.values())
+        webcontent_attribution = f"ambiguous_{len(tracked_webcontent)}_new_processes"
+
+    process_tree_cpu_seconds = None
+    if marsdawn_user is not None and marsdawn_sys is not None:
+        process_tree_cpu_seconds = marsdawn_user + marsdawn_sys + (webcontent_cpu_seconds or 0.0)
+
+    rss_match = MAX_RSS_RE.search(stderr)
+    footprint_match = FOOTPRINT_RE.search(stderr)
     peak_rss = int(rss_match.group(1)) if rss_match else None
     peak_footprint = int(footprint_match.group(1)) if footprint_match else None
 
@@ -234,7 +312,7 @@ def run_one_export(binary_path, input_path, output_pdf):
     # reporting goes to stderr, so stdout is exactly the CLI's --json line.
     parsed = None
     parse_error = None
-    stdout_line = proc.stdout.strip().splitlines()[-1] if proc.stdout.strip() else ""
+    stdout_line = stdout.strip().splitlines()[-1] if stdout.strip() else ""
     try:
         parsed = json.loads(stdout_line) if stdout_line else None
     except json.JSONDecodeError as exc:
@@ -247,11 +325,36 @@ def run_one_export(binary_path, input_path, output_pdf):
         "returncode": proc.returncode,
         "peak_rss_bytes": peak_rss,
         "peak_memory_footprint_bytes": peak_footprint,
+        "marsdawn_user_seconds": marsdawn_user,
+        "marsdawn_sys_seconds": marsdawn_sys,
+        "webcontent_cpu_seconds": webcontent_cpu_seconds,
+        "webcontent_attribution": webcontent_attribution,
+        "process_tree_cpu_seconds": process_tree_cpu_seconds,
         "pages": parsed.get("pages") if isinstance(parsed, dict) else None,
         "diagram_errors": parsed.get("diagramErrors") if isinstance(parsed, dict) else None,
         "json": parsed,
         "parse_error": parse_error,
-        "stderr_tail": "\n".join(proc.stderr.strip().splitlines()[-10:]),
+        "stderr_tail": "\n".join(stderr.strip().splitlines()[-10:]),
+    }
+
+
+def _export_failure(elapsed, detail):
+    return {
+        "ok": False,
+        "elapsed_seconds": elapsed,
+        "returncode": None,
+        "peak_rss_bytes": None,
+        "peak_memory_footprint_bytes": None,
+        "marsdawn_user_seconds": None,
+        "marsdawn_sys_seconds": None,
+        "webcontent_cpu_seconds": None,
+        "webcontent_attribution": None,
+        "process_tree_cpu_seconds": None,
+        "pages": None,
+        "diagram_errors": None,
+        "json": None,
+        "parse_error": None,
+        "stderr_tail": detail,
     }
 
 
@@ -325,6 +428,8 @@ def run_cell(binary_path, input_path, size_name, run_count, work_dir, seen_input
     entry["cold"] = {
         "elapsed_seconds": cold_runs[0]["elapsed_seconds"] if cold_runs else None,
         "peak_rss_bytes": cold_runs[0]["peak_rss_bytes"] if cold_runs else None,
+        "process_tree_cpu_seconds": cold_runs[0]["process_tree_cpu_seconds"] if cold_runs else None,
+        "webcontent_attribution": cold_runs[0]["webcontent_attribution"] if cold_runs else None,
     }
     entry["warm"] = cell_stats([r["elapsed_seconds"] for r in warm_runs])
     if entry["warm"] is not None:
@@ -333,6 +438,9 @@ def run_cell(binary_path, input_path, size_name, run_count, work_dir, seen_input
             if any(r["peak_rss_bytes"] is not None for r in warm_runs)
             else None
         )
+        tree_cpu_values = [r["process_tree_cpu_seconds"] for r in warm_runs if r["process_tree_cpu_seconds"] is not None]
+        entry["warm"]["process_tree_cpu_seconds_median"] = statistics.median(tree_cpu_values) if tree_cpu_values else None
+        entry["warm"]["webcontent_attributions"] = [r["webcontent_attribution"] for r in warm_runs]
     entry["pages"] = runs[0]["pages"]
     return entry
 
@@ -380,12 +488,10 @@ def check_fallback_boundary(probe_binary, dense_input, sentinel):
     }
 
 
-def failure_row(inputs_dir, sentinel, manifest):
+def failure_row(inputs_dir, sentinel, probe_build, build_error):
     dense_input = inputs_dir / "dense_boundary.md"
     if not dense_input.exists():
         return {"status": "skipped", "detail": f"{dense_input} not found; run generate_inputs.py first."}
-
-    probe_build, build_error = build_fallback_probe()
     if build_error:
         return {"status": "skipped", "detail": f"fallback-probe failed to build: {build_error}"}
 
@@ -394,6 +500,89 @@ def failure_row(inputs_dir, sentinel, manifest):
     boundary["input_path"] = str(dense_input)
     boundary["input_bytes"] = dense_input.stat().st_size
     return boundary
+
+
+# ---------------------------------------------------------------------------
+# Stage breakdown: how much of the wall time is parse vs. everything else
+#
+# The goal is input for the app-side performance issue, not a rigorous profile.
+# What's cheap without instrumenting the shipping exporter:
+#   parse    - call MarkdownRenderer.render(_:) directly through fallback-probe,
+#              on the same input, and time it. This is the exact function
+#              DocumentExporter calls before laying the page out.
+#   baseline - export of a trivial, near-empty document, full path through the
+#              CLI. Approximates fixed cost (process spawn, dylib load, WebKit
+#              content-process spawn, empty-page layout/pagination) that isn't
+#              "parsing this document" and isn't proportional to its size.
+#   remainder - total - parse - baseline, reported as one number: "layout,
+#              scripts and pagination combined." DocumentExporter has no
+#              existing phase-level logging (only error-path os_log calls; see
+#              Sources/MarsDawnExport/DocumentExporter.swift), so there is no
+#              cheap, already-shipping signal to split that remainder further.
+#              A finer split needs signposts from another workstream (B1-app).
+
+
+def measure_parse_seconds(probe_binary, input_path, samples=3):
+    times = []
+    for _ in range(samples):
+        start = time.perf_counter()
+        try:
+            proc = subprocess.run(
+                [str(probe_binary), str(input_path)],
+                capture_output=True, text=True, timeout=EXPORT_TIMEOUT_SECONDS,
+            )
+        except subprocess.TimeoutExpired:
+            continue
+        elapsed = time.perf_counter() - start
+        if proc.returncode == 0:
+            times.append(elapsed)
+    if not times:
+        return None
+    return statistics.median(times)
+
+
+BASELINE_DOCUMENT = "# Baseline\n\nMinimal document, used only to estimate fixed process-start cost.\n"
+
+
+def measure_process_start_baseline(binary_path, work_dir, samples=3):
+    baseline_doc = work_dir / "_baseline.md"
+    baseline_doc.write_text(BASELINE_DOCUMENT, encoding="utf-8")
+    times = []
+    for i in range(samples):
+        result = run_one_export(binary_path, baseline_doc, work_dir / f"_baseline{i}.pdf")
+        if result["ok"]:
+            times.append(result["elapsed_seconds"])
+    if not times:
+        return None
+    return statistics.median(times)
+
+
+def stage_breakdown(cell, probe_build, input_path, baseline_seconds):
+    if cell.get("aborted"):
+        return {"status": "skipped", "detail": "cell aborted; no total time to break down."}
+    if probe_build is None:
+        return {"status": "skipped", "detail": "fallback-probe was not built; parse timing unavailable."}
+    if baseline_seconds is None:
+        return {"status": "skipped", "detail": "process-start baseline could not be measured."}
+
+    total_seconds = cell["warm"]["median_seconds"] if cell["warm"] else cell["cold"]["elapsed_seconds"]
+    total_basis = "warm_median" if cell["warm"] else "cold_single_run"
+
+    parse_seconds = measure_parse_seconds(Path(probe_build["path"]), input_path)
+    if parse_seconds is None:
+        return {"status": "skipped", "detail": "fallback-probe did not complete on this input."}
+
+    remainder = total_seconds - parse_seconds - baseline_seconds
+    return {
+        "status": "measured",
+        "total_seconds": total_seconds,
+        "total_basis": total_basis,
+        "parse_seconds": parse_seconds,
+        "process_start_baseline_seconds": baseline_seconds,
+        "remainder_seconds": remainder,
+        "remainder_label": "layout, scripts and pagination combined (not split further; "
+        "see README.md's Stage breakdown section)",
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -455,26 +644,43 @@ def write_markdown_summary(results):
         "",
         "## Export cells",
         "",
-        "| size | state | n | median (s) | min (s) | p90 (s) | spread (s) | noisy? |",
-        "|---|---|---|---|---|---|---|---|",
+        "| size | state | n | median (s) | min (s) | p90 (s) | spread (s) | noisy? | tree CPU (s) |",
+        "|---|---|---|---|---|---|---|---|---|",
     ]
     for cell in results["cells"]:
         size = cell["size"]
         if cell.get("aborted"):
-            lines.append(f"| {size} | - | - | - | - | - | - | **FAILED**: {cell['failure']['stderr_tail'][:80]} |")
+            lines.append(f"| {size} | - | - | - | - | - | - | - | **FAILED**: {cell['failure']['stderr_tail'][:80]} |")
             continue
         cold = cell["cold"]
+        cold_tree = f"{cold['process_tree_cpu_seconds']:.3f}" if cold["process_tree_cpu_seconds"] is not None else "n/a"
         lines.append(
-            f"| {size} | cold | 1 | {cold['elapsed_seconds']:.3f} | - | - | - | - |"
+            f"| {size} | cold | 1 | {cold['elapsed_seconds']:.3f} | - | - | - | - | {cold_tree} |"
         )
         warm = cell["warm"]
         if warm:
+            warm_tree = warm.get("process_tree_cpu_seconds_median")
+            warm_tree_str = f"{warm_tree:.3f}" if warm_tree is not None else "n/a"
             lines.append(
                 f"| {size} | warm | {warm['n']} | {warm['median_seconds']:.3f} | "
                 f"{warm['min_seconds']:.3f} | {warm['p90_seconds']:.3f} | "
-                f"{warm['spread_seconds']:.3f} | {'YES - rerun' if warm['noisy'] else 'no'} |"
+                f"{warm['spread_seconds']:.3f} | {'YES - rerun' if warm['noisy'] else 'no'} | {warm_tree_str} |"
             )
+        sb = cell.get("stage_breakdown")
+        if sb and sb["status"] == "measured":
+            lines.append(
+                f"| {size} | stage breakdown | - | total {sb['total_seconds']:.3f} "
+                f"({sb['total_basis']}) = parse {sb['parse_seconds']:.3f} + "
+                f"baseline {sb['process_start_baseline_seconds']:.3f} + "
+                f"remainder {sb['remainder_seconds']:.3f} ({sb['remainder_label']}) | | | | | |"
+            )
+        elif sb:
+            lines.append(f"| {size} | stage breakdown | - | skipped: {sb['detail']} | | | | | |")
     lines += [
+        "",
+        "\"tree CPU\" is marsdawn's own user+sys time plus the WebContent child's CPU time where it "
+        "could be attributed (see README.md's Process-tree CPU section); it is not the same as wall "
+        "time and a value above wall time is possible and expected once WebContent runs concurrently.",
         "",
         "## Failure row: dense-Markdown fallback boundary",
         "",
@@ -512,7 +718,7 @@ def main(argv):
     )
     parser.add_argument(
         "--skip-fallback-check", action="store_true",
-        help="Skip building/running the fallback-probe helper.",
+        help="Skip building/running the fallback-probe helper (also skips stage breakdown).",
     )
     parser.add_argument("--label", default=None, help="Note to embed in the result (e.g. 'dry run').")
     args = parser.parse_args(argv)
@@ -540,6 +746,19 @@ def main(argv):
     work_dir = out_dir / "_scratch_pdfs"
     work_dir.mkdir(parents=True, exist_ok=True)
 
+    probe_build = build_error = None
+    baseline_seconds = None
+    if not args.skip_fallback_check:
+        print("Building fallback-probe...")
+        probe_build, build_error = build_fallback_probe()
+        if build_error:
+            print(f"  build failed: {build_error}")
+        else:
+            print(f"  {probe_build['path']}")
+            print("Measuring process-start baseline...")
+            baseline_seconds = measure_process_start_baseline(binary["path"], work_dir)
+            print(f"  {baseline_seconds:.3f}s" if baseline_seconds is not None else "  could not measure")
+
     seen_inputs = set()
     cells = []
     for size in args.sizes:
@@ -547,6 +766,8 @@ def main(argv):
         input_path = inputs_dir / f"{size}.md"
         print(f"Benchmarking {size} ({run_count} runs)...")
         cell = run_cell(binary["path"], input_path, size, run_count, work_dir, seen_inputs)
+        if not args.skip_fallback_check:
+            cell["stage_breakdown"] = stage_breakdown(cell, probe_build, input_path, baseline_seconds)
         cells.append(cell)
         if cell.get("aborted"):
             print(f"  ABORTED: {cell['failure']}")
@@ -554,12 +775,19 @@ def main(argv):
             print(f"  cold {cell['cold']['elapsed_seconds']:.3f}s, warm median {cell['warm']['median_seconds']:.3f}s")
         else:
             print(f"  cold {cell['cold']['elapsed_seconds']:.3f}s, no warm runs requested")
+        sb = cell.get("stage_breakdown")
+        if sb and sb["status"] == "measured":
+            print(
+                f"    stage breakdown: parse {sb['parse_seconds']:.3f}s, "
+                f"baseline {sb['process_start_baseline_seconds']:.3f}s, "
+                f"remainder {sb['remainder_seconds']:.3f}s"
+            )
 
     if args.skip_fallback_check:
         f_row = {"status": "skipped", "detail": "--skip-fallback-check was passed."}
     else:
         print("Checking dense-Markdown fallback boundary...")
-        f_row = failure_row(inputs_dir, "MARSDAWN_BENCH_FALLBACK_SENTINEL", manifest)
+        f_row = failure_row(inputs_dir, "MARSDAWN_BENCH_FALLBACK_SENTINEL", probe_build, build_error)
         print(f"  {f_row['status']}: {f_row['detail']}")
 
     dynamic_end = snapshot_dynamic_state()
@@ -588,6 +816,14 @@ def main(argv):
             "read this session. Warm = every later run. This is NOT a purged page cache; purging "
             "needs sudo and is not done here. See README.md.",
             "App and Quick Look numbers are not measured by this harness. Never estimated.",
+            "process_tree_cpu_seconds = marsdawn's own user+sys time (from /usr/bin/time -l) plus "
+            "the WebContent child's CPU time, when it could be attributed to this run. Attribution "
+            "is by pid-diffing (WebContent has no sudo-free 'responsible pid' lookup); "
+            "webcontent_attribution says how confident that attribution is. See README.md.",
+            "stage_breakdown splits each cell's total into parse (MarkdownRenderer.render via "
+            "fallback-probe), a process-start baseline, and a remainder covering layout, scripts "
+            "and pagination together - DocumentExporter has no existing phase-level logging to "
+            "split the remainder further. See README.md.",
         ],
     }
 

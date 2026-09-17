@@ -24,21 +24,91 @@ by itself put a number anywhere public.
      one — a non-zero exit code, or JSON without `"ok": true`, is a failure, never a time.
   3. Wraps every run in `/usr/bin/time -l` and records its "maximum resident set size"
      as peak RSS, plus "peak memory footprint" as a second, macOS-specific number.
-  4. Records the machine (model identifier, chip, core counts, RAM, macOS build), AC
+  4. Records CPU time for the whole process tree it can attribute — marsdawn's own
+     user+sys time plus the WebContent child's CPU time — not just the `marsdawn`
+     process (see "Process-tree CPU" below for the method and its limits).
+  5. Records the machine (model identifier, chip, core counts, RAM, macOS build), AC
      power and a thermal-state proxy at the start and end of the run, and a load
      snapshot (load average plus a best-effort scan for heavy processes) so a number
      measured during a parallel build can be spotted instead of trusted.
-  5. Reports median, min, p90, run count and spread per cell, and flags any cell whose
+  6. Reports median, min, p90, run count and spread per cell, and flags any cell whose
      spread is wide enough to look like noise.
-  6. Aborts a cell on the first failed run rather than averaging a failure away.
-  7. Checks the dense-Markdown fallback boundary (see below) and records it cleanly,
+  7. Aborts a cell on the first failed run rather than averaging a failure away.
+  8. Checks the dense-Markdown fallback boundary (see below) and records it cleanly,
      including when the fallback isn't in this build at all.
-  8. Writes `results/<iso-date>-<machine-id>.json` (the full, versioned record) and a
-     `.md` summary next to it. **Nothing under `results/` is committed** — see
-     "Results are not committed" below.
+  9. Breaks each cell's total down into parse time, a process-start baseline, and a
+     remainder covering layout, scripts and pagination together (see "Stage breakdown"
+     below) — input for the app-side performance issue, not a shipped feature.
+  10. Writes `results/<iso-date>-<machine-id>.json` (the full, versioned record) and a
+      `.md` summary next to it. **Nothing under `results/` is committed** — see
+      "Results are not committed" below.
 - `Scripts/benchmark/fallback_probe/` is a small standalone SwiftPM package (its own
   `Package.swift`, depending on the kit checkout by path) used only by `run.py`'s
   failure-row check. It is not part of the shipping package graph.
+
+## Process-tree CPU: marsdawn plus its WebContent child
+
+`marsdawn export` renders through a `WKWebView`, and WebKit does that rendering in a
+separate `WebContent` process, not inside `marsdawn` itself. A CPU-percentage figure
+that only covers the `marsdawn` process (as `/usr/bin/time`'s `%cpu`, or a naive read of
+just that process, would give) understates how busy the machine actually was — a low
+number there does not mean the export was idle; it can mean the real work moved to
+WebContent.
+
+`run.py` records both pieces and adds them:
+
+- **marsdawn's own CPU time** comes straight from `/usr/bin/time -l`'s `real/user/sys`
+  header line (`user + sys`).
+- **The WebContent child's CPU time** is harder, because macOS spawns `WebContent` via
+  XPC/launchd, not as a direct child of `marsdawn` — its `ppid` is `1`, not marsdawn's
+  pid, and there is no sudo-free command-line way to ask "which process is this XPC
+  service responsible to." So `run.py` uses a **pid-diffing** method instead: it
+  snapshots every process whose `comm` names WebKit's `WebContent` right before starting
+  the export, polls the same list every ~150 ms while the export runs, and treats any
+  `WebContent` pid that shows up during that window (and wasn't already running) as
+  belonging to this export. When exactly one such pid appears, its cumulative CPU time
+  (from `ps`'s `TIME` column, at the last sample seen before it exits) is attributed
+  with confidence (`webcontent_attribution: "single_new_process"`). When none appears,
+  the harness records `"none_observed"` rather than a false zero — a `WebContent`
+  process that starts and finishes between two polls can be missed entirely, especially
+  for very fast (sub-100ms) exports. When more than one new `WebContent` pid appears,
+  the harness sums them but marks the cell `"ambiguous_N_new_processes"`, because on this
+  shared machine another session's export starting in the same brief window would look
+  identical to this method.
+
+What this **cannot** see: any WebKit worker or GPU process spawned under a different
+name; work truly done on the same core but scheduled with less than 150 ms granularity;
+or, in the ambiguous case, which of several `WebContent` processes was actually ours.
+`process_tree_cpu_seconds` should be read as "at least this much CPU work happened
+across the processes we could attribute," not as an exact accounting — and a cell whose
+`webcontent_attribution` is anything other than `single_new_process` should be treated
+as informative, not authoritative.
+
+## Stage breakdown: parse vs. everything else
+
+The goal here is input for the app-side performance issue (roughly: how much of the
+wall time is parsing, versus layout/scripts/pagination), without instrumenting the
+shipping exporter and without patching the kit. `DocumentExporter` currently has no
+phase-level logging to read back (only two error-path `os_log` calls — see
+`Sources/MarsDawnExport/DocumentExporter.swift`), so there is no already-shipping signal
+to split the non-parse time further; a finer split needs signposts from another
+workstream (B1-app).
+
+What `run.py` does instead, per cell:
+
+- **parse**: call `MarkdownRenderer.render(_:)` directly — the exact function
+  `DocumentExporter` calls before laying the page out — through the `fallback_probe`
+  helper, on the same input file, and time it (median of 3 runs).
+- **process-start baseline**: export a trivial, near-empty document through the full
+  CLI path once per `run.py` session (median of 3 runs). This approximates the fixed
+  cost that isn't "parsing this particular document" and doesn't scale with document
+  size: process spawn, dylib load, the WebKit content-process spawn, and laying out and
+  paginating an almost-empty page.
+- **remainder**: `total - parse - baseline`, reported as one number, "layout, scripts
+  and pagination combined." This is **not** a rigorous decomposition — it is whatever is
+  left over after subtracting two independently-measured numbers from the cell's total,
+  so its own error bars are wider than either input's. Treat it as a rough share, not a
+  precise measurement of any one phase.
 
 ## Cold vs. warm, and their honest limits
 
@@ -123,9 +193,11 @@ of silently producing a number for the wrong input.
 
 This harness writes results wherever `--out-dir` points (default: `results/`, which is
 git-ignored — see `.gitignore` in this directory). No results file from this repository
-is committed as part of building the harness itself. When real measurements are taken on
-a quiet machine, per the B1 plan, that is a separate, later step with its own commit —
-this harness only makes that step possible.
+is committed as part of building the harness itself, and no number produced by a reduced
+or dry run (fewer runs per cell, a subset of sizes, a scratch `--out-dir`) is ever
+published or committed as a result, no matter what it shows. When real measurements are
+taken on a quiet machine, per the B1 plan, that is a separate, later step with its own
+commit — this harness only makes that step possible.
 
 ## One machine, once
 
