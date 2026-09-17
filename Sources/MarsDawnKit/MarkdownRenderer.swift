@@ -239,41 +239,71 @@ func slugify(_ text: String) -> String {
     return slug
 }
 
+// The escapers and the URL check below work on UTF-8 bytes or Unicode scalars, never on
+// `Character`s. A `Character` is a grapheme cluster, which can hold an ASCII-significant
+// character together with its neighbour: a Prepend scalar before it (`\u{600}<`) or a combining
+// mark, ZWJ or variation selector after it (`>\u{301}`). A `Character` comparison doesn't see
+// the `<` in such a cluster, yet the HTML tokenizer does.
+
+/// Escapes `&`, `<` and `>` for HTML text.
 func escapeHTML(_ string: String) -> String {
-    var escaped = ""
-    escaped.reserveCapacity(string.utf8.count)
-    for character in string {
-        switch character {
-        case "&": escaped += "&amp;"
-        case "<": escaped += "&lt;"
-        case ">": escaped += "&gt;"
-        default: escaped.append(character)
-        }
-    }
-    return escaped
+    escapeMarkupBytes(string, quotes: false)
 }
 
+/// Escapes `&`, `<`, `>`, `"` and `'` for a quoted attribute value.
 func escapeAttribute(_ string: String) -> String {
-    escapeHTML(string)
-        .replacingOccurrences(of: "\"", with: "&quot;")
-        .replacingOccurrences(of: "'", with: "&#39;")
+    escapeMarkupBytes(string, quotes: true)
+}
+
+/// One pass over the UTF-8 bytes. The entity spellings are the ones the renderer has always used.
+private func escapeMarkupBytes(_ string: String, quotes: Bool) -> String {
+    func needsEscape(_ byte: UInt8) -> Bool {
+        switch byte {
+        case UInt8(ascii: "&"), UInt8(ascii: "<"), UInt8(ascii: ">"): true
+        case UInt8(ascii: "\""), UInt8(ascii: "'"): quotes
+        default: false
+        }
+    }
+    let source = string.utf8
+    guard source.contains(where: needsEscape) else { return string }
+    var escaped: [UInt8] = []
+    escaped.reserveCapacity(source.count + 16)
+    for byte in source {
+        switch byte {
+        case UInt8(ascii: "&"): escaped += "&amp;".utf8
+        case UInt8(ascii: "<"): escaped += "&lt;".utf8
+        case UInt8(ascii: ">"): escaped += "&gt;".utf8
+        case UInt8(ascii: "\"") where quotes: escaped += "&quot;".utf8
+        case UInt8(ascii: "'") where quotes: escaped += "&#39;".utf8
+        default: escaped.append(byte)
+        }
+    }
+    // Only ASCII bytes were replaced, and only with ASCII, so this is still valid UTF-8.
+    return String(decoding: escaped, as: UTF8.self)
 }
 
 /// Allows relative URLs and a short list of schemes; everything else becomes "#".
 /// Tabs and newlines are removed first, as browsers do when parsing URLs.
+///
+/// The scheme is read as a browser reads it: up to the first `:` scalar, and only if it is an
+/// ASCII scheme name. Anything else before a colon (other than a relative path) becomes "#".
 func sanitizedURL(_ url: String, allowData: Bool) -> String {
     let cleaned = String(url.unicodeScalars.filter { !CharacterSet.controlCharacters.contains($0) })
         .trimmingCharacters(in: .whitespaces)
-    guard let colon = cleaned.firstIndex(of: ":") else { return cleaned }
-    let scheme = cleaned[..<colon].lowercased()
+    let scalars = cleaned.unicodeScalars
+    guard let colon = scalars.firstIndex(of: ":") else { return cleaned }
+    let prefix = scalars[..<colon]
     // A "scheme" containing '/', '?' or '#' is really a relative path.
-    if scheme.contains(where: { "/?#".contains($0) }) { return cleaned }
+    if prefix.contains(where: { $0 == "/" || $0 == "?" || $0 == "#" }) { return cleaned }
+    guard let scheme = asciiURLScheme(prefix) else { return "#" }
     switch scheme {
     case "http", "https", "mailto", DocumentAssetSchemeHandler.scheme:
         return cleaned
     case "data":
-        let lower = cleaned.lowercased()
-        return allowData && lower.hasPrefix("data:image/") && !lower.hasPrefix("data:image/svg") ? cleaned : "#"
+        let allowed = allowData
+            && asciiCaseInsensitiveHasPrefix(cleaned.utf8, "data:image/")
+            && !asciiCaseInsensitiveHasPrefix(cleaned.utf8, "data:image/svg")
+        return allowed ? cleaned : "#"
     default:
         return "#"
     }
