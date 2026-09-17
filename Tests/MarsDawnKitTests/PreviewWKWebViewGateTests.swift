@@ -1,6 +1,7 @@
 #if os(macOS)
 import AppKit
 import Foundation
+import ObjectiveC
 import Testing
 import WebKit
 @testable import MarsDawnKit
@@ -90,14 +91,56 @@ struct PreviewWKWebViewGateTests {
         try await expectNoNavigation(webView, recorder)
     }
 
-    #if compiler(>=6.4)
+    /// `loadURL:` exists only on macOS 27; elsewhere this test has nothing to check.
     @Test func loadURLRefusesWithoutRules() async throws {
-        guard #available(macOS 27.0, *) else { return }
+        let selector = NSSelectorFromString("loadURL:")
+        guard WKWebView.instancesRespond(to: selector) else { return }
         let (webView, recorder) = makeWebView()
-        #expect(webView.load(Self.simulatedURL) == nil)
+        #expect(webView.perform(selector, with: Self.simulatedURL) == nil)
         try await expectNoNavigation(webView, recorder)
     }
-    #endif
+
+    /// The runtime gate mechanism, on a stand-in method added to WKWebView for this test.
+    @Test func runtimeGateRefusesWithoutRulesAndForwardsWithThem() async throws {
+        final class Calls: @unchecked Sendable { var arguments: [String] = [] }
+        let calls = Calls()
+        let selector = NSSelectorFromString("marsDawnGateTestLoad:")
+        let standIn: @convention(block) (AnyObject, AnyObject?) -> AnyObject? = { _, argument in
+            calls.arguments.append(argument as? String ?? "")
+            return "forwarded" as NSString
+        }
+        class_addMethod(WKWebView.self, selector, imp_implementationWithBlock(standIn), "@24@0:8@16")
+        #expect(PreviewWKWebView.installRefusingOverride(for: selector))
+        // Only once, and never for a method WKWebView doesn't have.
+        #expect(!PreviewWKWebView.installRefusingOverride(for: selector))
+        #expect(!PreviewWKWebView.installRefusingOverride(for: NSSelectorFromString("marsDawnMissing:")))
+
+        let (webView, recorder) = makeWebView()
+        #expect(webView.perform(selector, with: "refused") == nil)
+        #expect(calls.arguments.isEmpty)
+
+        webView.applyContentRuleList(try await PreviewContentRules.ruleList(allowRemoteImages: false))
+        let result = webView.perform(selector, with: "allowed")?.takeUnretainedValue() as? String
+        #expect(result == "forwarded")
+        #expect(calls.arguments == ["allowed"])
+
+        webView.removeContentRuleLists()
+        #expect(webView.perform(selector, with: "refused again") == nil)
+        #expect(calls.arguments == ["allowed"])
+        #expect(recorder.starts == 0)
+    }
+
+    @Test func runtimeGateIsInstalledWhenWebKitHasLoadURL() {
+        _ = PreviewWKWebView(frame: .zero, configuration: WKWebViewConfiguration())
+        let selector = NSSelectorFromString("loadURL:")
+        let own = class_getInstanceMethod(PreviewWKWebView.self, selector)
+        let base = class_getInstanceMethod(WKWebView.self, selector)
+        if base == nil {
+            #expect(own == nil)
+        } else {
+            #expect(own.map(method_getImplementation) != base.map(method_getImplementation))
+        }
+    }
 
     @Test func loadHTMLStringRefusesWithoutRules() async throws {
         let (webView, recorder) = makeWebView()
@@ -146,6 +189,25 @@ struct PreviewWKWebViewGateTests {
         _ = webView.loadSimulatedRequest(request, with: response, responseData: Data("<p>sim</p>".utf8))
         _ = webView.loadSimulatedRequest(request, withResponseHTML: "<p>sim</p>")
         try await expectNoNavigation(webView, recorder)
+    }
+
+    @Test func restoringInteractionStateRefusesWithoutRules() async throws {
+        let (source, sourceRecorder) = makeWebView()
+        source.applyContentRuleList(try await PreviewContentRules.ruleList(allowRemoteImages: false))
+        #expect(source.load(URLRequest(url: URL(string: "gate-test://pages/saved")!)) != nil)
+        try await waitForFinishes(1, sourceRecorder, source)
+        let state = try #require(source.interactionState)
+
+        let (webView, recorder) = makeWebView()
+        webView.interactionState = state
+        try await expectNoNavigation(webView, recorder)
+
+        // Control: with rules attached, the same state does load its page.
+        let (restored, restoredRecorder) = makeWebView()
+        restored.applyContentRuleList(try await PreviewContentRules.ruleList(allowRemoteImages: false))
+        restored.interactionState = state
+        try await waitForFinishes(1, restoredRecorder, restored)
+        #expect(restored.url?.absoluteString == "gate-test://pages/saved")
     }
 
     /// Loads two pages with rules attached, then detaches them: reloads and history moves,

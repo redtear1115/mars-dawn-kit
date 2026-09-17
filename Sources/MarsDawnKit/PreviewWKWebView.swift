@@ -1,5 +1,6 @@
 #if canImport(AppKit) && !targetEnvironment(macCatalyst)
 import AppKit
+import ObjectiveC
 import OSLog
 import WebKit
 
@@ -41,11 +42,13 @@ open class PreviewWKWebView: WKWebView {
     public private(set) var lastLoad: LoadRecord?
 
     override public init(frame: CGRect, configuration: WKWebViewConfiguration) {
+        Self.installRuntimeGates
         super.init(frame: frame, configuration: configuration)
         allowsLinkPreview = false
     }
 
     public required init?(coder: NSCoder) {
+        Self.installRuntimeGates
         super.init(coder: coder)
         allowsLinkPreview = false
     }
@@ -86,14 +89,6 @@ open class PreviewWKWebView: WKWebView {
         }
         return navigation
     }
-
-    #if compiler(>=6.4) // The macOS 27 SDK, which declares `load(_: URL)`.
-    @available(macOS 27.0, *)
-    override open func load(_ url: URL) -> WKNavigation? {
-        guard rulesAttached("load(URL)") else { return nil }
-        return super.load(url)
-    }
-    #endif
 
     override open func loadHTMLString(_ string: String, baseURL: URL?) -> WKNavigation? {
         guard rulesAttached("loadHTMLString") else { return nil }
@@ -180,6 +175,58 @@ open class PreviewWKWebView: WKWebView {
     override open func goForward(_ sender: Any?) {
         guard rulesAttached("goForward(_:)") else { return }
         super.goForward(sender)
+    }
+
+    /// Restoring a saved state loads its page, so it waits for the rules like a load.
+    override open var interactionState: Any? {
+        get { super.interactionState }
+        set {
+            guard rulesAttached("interactionState") else { return }
+            super.interactionState = newValue
+        }
+    }
+
+    // MARK: Runtime gates
+
+    /// Selectors of loading methods that only some WebKit versions have, gated at run time.
+    ///
+    /// `loadURL:` (Swift `load(_: URL)`) arrived with macOS 27. A Swift override would need the
+    /// macOS 27 SDK to compile, and a kit built with an older SDK would leave it ungated on
+    /// macOS 27. Instead, the gate is added to this class when WebKit has the method, whatever
+    /// SDK the kit was built with. It is only added to `PreviewWKWebView`; WebKit is untouched.
+    nonisolated static let runtimeGatedSelectors = ["loadURL:"]
+
+    private static let installRuntimeGates: Void = {
+        for name in runtimeGatedSelectors {
+            installRefusingOverride(for: NSSelectorFromString(name))
+        }
+    }()
+
+    /// Adds `selector` to this class: refused (returning nil) while no rule list is attached,
+    /// otherwise WKWebView's own implementation. The selector must take one object argument
+    /// and return an optional object, like `loadURL:`. Does nothing if WKWebView lacks it or
+    /// this class already implements it. Returns whether the gate was added.
+    @discardableResult
+    static func installRefusingOverride(for selector: Selector) -> Bool {
+        guard let method = class_getInstanceMethod(WKWebView.self, selector),
+              let typeEncoding = method_getTypeEncoding(method),
+              method_getNumberOfArguments(method) == 3, // self, _cmd and one argument.
+              String(cString: typeEncoding).hasPrefix("@"), // Returns an object…
+              let argumentType = method_copyArgumentType(method, 2)
+        else { return false }
+        defer { free(argumentType) }
+        guard String(cString: argumentType) == "@" else { return false } // …and takes one.
+        typealias Implementation = @convention(c) (AnyObject, Selector, AnyObject?) -> AnyObject?
+        let original = unsafeBitCast(method_getImplementation(method), to: Implementation.self)
+        let name = NSStringFromSelector(selector)
+        let gate: @convention(block) (AnyObject, AnyObject?) -> AnyObject? = { object, argument in
+            let allowed = MainActor.assumeIsolated {
+                (object as? PreviewWKWebView)?.rulesAttached(name) ?? false
+            }
+            guard allowed else { return nil }
+            return original(object, selector, argument)
+        }
+        return class_addMethod(PreviewWKWebView.self, selector, imp_implementationWithBlock(gate), typeEncoding)
     }
 
     override open func willOpenMenu(_ menu: NSMenu, with event: NSEvent) {
