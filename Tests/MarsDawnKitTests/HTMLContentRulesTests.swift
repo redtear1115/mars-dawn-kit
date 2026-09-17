@@ -13,10 +13,11 @@ struct HTMLContentRulesTests {
     }
 
     @Test func identifiersAreVersionedAndSeparateFromThePreviewLists() {
-        #expect(HTMLContentRules.identifier(allowsRemoteContent: false) == "dev.southern-light.marsdawn.html-rules.v1.blocked")
-        #expect(HTMLContentRules.identifier(allowsRemoteContent: true) == "dev.southern-light.marsdawn.html-rules.v1.remote-allowed")
-        #expect(PreviewContentRules.identifier(allowRemoteImages: false) == "dev.southern-light.marsdawn.preview-rules.v1.blocked")
-        #expect(PreviewContentRules.identifier(allowRemoteImages: true) == "dev.southern-light.marsdawn.preview-rules.v1.remote-images-allowed")
+        // v2: the allowed state lifts the block for https only, so a v1 list must not be reused.
+        #expect(HTMLContentRules.identifier(allowsRemoteContent: false) == "dev.southern-light.marsdawn.html-rules.v2.blocked")
+        #expect(HTMLContentRules.identifier(allowsRemoteContent: true) == "dev.southern-light.marsdawn.html-rules.v2.remote-allowed")
+        #expect(PreviewContentRules.identifier(allowRemoteImages: false) == "dev.southern-light.marsdawn.preview-rules.v2.blocked")
+        #expect(PreviewContentRules.identifier(allowRemoteImages: true) == "dev.southern-light.marsdawn.preview-rules.v2.remote-images-allowed")
     }
 
     @Test func blockedStateBlocksEveryWebRequest() throws {
@@ -25,19 +26,27 @@ struct HTMLContentRulesTests {
         #expect(list.count == 2)
     }
 
-    @Test func remoteStateLiftsTheBlockForFourTypesOnly() throws {
-        let list = try rules(true)
-        #expect(list.count == 4)
-        for (index, filter) in ["^https?:", "^wss?:"].enumerated() {
-            let block = list[index]
-            #expect((block["trigger"] as? [String: Any])?["url-filter"] as? String == filter)
-            #expect((block["trigger"] as? [String: Any])?["resource-type"] == nil)
-            #expect((block["action"] as? [String: Any])?["type"] as? String == "block")
-            let lift = list[index + 2]
-            let trigger = try #require(lift["trigger"] as? [String: Any])
-            #expect(trigger["url-filter"] as? String == filter)
-            #expect(trigger["resource-type"] as? [String] == ["image", "style-sheet", "font", "media"])
-            #expect((lift["action"] as? [String: Any])?["type"] as? String == "ignore-previous-rules")
+    /// Exact rules, in order. The blocks cover http and https; only https is lifted, so the
+    /// list blocks plaintext http even for the four allowed types.
+    @Test func remoteStateLiftsTheBlockForFourTypesOverHTTPSOnly() throws {
+        let list = try rules(true).map { $0 as NSDictionary }
+        func block(_ filter: String) -> NSDictionary {
+            ["trigger": ["url-filter": filter], "action": ["type": "block"]]
+        }
+        func lift(_ filter: String) -> NSDictionary {
+            ["trigger": ["url-filter": filter, "resource-type": ["image", "style-sheet", "font", "media"]],
+             "action": ["type": "ignore-previous-rules"]]
+        }
+        #expect(list == [block("^https?:"), block("^wss?:"), lift("^https:"), lift("^wss:")])
+    }
+
+    @Test func noRuleExemptsLoopbackOrLocalhost() {
+        for remote in [false, true] {
+            let json = HTMLContentRules.encodedRules(allowsRemoteContent: remote)
+                + PreviewContentRules.encodedRules(allowRemoteImages: remote)
+            for exemption in ["127.0.0.1", "localhost", "if-domain", "unless-domain", "::1"] {
+                #expect(!json.contains(exemption), "\(exemption) in the \(remote ? "allowed" : "blocked") rules")
+            }
         }
     }
 

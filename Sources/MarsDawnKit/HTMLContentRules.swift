@@ -8,13 +8,13 @@ import WebKit
 /// page's remote-content state before loading the page.
 ///
 /// - Blocked: every web and WebSocket request.
-/// - Remote allowed: the same blocks, then lifted for images, style sheets, fonts and media
-///   only. Documents, SVG documents, scripts, fetches, WebSockets, pings, popups, preconnects
-///   and everything else stay blocked.
+/// - Remote allowed: the same blocks, then lifted for https images, style sheets, fonts and
+///   media only. Documents, SVG documents, scripts, fetches, WebSockets, pings, popups,
+///   preconnects and everything else stay blocked, and so does plaintext http of any type.
 @MainActor
 public enum HTMLContentRules {
     /// Bump when the rules change, so a list compiled from older rules is never reused.
-    nonisolated static let version = 1
+    nonisolated static let version = 2
     nonisolated static let identifierPrefix = "dev.southern-light.marsdawn.html-rules"
     /// Resource types that load when the user allows remote content.
     nonisolated static let remoteResourceTypes = ["image", "style-sheet", "font", "media"]
@@ -31,8 +31,9 @@ public enum HTMLContentRules {
             ["trigger": ["url-filter": filter], "action": ["type": "block"]]
         }
         if allowsRemoteContent {
-            // Rules apply in order: lift the block for these types only.
-            rules += filters.map { filter in
+            // Rules apply in order: lift the block for these types over https only. The page CSP
+            // allows no http either, and this list is the layer below it.
+            rules += PreviewContentRules.secureURLFilters.map { filter in
                 ["trigger": ["url-filter": filter, "resource-type": remoteResourceTypes], "action": ["type": "ignore-previous-rules"]]
             }
         }

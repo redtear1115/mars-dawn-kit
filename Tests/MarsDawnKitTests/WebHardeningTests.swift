@@ -261,6 +261,7 @@ struct PreviewContentRulesTests {
         ["trigger": ["url-filter": filter], "action": ["type": "block"]]
     }
 
+    /// Only the encrypted filters are ever lifted.
     private static func allowImages(_ filter: String) -> NSDictionary {
         ["trigger": ["url-filter": filter, "resource-type": ["image"]], "action": ["type": "ignore-previous-rules"]]
     }
@@ -270,12 +271,14 @@ struct PreviewContentRulesTests {
         #expect(rules == [Self.block("^https?:"), Self.block("^wss?:")])
     }
 
-    @Test func allowedStateBlocksEveryWebRequestExceptImages() throws {
-        // Order matters: the image exceptions must come after the blocks they lift.
+    @Test func allowedStateBlocksEveryWebRequestExceptHTTPSImages() throws {
+        // Order matters: the image exceptions must come after the blocks they lift. The blocks
+        // cover http as well as https, and only https is lifted, so a plaintext http image is
+        // still blocked by this list — the layer below the preview's CSP, which allows no http.
         let rules = try rules(allowRemoteImages: true).map { $0 as NSDictionary }
         #expect(rules == [
             Self.block("^https?:"), Self.block("^wss?:"),
-            Self.allowImages("^https?:"), Self.allowImages("^wss?:"),
+            Self.allowImages("^https:"), Self.allowImages("^wss:"),
         ])
     }
 

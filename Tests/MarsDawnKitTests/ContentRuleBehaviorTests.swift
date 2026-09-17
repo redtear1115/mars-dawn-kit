@@ -86,11 +86,76 @@ struct ContentRuleBehaviorTests {
         #expect(paths.isEmpty, "requests that got through: \(paths), page saw \(results)")
     }
 
-    @Test func allowedListLetsOnlyImagesThrough() async throws {
+    /// The fixture is plaintext http throughout. MarsDawn supports https only, so the allowed
+    /// list blocks all of it, the image included; `SecureOnlyRuleBehaviorTests` shows the same
+    /// list letting an https image through.
+    @Test func allowedListStopsEveryPlaintextHTTPRequestIncludingImages() async throws {
         let (paths, results) = try await requestedPaths(allowRemoteImages: true)
-        // The control test shows every other fixture request reaches the server without a list.
-        #expect(paths == ["/image.png"], "requests that got through: \(paths), page saw \(results)")
-        #expect(results.hasPrefix("load,"), "page saw \(results)")
+        // The control test shows every fixture request reaches the server without a list.
+        #expect(paths.isEmpty, "requests that got through: \(paths), page saw \(results)")
+    }
+}
+
+/// The allowed rule lists lift their block for https only. Two loopback servers, one plain and
+/// one TLS, show what each state does with the same `<img>` in a real web view.
+@MainActor
+@Suite(.serialized, .timeLimit(.minutes(2)))
+struct SecureOnlyRuleBehaviorTests {
+    enum Rules: String, CaseIterable, Sendable {
+        /// The control: no list at all, so both references load.
+        case none
+        case previewImagesAllowed
+        case htmlRemoteAllowed
+    }
+
+    private func imageRequests(_ rules: Rules) async throws -> (plain: RecordingServer, secure: RecordingServer)? {
+        guard #available(macOS 26, *) else {
+            Issue.record("Needs macOS 26 (in-memory TLS identity)")
+            return nil
+        }
+        let tls = try TestTLSIdentity.make()
+        let plain = try await RecordingServer.start()
+        let secure = try await RecordingServer.start(identity: tls.identity)
+
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = .nonPersistent()
+        switch rules {
+        case .none: break
+        case .previewImagesAllowed:
+            configuration.userContentController.add(try await PreviewContentRules.ruleList(allowRemoteImages: true))
+        case .htmlRemoteAllowed:
+            configuration.userContentController.add(try await HTMLContentRules.ruleList(allowsRemoteContent: true))
+        }
+        let webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 200, height: 200), configuration: configuration)
+        let navigation = TestNavigationDelegate()
+        navigation.trustedCertificate = tls.certificate
+        webView.navigationDelegate = navigation
+        webView.loadHTMLString("""
+        <!doctype html><html><body>
+        <img src="http://127.0.0.1:\(plain.port)/http.png">
+        <img src="https://127.0.0.1:\(secure.port)/https.png">
+        </body></html>
+        """, baseURL: nil)
+        try await navigation.waitForLoad()
+        // Wait for the https image, which every state here allows, then let the http one have
+        // the same time to arrive.
+        try await waitUntil(timeout: .seconds(8)) { secure.paths.contains("/https.png") }
+        try await Task.sleep(for: .seconds(3))
+        return (plain, secure)
+    }
+
+    @Test(arguments: Rules.allCases)
+    func onlyTheHTTPSImageIsLoadedWhenRemoteContentIsAllowed(rules: Rules) async throws {
+        guard let (plain, secure) = try await imageRequests(rules) else { return }
+        defer { plain.stop(); secure.stop() }
+        #expect(secure.paths == ["/https.png"], "https: \(secure.paths)")
+        if rules == .none {
+            // The control: without a list the plaintext reference does reach the server, so the
+            // other two cases are showing the list at work.
+            #expect(plain.paths == ["/http.png"], "http without a list: \(plain.paths)")
+        } else {
+            #expect(plain.accepts == 0, "plaintext http connected: accepts=\(plain.accepts) paths=\(plain.paths)")
+        }
     }
 }
 
