@@ -33,6 +33,7 @@ let package = Package(
             ]
         ),
         .testTarget(name: "MarsDawnKitTests", dependencies: ["MarsDawnKit"]),
+        .testTarget(name: "MarsDawnExportTests", dependencies: ["MarsDawnExport", "MarsDawnKit"]),
         .testTarget(name: "MarsDawnCLITests", dependencies: ["marsdawn"]),
     ]
 )

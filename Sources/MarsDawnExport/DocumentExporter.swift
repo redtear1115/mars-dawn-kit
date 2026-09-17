@@ -38,7 +38,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
     /// Exporters that are still printing; a print operation doesn't retain its web view's owner.
     private static var active: Set<DocumentExporter> = []
 
-    public let webView: WKWebView
+    public let webView: PreviewWKWebView
     private let assets = DocumentAssetSchemeHandler()
     private var pageLoad: CheckedContinuation<Void, Error>?
     private let allowRemoteImages: Bool
@@ -52,7 +52,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         self.allowRemoteImages = allowRemoteImages
         let configuration = PreviewWebView.makeConfiguration(assets: assets)
         configuration.preferences.shouldPrintBackgrounds = true
-        webView = WKWebView(frame: NSRect(x: 0, y: 0, width: width, height: 1000), configuration: configuration)
+        webView = PreviewWKWebView(frame: NSRect(x: 0, y: 0, width: width, height: 1000), configuration: configuration)
         webView.appearance = NSAppearance(named: .aqua)
         super.init()
         webView.navigationDelegate = self
@@ -63,9 +63,21 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
 
     /// Loads the page and renders `markdown` into it, waiting for diagrams, images and fonts.
     public func prepare(markdown: String, theme: PreviewTheme) async throws {
+        // The network rules go on before the page loads; without them, nothing loads.
+        let rules: WKContentRuleList
+        do {
+            rules = try await PreviewContentRules.ruleList(allowRemoteImages: allowRemoteImages)
+        } catch {
+            Self.log.error("Export content rules failed to compile: \(error.localizedDescription, privacy: .public)")
+            throw ExportError.pageLoadFailed(error)
+        }
+        webView.applyContentRuleList(rules)
         try await withCheckedThrowingContinuation { continuation in
             pageLoad = continuation
-            webView.load(URLRequest(url: PreviewSchemeHandler.pageURL(theme: theme, allowRemoteImages: allowRemoteImages)))
+            let url = PreviewSchemeHandler.pageURL(theme: theme, allowRemoteImages: allowRemoteImages)
+            if webView.load(URLRequest(url: url)) == nil {
+                failPageLoad(URLError(.cancelled))
+            }
         }
         _ = try? await webView.evaluateJavaScript(PreviewWebView.themeScript(theme))
 
