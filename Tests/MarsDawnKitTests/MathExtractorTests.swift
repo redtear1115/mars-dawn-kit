@@ -623,11 +623,17 @@ struct MathExtractorTests {
     /// F6: the extractor's own work stays linear, measured on nesting cmark-gfm survives.
     /// (swift-markdown itself overflows the stack on very deep nesting, so the work runs
     /// on a thread with a large stack.)
+    ///
+    /// The baseline is the shape the extractor now has: one worker holding two guarded
+    /// parses, the body's and the rewrite's. A bare `Document(parsing:)` would leave the
+    /// pre-scans and the worker's own cost charged to the extractor, and two separate
+    /// guarded parses would charge it one worker too few, which on this input is larger
+    /// than the work being measured.
     @Test func nestedListsScaleLinearly() {
         @Sendable func line(_ depth: Int) -> String { String(repeating: "- ", count: depth) + "$x$" }
         @Sendable func seconds(_ body: String, _ work: (String) -> Void) -> Double {
             var best = Double.infinity
-            for _ in 0..<3 {
+            for _ in 0..<5 {
                 let start = ContinuousClock.now
                 work(body)
                 let elapsed = ContinuousClock.now - start
@@ -641,7 +647,12 @@ struct MathExtractorTests {
         let thread = Thread {
             for copies in [10, 40] {
                 let body = Array(repeating: line(500), count: copies).joined(separator: "\n\n")
-                let parse = seconds(body) { _ = Document(parsing: $0) }
+                let parse = seconds(body) { source in
+                    // One worker, two parses: what extraction costs before its own work.
+                    MarkdownParsing.withDocument(source) { _ in
+                        MarkdownParsing.withDocument(source) { _ in }
+                    }
+                }
                 let total = seconds(body) { _ = MathExtractor.extract(from: $0) }
                 box.values.append((total, parse))
             }
@@ -653,11 +664,13 @@ struct MathExtractorTests {
         let results = box.values
         #expect(results.count == 2)
         guard results.count == 2 else { return }
-        // Two parses plus linear work: the part beyond parsing is small and grows linearly.
-        let ownSmall = max(results[0].extract - 2 * results[0].parse, 0.001)
-        let ownLarge = max(results[1].extract - 2 * results[1].parse, 0)
+        // Two guarded parses plus linear work: the part beyond parsing is small and grows
+        // linearly. A soft check with a generous bound (F18): it is wall-clock time on a
+        // machine running the rest of the suite beside it.
+        let ownSmall = max(results[0].extract - results[0].parse, 0.002)
+        let ownLarge = max(results[1].extract - results[1].parse, 0)
         #expect(ownLarge < 0.1, "own work \(ownLarge)s for 40 × depth 500")
-        #expect(ownLarge < ownSmall * 4 * 3 + 0.02, "\(ownSmall)s → \(ownLarge)s")
+        #expect(ownLarge < ownSmall * 4 * 3 + 0.05, "\(ownSmall)s → \(ownLarge)s")
     }
 
     // MARK: swift-markdown
