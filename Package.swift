@@ -1,4 +1,4 @@
-// swift-tools-version: 6.0
+// swift-tools-version: 6.2
 import PackageDescription
 
 // Platform-neutral core shared by the macOS editor and the future iOS viewer (v3),
@@ -6,7 +6,7 @@ import PackageDescription
 let package = Package(
     name: "MarsDawnKit",
     defaultLocalization: "en",
-    platforms: [.macOS(.v14), .iOS(.v17)],
+    platforms: [.macOS(.v26), .iOS(.v17)],
     products: [
         .library(name: "MarsDawnKit", targets: ["MarsDawnKit"]),
         .library(name: "MarsDawnExport", targets: ["MarsDawnExport"]),
