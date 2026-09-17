@@ -1,6 +1,6 @@
 import Foundation
 import Markdown
-import Synchronization
+import os
 import cmark_gfm
 import cmark_gfm_extensions
 
@@ -121,7 +121,7 @@ public enum MarkdownParsing {
         }
         let qos = callerQualityOfService(qos_class_self())
         gate.acquireBlocking()
-        let result = Mutex<T?>(nil)
+        let result = OSAllocatedUnfairLock<T?>(initialState: nil)
         let done = DispatchSemaphore(value: 0)
         startWorker(qos: qos) {
             let value = parseAndRun(source, options, body)
@@ -281,7 +281,7 @@ enum CMarkDepthScan {
 final class WorkerGate: Sendable {
     typealias Action = @Sendable () -> Void
 
-    private enum Waiter {
+    private enum Waiter: Sendable {
         /// Registered, not yet submitted.
         case pending
         /// Cancelled before it was submitted.
@@ -290,7 +290,7 @@ final class WorkerGate: Sendable {
         case blocked(DispatchSemaphore)
     }
 
-    private struct State {
+    private struct State: Sendable {
         var available: Int
         var nextTicket: UInt64 = 0
         var waiters: [UInt64: Waiter] = [:]
@@ -309,19 +309,19 @@ final class WorkerGate: Sendable {
         }
     }
 
-    private enum Wake {
+    private enum Wake: Sendable {
         case start(UInt64, Action)
         case cancel(UInt64, Action)
         case signal(DispatchSemaphore)
     }
 
-    private let state: Mutex<State>
+    private let state: OSAllocatedUnfairLock<State>
     /// Called once per async job as it is started (`true`) or cancelled (`false`); tests only.
     private let onWake: (@Sendable (_ ticket: UInt64, _ started: Bool) -> Void)?
 
     init(slots: Int, onWake: (@Sendable (_ ticket: UInt64, _ started: Bool) -> Void)? = nil) {
         precondition(slots > 0)
-        state = Mutex(State(available: slots))
+        state = OSAllocatedUnfairLock(initialState: State(available: slots))
         self.onWake = onWake
     }
 

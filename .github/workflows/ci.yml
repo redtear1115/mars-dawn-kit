@@ -9,7 +9,8 @@ permissions: {}
 
 jobs:
   test:
-    runs-on: macos-15
+    # The package requires macOS 26 (and swift-tools 6.2, so Xcode 26).
+    runs-on: macos-26
     permissions:
       contents: read
     steps:
@@ -19,3 +20,15 @@ jobs:
       - run: swift --version
       - run: swift build
       - run: swift test
+
+  ios:
+    # The core library still supports iOS 17; make sure it keeps building for it.
+    runs-on: macos-26
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: xcodebuild -version
+      - run: xcodebuild -scheme MarsDawnKit -destination 'generic/platform=iOS' build
