@@ -205,6 +205,11 @@ final class RecordingServer: @unchecked Sendable {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [self] data, _, isComplete, error in
             var buffer = buffer
             if let data { buffer.append(data) }
+            // A TLS handshake on a plain listener: count the connection, then drop it.
+            if buffer.first == 0x16 {
+                connection.cancel()
+                return
+            }
             guard let end = buffer.range(of: Data("\r\n\r\n".utf8)) else {
                 if isComplete || error != nil || buffer.count > 1 << 20 {
                     connection.cancel()

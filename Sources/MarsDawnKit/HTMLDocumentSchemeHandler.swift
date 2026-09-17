@@ -54,10 +54,12 @@ public final class HTMLDocumentSchemeHandler: NSObject, WKURLSchemeHandler {
     nonisolated static let blockedCSP = "default-src 'none'; img-src marsdawn-html: data:; style-src marsdawn-html: 'unsafe-inline'; font-src marsdawn-html: data:; media-src marsdawn-html:; script-src 'none'; object-src 'none'; frame-src 'none'; child-src 'none'; worker-src 'none'; connect-src 'none'; manifest-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'"
     nonisolated static let remoteAllowedCSP = "default-src 'none'; img-src marsdawn-html: data: https:; style-src marsdawn-html: 'unsafe-inline' https:; font-src marsdawn-html: data: https:; media-src marsdawn-html: https:; script-src 'none'; object-src 'none'; frame-src 'none'; child-src 'none'; worker-src 'none'; connect-src 'none'; manifest-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'"
 
-    /// P3-9: `sandbox` directive added to the page's CSP (nil: none).
+    /// P3-9: `sandbox` directive added to the page's CSP (nil: none). Not adopted: WebKit then
+    /// refuses the app's own script in the page, which the media checks need.
     nonisolated static let documentSandboxDirective: String? = nil
-    /// P3-9: whether the remote-allowed page CSP adds `upgrade-insecure-requests`.
-    nonisolated static let upgradesInsecureRequests = false
+    /// P3-9: whether the remote-allowed page CSP adds `upgrade-insecure-requests`. Adopted: http
+    /// images, styles, fonts and media are fetched over https instead of being blocked.
+    nonisolated static let upgradesInsecureRequests = true
 
     /// The CSP header for the page.
     nonisolated static func documentCSP(allowsRemoteContent: Bool) -> String {

@@ -126,7 +126,7 @@ struct HTMLDocumentSchemeHandlerTests {
         #expect(main.status == 200)
         #expect(main.body == Data("<p>page</p>".utf8))
         #expect(main.header("Content-Type") == "text/html; charset=utf-8")
-        #expect(main.header("Content-Security-Policy") == (remote ? Self.expectedRemoteCSP : Self.expectedBlockedCSP))
+        #expect(main.header("Content-Security-Policy") == (remote ? Self.expectedRemoteCSP + "; upgrade-insecure-requests" : Self.expectedBlockedCSP))
         expectCommonHeaders(main, "page")
 
         let subresourceCSP = Self.expectedBlockedCSP + "; sandbox"
