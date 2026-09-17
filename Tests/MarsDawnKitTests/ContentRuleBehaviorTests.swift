@@ -94,14 +94,103 @@ struct ContentRuleBehaviorTests {
     }
 }
 
+/// `<link rel=preconnect>` opens a connection that the page's CSP doesn't stop, including from
+/// an `<iframe srcdoc>` that the `<link` rename can't see. The rule lists must stop both.
+/// Preconnects send no request, so these tests count accepted connections.
+@MainActor
+@Suite(.timeLimit(.minutes(1)))
+struct PreconnectRuleBehaviorTests {
+    enum Fixture: String, CaseIterable, Sendable {
+        /// A `<link rel=preconnect>` in the page itself.
+        case link
+        /// An `<iframe srcdoc>` holding the preconnect, inserted the way preview.js inserts
+        /// rendered HTML (a template's `innerHTML`, then its content moved into the page).
+        case srcdoc
+    }
+
+    enum Rules: String, CaseIterable, Sendable {
+        case none, blocked, remoteImagesAllowed
+    }
+
+    /// How long a case watches for connections. Without rules a preconnect arrives well within
+    /// this; with rules the whole window must pass without one.
+    static let window: Duration = .seconds(4)
+
+    private func accepts(_ fixture: Fixture, rules: Rules) async throws -> Int {
+        let server = try await LoopbackServer.start()
+        defer { server.stop() }
+        let target = "http://127.0.0.1:\(server.port)/"
+
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = .nonPersistent()
+        configuration.defaultWebpagePreferences.allowsContentJavaScript = true
+        switch rules {
+        case .none: break
+        case .blocked: configuration.userContentController.add(try await PreviewContentRules.ruleList(allowRemoteImages: false))
+        case .remoteImagesAllowed: configuration.userContentController.add(try await PreviewContentRules.ruleList(allowRemoteImages: true))
+        }
+        let webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 400, height: 300), configuration: configuration)
+
+        let head = fixture == .link ? "<link rel=preconnect href=\"\(target)\">" : ""
+        webView.loadHTMLString("<!doctype html><html><head>\(head)</head><body></body></html>", baseURL: nil)
+        let loadDeadline = ContinuousClock.now + .seconds(10)
+        while webView.isLoading, ContinuousClock.now < loadDeadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+
+        if fixture == .srcdoc {
+            let fragment = #"<iframe srcdoc="&lt;link rel=preconnect href=&quot;\#(target)&quot;&gt;"></iframe>"#
+            let inserted = try await webView.callAsyncJavaScript("""
+                const template = document.createElement("template");
+                template.innerHTML = fragment;
+                document.body.appendChild(template.content);
+                const frame = document.querySelector("iframe");
+                await new Promise((resolve) => { frame.onload = resolve; setTimeout(resolve, 2000); });
+                return frame.contentDocument?.querySelector("link[rel=preconnect]") ? "linked" : "missing";
+                """, arguments: ["fragment": fragment], contentWorld: .page) as? String
+            // The fixture must really have produced a preconnect link inside the frame.
+            #expect(inserted == "linked")
+        } else {
+            let linked = try await webView.evaluateJavaScript(#"document.querySelector("link[rel=preconnect]") ? "linked" : "missing""#) as? String
+            #expect(linked == "linked")
+        }
+
+        let deadline = ContinuousClock.now + Self.window
+        while ContinuousClock.now < deadline {
+            // A control can stop at its first connection; a blocked case waits out the window.
+            if rules == .none, server.accepts > 0 { break }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        return server.accepts
+    }
+
+    @Test(arguments: Fixture.allCases)
+    func withoutRulesThePreconnectConnects(_ fixture: Fixture) async throws {
+        #expect(try await accepts(fixture, rules: .none) >= 1)
+    }
+
+    @Test(arguments: Fixture.allCases)
+    func blockedRulesStopThePreconnect(_ fixture: Fixture) async throws {
+        #expect(try await accepts(fixture, rules: .blocked) == 0)
+    }
+
+    @Test(arguments: Fixture.allCases)
+    func remoteImagesRulesStillStopThePreconnect(_ fixture: Fixture) async throws {
+        #expect(try await accepts(fixture, rules: .remoteImagesAllowed) == 0)
+    }
+}
+
 /// A minimal HTTP server on 127.0.0.1 that records request paths and answers with a 1×1 PNG.
 private final class LoopbackServer: @unchecked Sendable {
     private let listener: NWListener
     private let queue = DispatchQueue(label: "LoopbackServer")
     private let lock = NSLock()
     private var recorded: Set<String> = []
+    private var acceptCount = 0
 
     var paths: Set<String> { lock.withLock { recorded } }
+    /// Connections accepted, whether or not a request followed (a preconnect sends none).
+    var accepts: Int { lock.withLock { acceptCount } }
     var port: UInt16 { listener.port?.rawValue ?? 0 }
 
     private static let png = Data(base64Encoded:
@@ -135,6 +224,7 @@ private final class LoopbackServer: @unchecked Sendable {
     }
 
     private func handle(_ connection: NWConnection) {
+        lock.withLock { acceptCount += 1 }
         connection.start(queue: queue)
         connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { [self] data, _, _, _ in
             guard let data, let request = String(data: data, encoding: .utf8),

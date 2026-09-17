@@ -97,6 +97,160 @@ struct LinkTagNeutralizationTests {
     }
 }
 
+/// Tags that create nested documents are renamed like `<link`, so an `<iframe srcdoc>` can't
+/// hide a preconnect from the rename.
+struct FrameTagNeutralizationTests {
+    static let frameTags = ["iframe", "frame", "object", "embed", "portal", "fencedframe"]
+
+    private func hasRealTag(_ html: String, _ name: String) -> Bool {
+        html.range(of: "</?\(name)[\t\n\u{0C}\r />]", options: [.regularExpression, .caseInsensitive]) != nil
+    }
+
+    @Test(arguments: frameTags)
+    func blockTagsAreRenamedInAnyCase(_ name: String) {
+        for written in [name, name.uppercased()] {
+            let html = MarkdownRenderer.render("<\(written) data-x=\"1\"></\(written)>\n")
+            #expect(html.contains("<x-md-\(name) data-x=\"1\"></x-md-\(name)>"), "\(html)")
+            #expect(!hasRealTag(html, name))
+        }
+    }
+
+    @Test(arguments: frameTags)
+    func slashWhitespaceAndClosingVariantsAreRenamed(_ name: String) {
+        let upper = name.uppercased()
+        let block = MarkdownRenderer.render("<div>\n<\(name)/src=x>\n<\(upper)\tsrc=y>\n<\(name)\nsrc=z>\n</\(upper) >\n</div>\n")
+        #expect(block.contains("<x-md-\(name)/src=x>"))
+        #expect(block.contains("<x-md-\(name)\tsrc=y>"))
+        #expect(block.contains("<x-md-\(name)\nsrc=z>"))
+        #expect(block.contains("</x-md-\(name) >"))
+        #expect(!hasRealTag(block, name))
+
+        let inline = MarkdownRenderer.render("Text <\(upper) src=\"a\"/> and </\(name)> end.")
+        #expect(inline.contains("Text <x-md-\(name) src=\"a\"/> and </x-md-\(name)> end."))
+        #expect(!hasRealTag(inline, name))
+    }
+
+    @Test func srcdocFrameIsRenamedAndItsEncodedTextKept() {
+        let source = #"<iframe srcdoc="&lt;link rel=preconnect href=&quot;https://tracker.example/&quot;&gt;"></iframe>"#
+        let html = MarkdownRenderer.render(source)
+        #expect(html.contains(#"<x-md-iframe srcdoc="&lt;link rel=preconnect href=&quot;https://tracker.example/&quot;&gt;"></x-md-iframe>"#))
+        #expect(!hasRealTag(html, "iframe"))
+    }
+
+    /// Longer tag names aren't these tags: the name must end at whitespace, `/` or `>`.
+    @Test func lookalikeTagNamesAreLeftAlone() {
+        let inline = MarkdownRenderer.render("A <iframes> <frameset> <objective> <embedded> <portals> <fencedframes> <iframe-card> </frameset> tag.")
+        #expect(inline.contains("A <iframes> <frameset> <objective> <embedded> <portals> <fencedframes> <iframe-card> </frameset> tag."))
+        #expect(!inline.contains("x-md-"))
+
+        let block = MarkdownRenderer.render("<frameset cols=\"50%\">\n</frameset>\n")
+        #expect(block.contains("<frameset cols=\"50%\">"))
+        #expect(!block.contains("x-md-"))
+    }
+
+    @Test func frameTagsInCodeStayEscaped() {
+        let span = MarkdownRenderer.render("Use `<iframe src=x>` or `<OBJECT data=y>`.")
+        #expect(span.contains("<code>&lt;iframe src=x&gt;</code>"))
+        #expect(span.contains("<code>&lt;OBJECT data=y&gt;</code>"))
+        #expect(!span.contains("x-md-"))
+
+        let fenced = MarkdownRenderer.render("```html\n<iframe srcdoc=\"x\"></iframe>\n<embed src=y>\n```\n")
+        #expect(fenced.contains("&lt;iframe srcdoc=\"x\"&gt;&lt;/iframe&gt;\n&lt;embed src=y&gt;"))
+        #expect(!fenced.contains("x-md-"))
+    }
+
+    /// Ordinary Markdown renders exactly as it did before the rename covered frame tags.
+    @Test func ordinaryMarkdownIsUnchanged() {
+        #expect(MarkdownRenderer.render(Self.sample) == Self.sampleHTML)
+    }
+
+    static let sample = #"""
+        # Mars Dawn *preview*
+        
+        A paragraph with **bold**, _emphasis_, ~~strike~~, `inline <code>`, a [link](https://example.com "Title") and an ![image](img/rover.png).
+        
+        ## Lists
+        
+        - one
+        - two with <kbd>Ctrl</kbd>
+          1. nested
+          2. items
+        
+        - [x] done
+        - [ ] todo
+        
+        > A quote with a <abbr title="frame">frame</abbr> word.
+        
+        | Feature | Frame | Object |
+        |:--|:-:|--:|
+        | iframe text | `<iframe>` | embedded |
+        
+        ```swift
+        let iframe = "<iframe src=x>"
+        ```
+        
+        ```mermaid
+        graph TD
+          A-->B
+        ```
+        
+        <details><summary>More</summary>
+        
+        Hidden <span class="x">text</span>, objective and embedded words.
+        
+        </details>
+        
+        <img src="https://example.com/a.png" alt="remote">
+
+        """#
+
+    static let sampleHTML = #"""
+        <h1 id="mars-dawn-preview" data-line="1">Mars Dawn <em>preview</em></h1>
+        <p data-line="3">A paragraph with <strong>bold</strong>, <em>emphasis</em>, <del>strike</del>, <code>inline &lt;code&gt;</code>, a <a href="https://example.com" title="Title">link</a> and an <img src="img/rover.png" alt="image">.</p>
+        <h2 id="lists" data-line="5">Lists</h2>
+        <ul class="contains-task-list" data-line="7">
+        <li data-line="7">one
+        </li>
+        <li data-line="8">two with <kbd>Ctrl</kbd>
+        <ol data-line="9">
+        <li data-line="9">nested
+        </li>
+        <li data-line="10">items
+        </li>
+        </ol>
+        </li>
+        <li class="task-list-item" data-line="12"><input type="checkbox" disabled checked> done
+        </li>
+        <li class="task-list-item" data-line="13"><input type="checkbox" disabled> todo
+        </li>
+        </ul>
+        <blockquote data-line="15">
+        <p data-line="15">A quote with a <abbr title="frame">frame</abbr> word.</p>
+        </blockquote>
+        <table data-line="17">
+        <thead>
+        <tr data-line="17"><th style="text-align:left">Feature</th><th style="text-align:center">Frame</th><th style="text-align:right">Object</th></tr>
+        </thead>
+        <tbody>
+        <tr data-line="19"><td style="text-align:left">iframe text</td><td style="text-align:center"><code>&lt;iframe&gt;</code></td><td style="text-align:right">embedded</td></tr>
+        </tbody>
+        </table>
+        <pre data-line="21"><code class="language-swift">let iframe = "&lt;iframe src=x&gt;"
+        </code></pre>
+        <div class="mermaid-block" data-line="25"><pre class="mermaid-source">graph TD
+          A--&gt;B
+        </pre></div>
+        <div class="html-block" data-line="30"><details><summary>More</summary>
+        </div>
+        <p data-line="32">Hidden <span class="x">text</span>, objective and embedded words.</p>
+        <div class="html-block" data-line="34"></details>
+        </div>
+        <div class="html-block" data-line="36"><img src="https://example.com/a.png" alt="remote">
+        </div>
+
+        """#
+}
+
 struct PreviewContentRulesTests {
     private func rules(allowRemoteImages: Bool) throws -> [[String: Any]] {
         let json = PreviewContentRules.encodedRules(allowRemoteImages: allowRemoteImages)
