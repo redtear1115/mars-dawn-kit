@@ -9,16 +9,71 @@ public enum MarkdownRenderer {
     public struct Options: Sendable {
         /// Maps an image `src` as written in the document to the URL the preview should load.
         public var resolveImageSource: @Sendable (String) -> String
+        /// Documents larger than this many UTF-8 bytes render as their escaped source.
+        /// `nil` (the default) means no limit.
+        public var maxBytes: Int?
 
-        public init(resolveImageSource: @escaping @Sendable (String) -> String = { $0 }) {
+        public init(maxBytes: Int? = nil, resolveImageSource: @escaping @Sendable (String) -> String = { $0 }) {
+            self.maxBytes = maxBytes
             self.resolveImageSource = resolveImageSource
+        }
+
+        var parseLimits: ParseLimits {
+            ParseLimits(maxBytes: maxBytes)
         }
     }
 
+    /// Why a document rendered as its escaped source instead of as Markdown.
+    public enum FallbackReason: Sendable, Equatable {
+        /// The document nests `depth` levels deep, too deep to render safely.
+        case tooDeep(depth: Int)
+        /// The document is larger than `Options.maxBytes`.
+        case tooLarge
+    }
+
+    public struct RenderResult: Sendable, Equatable {
+        public let html: String
+        /// Set when `html` is the escaped source rather than rendered Markdown.
+        public let fallback: FallbackReason?
+    }
+
+    /// Renders `markdown` to HTML. A document nested too deeply to render safely, or larger
+    /// than `options.maxBytes`, renders as its escaped source in a `pre.source-fallback`.
+    ///
+    /// Parses and renders on a parsing worker and blocks until done (see `MarkdownParsing`).
     public static func render(_ markdown: String, options: Options = Options()) -> String {
-        let document = Document(parsing: markdown)
-        var visitor = HTMLVisitor(options: options)
-        return visitor.visit(document)
+        renderResult(markdown, options: options).html
+    }
+
+    /// Like `render`, also saying whether the source fallback was used and why.
+    public static func renderResult(_ markdown: String, options: Options = Options()) -> RenderResult {
+        MarkdownParsing.withDocument(markdown, options: options.parseLimits) { outcome in
+            renderResult(outcome, source: markdown, options: options)
+        }
+    }
+
+    /// Like `render`, waiting for a parsing worker without blocking.
+    /// Returns `nil` only if the task was cancelled before rendering started.
+    public static func renderResult(_ markdown: String, options: Options = Options()) async -> RenderResult? {
+        await MarkdownParsing.withDocument(markdown, options: options.parseLimits) { outcome in
+            renderResult(outcome, source: markdown, options: options)
+        }
+    }
+
+    private static func renderResult(_ outcome: ParseOutcome, source: String, options: Options) -> RenderResult {
+        switch outcome {
+        case .document(let document):
+            var visitor = HTMLVisitor(options: options)
+            return RenderResult(html: visitor.visit(document), fallback: nil)
+        case .tooDeep(let depth):
+            return RenderResult(html: sourceFallbackHTML(source), fallback: .tooDeep(depth: depth))
+        case .tooLarge:
+            return RenderResult(html: sourceFallbackHTML(source), fallback: .tooLarge)
+        }
+    }
+
+    static func sourceFallbackHTML(_ source: String) -> String {
+        #"<pre class="source-fallback" data-line="1">"# + escapeHTML(source) + "</pre>"
     }
 }
 
