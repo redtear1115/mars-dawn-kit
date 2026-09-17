@@ -376,12 +376,20 @@
     retryImages();
   }
 
+  // Every tag in RawHTMLSafety.swift's `neutralizedRawHTMLTags`, plus `meta` (a refresh navigates)
+  // and `base` (changes how relative URLs resolve).
+  const blockedElements = "link, meta, base, iframe, frame, object, embed, portal, fencedframe";
+
   function update(html, lines) {
     if (lines) lineCount = lines;
     invalidateAnchors();
     const root = content();
     const template = document.createElement("template");
     template.innerHTML = html;
+    // Defence in depth for RawHTMLSafety.swift: drop every element that can open a connection or
+    // a nested document before anything reaches the page. Template content is inert, so none of
+    // these has loaded anything yet.
+    template.content.querySelectorAll(blockedElements).forEach((el) => el.remove());
     const incoming = [...template.content.children];
 
     // Pool existing blocks by key so unchanged ones (and their rendered diagrams) are reused.
