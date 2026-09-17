@@ -17,6 +17,11 @@ swift build
 swift test
 ```
 
+Two things that have caught people out when writing tests here:
+
+- **Don't compare exported PDFs byte for byte.** AppKit's PDF producer writes a random `/ID` into every file, and under load it sometimes tags an embedded font subset differently, so two exports of the same document are never byte-identical, on any commit. Compare the page count and the extracted text, which is what a reader sees anyway.
+- **Resolve symlinks on both sides when comparing file URLs.** `FileManager.temporaryDirectory` hands back `/var/folders/…` while enumeration reports `/private/var/folders/…`, so a test that compares a hand-built URL against one the file system produced passes under one signing mode and fails under the other.
+
 ## Command line
 
 ```sh
