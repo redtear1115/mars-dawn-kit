@@ -7,7 +7,9 @@ import Foundation
 /// - `iframe`, `frame`, `object`, `embed`, `portal`, `fencedframe`: they create nested documents
 ///   (an `<iframe srcdoc>` can hold an entity-encoded `<link>` that this rename can't see).
 ///
-/// The content rule lists block these connections too; this is a second layer.
+/// The content rule lists stop a preconnect too; for dns-prefetch that is unverified (see
+/// `PreviewContentRules`), so this rename, with preview.js's element filter behind it, is the
+/// guard for that case rather than a second layer.
 let neutralizedRawHTMLTags = ["link", "iframe", "frame", "object", "embed", "portal", "fencedframe"]
 
 /// Renames the start and end tags in `neutralizedRawHTMLTags` in raw HTML, e.g. `<iframe` to
@@ -17,13 +19,16 @@ let neutralizedRawHTMLTags = ["link", "iframe", "frame", "object", "embed", "por
 /// case, so longer names such as `<frameset>` or `<objective>` are left alone. Attributes are not
 /// parsed and other HTML is left alone. (The name predates the tags other than `link`.)
 func neutralizingLinkTags(_ html: String) -> String {
-    guard neutralizedTagHints.contains(where: { html.range(of: $0, options: .caseInsensitive) != nil }) else {
-        return html
-    }
+    // Quick skip on bytes: every match starts with '<'. (A String search here would be
+    // grapheme-aware and could miss a tag name that a combining mark has joined to its
+    // neighbour.) The pattern itself matches UTF-16 code units, not graphemes.
+    guard html.utf8.contains(UInt8(ascii: "<")) else { return html }
     let source = html as NSString
+    let matches = neutralizedTagPattern.matches(in: html, range: NSRange(location: 0, length: source.length))
+    guard !matches.isEmpty else { return html }
     var result = ""
     var copied = 0
-    for match in neutralizedTagPattern.matches(in: html, range: NSRange(location: 0, length: source.length)) {
+    for match in matches {
         let slash = source.substring(with: match.range(at: 1))
         let name = source.substring(with: match.range(at: 2)).lowercased()
         result += source.substring(with: NSRange(location: copied, length: match.range.location - copied))
@@ -33,9 +38,6 @@ func neutralizingLinkTags(_ html: String) -> String {
     result += source.substring(from: copied)
     return result
 }
-
-/// Every neutralized tag name contains one of these, for a quick skip.
-private let neutralizedTagHints = ["link", "frame", "object", "embed", "portal"]
 
 // Tag names end at tab, line feed, form feed, carriage return (normalised to a line feed), space, '/' or '>'.
 private let neutralizedTagPattern = try! NSRegularExpression(
