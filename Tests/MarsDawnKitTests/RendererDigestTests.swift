@@ -39,14 +39,16 @@ struct RendererDigestTests {
         "+", ".", "-", "x-", "<link", "</LINK ", "<iframe/", "<objective", "embed>",
     ]
 
-    /// True when F1 reads the document as front matter: line 1 is exactly `---` and a later
-    /// line is exactly `---` or `...`. Written out here rather than calling `FrontMatter`, so
-    /// the same helper can run against a pre-F1 build to take the reference digest.
+    /// True when the renderer reads the document as front matter: line 1 is exactly `---`, a
+    /// later line is exactly `---` or `...`, and at least one line between them isn't blank.
+    /// Written out here rather than calling `FrontMatter`, so the same helper can run against
+    /// a pre-front-matter build to take the reference digest.
     static func hasFrontMatter(_ document: String) -> Bool {
         var lines = document.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline)
         guard lines.first == "---" else { return false }
         lines.removeFirst()
-        return lines.contains { $0 == "---" || $0 == "..." }
+        guard let closing = lines.firstIndex(where: { $0 == "---" || $0 == "..." }) else { return false }
+        return lines[..<closing].contains { !$0.allSatisfy { $0 == " " || $0 == "\t" } }
     }
 
     static func digest(documents: Int, strings: Int) -> String {
@@ -91,7 +93,7 @@ struct RendererDigestTests {
     /// front-matter documents as ordinary Markdown.
     @Test func ordinaryOutputMatchesTheDigestBeforeFrontMatter() {
         #expect(Self.digest(documents: 4000, strings: 20000)
-            == "37663fb387df3121cd04d8cc228f57c892e162dea0d0a8a6ccc9f7cc772937cc")
+            == "c9b2044a45aa8042472808a684309c331600fa4fa979d791ffac41268b2b772f")
     }
 
     /// The skip has to be exercising something, or the digest above would prove nothing about

@@ -124,17 +124,23 @@ struct FrontMatterSplitTests {
         #expect(html.hasSuffix("<p data-line=\"4\">Text</p>\n<hr data-line=\"6\">\n<p data-line=\"8\">More</p>\n"))
     }
 
-    @Test(arguments: ["---\n---\n", "---\n---", "---\r\n...\r\n"])
-    func emptyBlock(_ text: String) throws {
+    /// A block with no content isn't front matter: it carries nothing, and treating it as
+    /// front matter would change how existing documents render. `---\n---` stays two
+    /// thematic breaks, as it always was.
+    @Test(arguments: [
+        "---\n---\n", "---\n---", "---\r\n...\r\n", "---\n\n---\n", "---\n   \n\t\n---\n", "---\r...\r",
+    ])
+    func emptyBlockIsNotFrontMatter(_ text: String) {
         let split = FrontMatter.split(text)
-        let frontMatter = try #require(split.frontMatter)
-        #expect(frontMatter.lineRange == 1...2)
-        #expect(frontMatter.rawText == "")
-        #expect(frontMatter.lines == [])
-        #expect(frontMatter.pairs == nil)
-        #expect(split.body == "")
-        #expect(split.bodyLineOffset == 2)
-        #expect(frontMatter.range == text.startIndex..<text.endIndex)
+        #expect(split.frontMatter == nil)
+        #expect(split.body == text)
+        #expect(split.bodyLineOffset == 0)
+    }
+
+    @Test func emptyBlockKeepsRenderingAsThematicBreaks() {
+        #expect(MarkdownRenderer.render("---\n---\n") == "<hr data-line=\"1\">\n<hr data-line=\"2\">\n")
+        // One non-blank line is enough to make it front matter again.
+        #expect(MarkdownRenderer.render("---\na: b\n---\n").hasPrefix(#"<details class="front-matter""#))
     }
 
     @Test(arguments: ["---\na: b\n---", "---\na: b\n---\n"])
@@ -148,8 +154,11 @@ struct FrontMatterSplitTests {
             == #"<details class="front-matter" data-line="1"><summary>Document info</summary><table><tbody><tr><th>a</th><td>b</td></tr></tbody></table></details>"# + "\n")
     }
 
-    @Test func blankLinesAloneAreNotPairs() throws {
-        #expect(try #require(FrontMatter.split("---\n\n  \n---\n").frontMatter).pairs == nil)
+    /// Blank lines alone make the block empty, so it isn't front matter at all. A block with
+    /// one non-pair line is front matter with no pairs.
+    @Test func blankLinesAloneAreNotFrontMatter() throws {
+        #expect(FrontMatter.split("---\n\n  \n---\n").frontMatter == nil)
+        #expect(try #require(FrontMatter.split("---\n\n  \nnot a pair\n---\n").frontMatter).pairs == nil)
     }
 
     @Test func nonASCIIContentSplitsOnLineBoundaries() throws {
@@ -253,9 +262,12 @@ struct FrontMatterRenderingTests {
         #expect(!html.contains("\r"))
     }
 
-    @Test func emptyBlockRendersAnEmptyPre() {
-        #expect(MarkdownRenderer.render("---\n---\n")
-            == #"<details class="front-matter" data-line="1"><summary>Document info</summary><pre></pre></details>"# + "\n")
+    /// A block whose only content is blank lines is still front matter as soon as one line
+    /// has something in it; with nothing at all it isn't (see `emptyBlockIsNotFrontMatter`).
+    @Test func blankLinesAroundContentStayInThePre() {
+        #expect(MarkdownRenderer.render("---\n\nx\n\n---\n")
+            == #"<details class="front-matter" data-line="1"><summary>Document info</summary><pre>"#
+            + "\nx\n</pre></details>\n")
     }
 
     @Test func labelComesFromTheOptionsAndIsEscaped() {
