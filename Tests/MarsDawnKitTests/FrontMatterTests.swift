@@ -193,6 +193,25 @@ struct FrontMatterKeyValueTests {
         ("plain text", nil, nil),
         (": x", nil, nil),
         ("", nil, nil),
+        // Combining marks, judged by scalar (see `keyValue(in:)`).
+        ("e\u{301}te\u{301}: x", "e\u{301}te\u{301}", "x"),     // decomposed letters
+        ("a\u{301}\u{316}\u{301}: x", "a\u{301}\u{316}\u{301}", "x"),
+        ("क्षेत्र: x", "क्षेत्र", "x"),                              // virama (Mn) and vowel sign (Mc)
+        ("ab\u{200D}c: x", "ab\u{200D}c", "x"),
+        ("2\u{20E3}: x", "2\u{20E3}", "x"),                     // enclosing mark on a digit
+        ("\u{301}a: x", nil, nil),                              // mark first
+        ("_\u{301}: x", nil, nil),                              // mark on "_"
+        ("a-\u{301}: x", nil, nil),                             // mark on "-"
+        ("a.\u{301}b: x", nil, nil),                            // mark on "."
+        ("a \u{301}b: x", nil, nil),                            // mark on a space
+        ("\u{200D}a: x", nil, nil),
+        ("a\u{0600}: x", nil, nil),                             // Prepend scalar before ":"
+        ("a\u{0600}:x", nil, nil),
+        ("a:\u{301} x", nil, nil),                              // mark straight after ":"
+        ("a: \u{301}v", "a", "\u{301}v"),                       // value may start with a mark
+        ("a: v \u{301}", "a", "v \u{301}"),
+        ("a\u{0}: x", nil, nil),
+        ("a: x\u{0}y", "a", "x\u{0}y"),
     ] as [(line: String, key: String?, value: String?)])
     func keyValueRule(_ testCase: (line: String, key: String?, value: String?)) {
         let pair = FrontMatter.keyValue(in: testCase.line)
@@ -291,6 +310,47 @@ struct FrontMatterRenderingTests {
             #expect(block.components(separatedBy: "</details>").count == 2)
             #expect(html.components(separatedBy: "</details>").count == 2)
         }
+    }
+
+    @Test func nulBecomesAReplacementCharacter() {
+        let table = MarkdownRenderer.render("---\na: b\u{0}c\n---\n", options: .init(frontMatterLabel: "L\u{0}"))
+        #expect(table.contains("<summary>L\u{FFFD}</summary>"))
+        #expect(table.contains("<td>b\u{FFFD}c</td>"))
+        #expect(!table.utf8.contains(0))
+
+        let pre = MarkdownRenderer.render("---\n\u{0}<x>\u{0}\n---\nBody \u{0}\n")
+        #expect(pre.contains("<pre>\u{FFFD}&lt;x&gt;\u{FFFD}</pre>"))
+        #expect(pre.contains("<p data-line=\"4\">Body \u{FFFD}</p>"))  // cmark does the same
+        #expect(!pre.utf8.contains(0))
+
+        // The split itself keeps the text as written.
+        #expect(FrontMatter.split("---\na: \u{0}\n---\n").frontMatter?.pairs?.first?.value == "\u{0}")
+    }
+
+    /// Documented: the body is parsed on its own, so a U+FEFF right after the closing
+    /// delimiter is dropped as a byte order mark instead of rendering as text.
+    @Test func byteOrderMarkStartingTheBodyIsDropped() {
+        let html = MarkdownRenderer.render("---\na: b\n---\n\u{FEFF}Text\n")
+        #expect(html.hasSuffix("<p data-line=\"4\">Text</p>\n"))
+        #expect(!html.unicodeScalars.contains("\u{FEFF}"))
+        // In place (padded), the same character would have been text.
+        #expect(MarkdownRenderer.render("\n\n\n\u{FEFF}Text\n").unicodeScalars.contains("\u{FEFF}"))
+        // Anywhere later in the body it is kept.
+        #expect(MarkdownRenderer.render("---\na: b\n---\nA\u{FEFF}B\n").unicodeScalars.contains("\u{FEFF}"))
+    }
+
+    /// `escapeHTML` compares `Character`s, so a Prepend scalar (U+0600) fuses with the "<"
+    /// after it and the "<" goes out unescaped. The fix lands on kit main separately; this
+    /// starts failing as "known issue not recorded" once F1 is rebased onto it, and the
+    /// `withKnownIssue` wrapper should then be removed.
+    @Test func prependScalarBeforeALessThanSign() {
+        let html = MarkdownRenderer.render("---\na: \u{0600}<script>alert(1)</script>\n---\n")
+        let block = html as NSString
+        withKnownIssue("escapeHTML skips a \"<\" fused with a Prepend scalar (hotfix pending on kit main)") {
+            #expect(block.range(of: "<script").location == NSNotFound)
+        }
+        // Either way the value went through the shared escaper: the closing tag is escaped.
+        #expect(block.range(of: "&lt;/script&gt;").location != NSNotFound)
     }
 
     @Test func frontMatterIsNotParsedAsMarkdown() {

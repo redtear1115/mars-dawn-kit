@@ -87,6 +87,10 @@ public enum MarkdownRenderer {
 
     /// A document split into its front matter, rendered up front (it is never parsed as
     /// Markdown), and the body to parse.
+    ///
+    /// The body is parsed on its own, so cmark treats its start as a document start: a
+    /// U+FEFF right after the closing delimiter is dropped as a byte order mark, where it
+    /// would otherwise have been text. Everything else matches parsing the body in place.
     private struct SplitSource: Sendable {
         /// The rendered front matter, or "" when there is none.
         let frontMatterHTML: String
@@ -144,18 +148,29 @@ public enum MarkdownRenderer {
     /// the document or the label is escaped text: no links, no markup, no attributes.
     static func frontMatterHTML(_ frontMatter: FrontMatter, label: String) -> String {
         var html = #"<details class="front-matter" data-line=""# + String(frontMatter.lineRange.lowerBound)
-            + #""><summary>"# + escapeHTML(label) + "</summary>"
+            + #""><summary>"# + frontMatterText(label) + "</summary>"
         if let pairs = frontMatter.pairs {
             html += "<table><tbody>"
             for pair in pairs {
-                html += "<tr><th>" + escapeHTML(pair.key) + "</th><td>" + escapeHTML(pair.value) + "</td></tr>"
+                html += "<tr><th>" + frontMatterText(pair.key) + "</th><td>" + frontMatterText(pair.value) + "</td></tr>"
             }
             html += "</tbody></table>"
         } else {
-            html += "<pre>" + escapeHTML(frontMatter.lines.joined(separator: "\n")) + "</pre>"
+            html += "<pre>" + frontMatterText(frontMatter.lines.joined(separator: "\n")) + "</pre>"
         }
         return html + "</details>\n"
 >>>>>>> 70bd13a (Show YAML front matter as a collapsed Document info block)
+    }
+
+    /// Escaped text for the front-matter block, through the shared `escapeHTML`. NUL becomes
+    /// U+FFFD first, as cmark does for the Markdown body, so no raw NUL reaches the page.
+    private static func frontMatterText(_ text: String) -> String {
+        guard text.utf8.contains(0) else { return escapeHTML(text) }
+        var scalars = String.UnicodeScalarView()
+        for scalar in text.unicodeScalars {
+            scalars.append(scalar == "\u{0}" ? "\u{FFFD}" : scalar)
+        }
+        return escapeHTML(String(scalars))
     }
 }
 
