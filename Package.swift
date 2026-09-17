@@ -6,7 +6,7 @@ import PackageDescription
 let package = Package(
     name: "MarsDawnKit",
     defaultLocalization: "en",
-    platforms: [.macOS(.v26), .iOS(.v17)],
+    platforms: [.macOS(.v15), .iOS(.v17)],
     products: [
         .library(name: "MarsDawnKit", targets: ["MarsDawnKit"]),
         .library(name: "MarsDawnExport", targets: ["MarsDawnExport"]),
