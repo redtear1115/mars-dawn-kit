@@ -87,7 +87,9 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
             throw ExportError.pageLoadFailed(error)
         }
         webView.applyContentRuleList(rules)
-        templateSignpost = Self.signposter.beginInterval("template")
+        // Its own id, not the exclusive one: two exports, or an export during a preview load,
+        // would otherwise report one tangled "template" interval instead of two.
+        templateSignpost = Self.signposter.beginInterval("template", id: Self.signposter.makeSignpostID())
         try await withCheckedThrowingContinuation { continuation in
             pageLoad = continuation
             let url = PreviewSchemeHandler.pageURL(theme: theme, allowRemoteImages: allowRemoteImages)
