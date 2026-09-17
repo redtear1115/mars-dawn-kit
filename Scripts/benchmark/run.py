@@ -193,6 +193,11 @@ MAX_RSS_RE = re.compile(r"^\s*(\d+)\s+maximum resident set size", re.MULTILINE)
 FOOTPRINT_RE = re.compile(r"^\s*(\d+)\s+peak memory footprint", re.MULTILINE)
 
 
+# Generous ceiling for one export. The 10 MB cell has been observed to take several
+# minutes; this exists only to stop a genuinely hung process, not to bound normal runs.
+EXPORT_TIMEOUT_SECONDS = 1800
+
+
 def run_one_export(binary_path, input_path, output_pdf):
     cmd = [
         "/usr/bin/time", "-l",
@@ -202,7 +207,22 @@ def run_one_export(binary_path, input_path, output_pdf):
         "--force", "--json",
     ]
     start = time.perf_counter()
-    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=EXPORT_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired as exc:
+        elapsed = time.perf_counter() - start
+        return {
+            "ok": False,
+            "elapsed_seconds": elapsed,
+            "returncode": None,
+            "peak_rss_bytes": None,
+            "peak_memory_footprint_bytes": None,
+            "pages": None,
+            "diagram_errors": None,
+            "json": None,
+            "parse_error": None,
+            "stderr_tail": f"timed out after {EXPORT_TIMEOUT_SECONDS}s: {exc}",
+        }
     elapsed = time.perf_counter() - start
 
     rss_match = MAX_RSS_RE.search(proc.stderr)
@@ -331,7 +351,7 @@ def build_fallback_probe():
 def check_fallback_boundary(probe_binary, dense_input, sentinel):
     proc = subprocess.run(
         [str(probe_binary), str(dense_input)],
-        capture_output=True, text=True, timeout=120,
+        capture_output=True, text=True, timeout=600,
     )
     if proc.returncode != 0:
         return {"status": "inconclusive", "detail": f"probe exited {proc.returncode}: {proc.stderr.strip()[:500]}"}
