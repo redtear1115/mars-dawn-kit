@@ -33,6 +33,18 @@ public struct ParseLimits: Sendable, Equatable {
     ///   level because of inlining, so 64 MB is a 32x margin (it would hold about 8,000 levels).
     /// Both are well past the required 4x. Bodies with bigger frames per level (walkers,
     /// rewriters) eat into that margin, so re-measure when adding one.
+    ///
+    /// Re-measured 2026-09-18 (same machine), when `TextStatistics`, `DocumentOutline` and
+    /// `MathExtractor` moved onto the worker, by `StackMarginTests`: it paints the worker's
+    /// unused stack and reads back how far the deepest call reached, which is a direct
+    /// measurement rather than a search, and lands within a frame of the numbers above.
+    /// The deepest accepted input of each shape, with math, a heading and a table appended:
+    /// - DEBUG: 377-421 KB for the renderer alone, 382-425 KB with all four; margin 154x.
+    /// - Release: 232-2,040 KB alone, 234-2,042 KB with all four; margin 32.1x.
+    /// The three new walkers add 1-5 KB, not a multiple: the outline's walk and the
+    /// extractor's are explicit-stack, the statistics visitor recurses but with smaller
+    /// frames than `HTMLVisitor`, and the deepest call is still swift-markdown's own
+    /// recursive conversion of the cmark tree.
     public static let depthCeiling = 256
 
     /// Documents whose tree (the document node counts as 1) plus two levels of headroom
@@ -136,6 +148,7 @@ public enum MarkdownParsing {
         _ source: String,
         options: ParseLimits,
         gate: WorkerGate,
+        stackSize: Int = workerStackSize,
         _ body: @escaping @Sendable (ParseOutcome) -> T
     ) -> T {
         if isOnWorker {
@@ -145,7 +158,7 @@ public enum MarkdownParsing {
         gate.acquireBlocking()
         let result = OSAllocatedUnfairLock<T?>(initialState: nil)
         let done = DispatchSemaphore(value: 0)
-        startWorker(qos: qos) {
+        startWorker(qos: qos, stackSize: stackSize) {
             let value = parseAndRun(source, options, body)
             result.withLock { $0 = value }
             gate.release()
@@ -224,14 +237,20 @@ public enum MarkdownParsing {
         return .document(Document(parsing: source))
     }
 
-    private static func startWorker(qos: QualityOfService, _ work: @escaping @Sendable () -> Void) {
+    /// `stackSize` is `workerStackSize` everywhere but `StackMarginTests`, which asks for a
+    /// smaller worker to check that the deepest accepted input survives one.
+    private static func startWorker(
+        qos: QualityOfService,
+        stackSize: Int = workerStackSize,
+        _ work: @escaping @Sendable () -> Void
+    ) {
         let thread = Thread {
             // Any non-nil value marks the thread; nothing is ever read through it.
             pthread_setspecific(workerKey, UnsafeRawPointer(bitPattern: 1))
             work()
         }
         thread.name = "MarsDawnKit.MarkdownParsing"
-        thread.stackSize = workerStackSize
+        thread.stackSize = stackSize
         thread.qualityOfService = qos
         thread.start()
     }
