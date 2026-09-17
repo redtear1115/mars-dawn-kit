@@ -99,15 +99,24 @@ public final class HTMLDocumentSchemeHandler: NSObject, WKURLSchemeHandler {
         }
     }
 
+    /// Identifies one request for as long as the handler lives. It is never an address: WebKit
+    /// frees a stopped task, and the next task can be allocated at the same one.
+    private struct RequestID: Hashable {
+        let value: UInt64
+    }
+
     private struct QueuedRead {
-        let id: ObjectIdentifier
+        let id: RequestID
         let start: () -> Void
     }
 
     let limits: Limits
     private var session: Session?
+    /// Counts every request this handler has started. It never restarts, so an identifier is
+    /// unique for the handler's whole life, across load sessions included.
+    private var requestsStarted: UInt64 = 0
     /// Requests being read or waiting to be; a stopped request is removed and never answered.
-    private var activeTasks: [ObjectIdentifier: any WKURLSchemeTask] = [:]
+    private var activeTasks: [RequestID: any WKURLSchemeTask] = [:]
     private var waitingReads: [QueuedRead] = []
     private var runningReads = 0
     private let readQueue = DispatchQueue(label: "dev.southern-light.marsdawn.html-document", qos: .userInitiated, attributes: .concurrent)
@@ -355,7 +364,8 @@ public final class HTMLDocumentSchemeHandler: NSObject, WKURLSchemeHandler {
             return
         }
 
-        let id = ObjectIdentifier(urlSchemeTask)
+        requestsStarted += 1
+        let id = RequestID(value: requestsStarted)
         activeTasks[id] = urlSchemeTask
         let reader = session.reader
         let limits = limits
@@ -383,9 +393,14 @@ public final class HTMLDocumentSchemeHandler: NSObject, WKURLSchemeHandler {
     }
 
     public func webView(_ webView: WKWebView, stop urlSchemeTask: any WKURLSchemeTask) {
-        let id = ObjectIdentifier(urlSchemeTask)
-        activeTasks[id] = nil
-        waitingReads.removeAll { $0.id == id }
+        // Requests are keyed by the handler's own counter, so this one is found by identity.
+        // `activeTasks` holds a strong reference to every request it keys, so no two entries can
+        // share an address and this finds exactly the request being stopped.
+        let stopped = activeTasks.filter { $0.value === urlSchemeTask }.map(\.key)
+        for id in stopped {
+            activeTasks[id] = nil
+            waitingReads.removeAll { $0.id == id }
+        }
     }
 
     private func startRead(_ work: QueuedRead, components: [String]) {
@@ -396,13 +411,20 @@ public final class HTMLDocumentSchemeHandler: NSObject, WKURLSchemeHandler {
         work.start()
     }
 
-    private func finishRead(id: ObjectIdentifier, session: Session, components: [String], type: ServedFileType.Entry, result: Result<Reply, ScopedFileReader.Failure>) {
+    private func finishRead(id: RequestID, session: Session, components: [String], type: ServedFileType.Entry, result: Result<Reply, ScopedFileReader.Failure>) {
         runningReads -= 1
         while runningReads < limits.concurrentReads, !waitingReads.isEmpty {
             let next = waitingReads.removeFirst()
             if activeTasks[next.id] != nil { next.start() }
         }
+        // A stopped request is gone from `activeTasks` and is never answered.
         guard let task = activeTasks.removeValue(forKey: id) else { return }
+        // The read belongs to the load session that started it. `beginLoad` has run since, so
+        // these bytes were read for a page that is no longer on screen: fail instead of serving.
+        guard let current = self.session, current === session else {
+            refuse(task, components: components, reason: "stale session")
+            return
+        }
         switch result {
         case .failure(let failure):
             task.didFailWithError(URLError(failure == .notFound ? .fileDoesNotExist : .noPermissionsToReadFile))

@@ -520,6 +520,72 @@ struct HTMLDocumentSchemeHandlerTests {
         #expect(handler.readLog == [["site", "pages", "img", "a.png"], ["site", "pages", "img", "a.png"], ["site", "pages", "%2F.png"]])
     }
 
+    /// D2: WebKit stops a task, the handler drops its only reference, and the next task can be
+    /// allocated at that address. Keyed by `ObjectIdentifier`, the stopped read then answered the
+    /// new task with the wrong file: with real allocations the identity was reused in 598 of 600
+    /// iterations, and 278 new tasks received bytes that were read for a request WebKit had
+    /// already stopped. Requests are keyed by a per-handler counter now, so the stopped read's
+    /// answer finds nothing and is dropped.
+    @Test func aStoppedReadCannotAnswerTheNextTaskAtItsAddress() async throws {
+        let tree = try makeTree()
+        defer { try? FileManager.default.removeItem(at: tree.root) }
+        let stoppedFile = Data(repeating: UInt8(ascii: "A"), count: 64 << 10)
+        let nextFile = Data(repeating: UInt8(ascii: "B"), count: 17)
+        try stoppedFile.write(to: tree.url("site/pages/img/a.png"))
+        try nextFile.write(to: tree.url("site/shared/logo.png"))
+
+        for attempt in 1...5 {
+            let handler = Handler()
+            let page = try begin(handler, tree)
+            func task(_ path: String) -> FakeSchemeTask {
+                FakeSchemeTask(url: URL(string: "\(Handler.scheme)://\(page.host()!)\(path)")!)
+            }
+            // The stopped task is released as this returns, so the next allocation can take its
+            // address. Its read is still in flight: nothing here yields the main actor, so the
+            // read's answer can't be delivered before the next request has started.
+            func startAndStop() -> ObjectIdentifier {
+                let stopped = task("/%2F/%2F/img/a.png")
+                handler.webView(webView, start: stopped)
+                handler.webView(webView, stop: stopped)
+                return ObjectIdentifier(stopped)
+            }
+            let stoppedIdentity = startAndStop()
+            let next = task("/%2F/shared/logo.png")
+            guard ObjectIdentifier(next) == stoppedIdentity else {
+                if attempt == 5 { Issue.record("the allocator never reused the stopped task's address") }
+                continue
+            }
+            handler.webView(webView, start: next)
+            try await waitUntil(timeout: .seconds(5)) { next.done }
+            try await Task.sleep(for: .milliseconds(200))
+
+            #expect(next.status == 200)
+            #expect(next.body == nextFile)
+            #expect(next.body != stoppedFile)
+            // Both files were read; only the one that is still wanted was answered.
+            #expect(handler.readLog == [["site", "pages", "img", "a.png"], ["site", "shared", "logo.png"]])
+            #expect(handler.requestLog == [.init(components: ["site", "shared", "logo.png"], outcome: .served(status: 200, bytes: nextFile.count))])
+            return
+        }
+    }
+
+    /// A read that finishes after `beginLoad` has started another session belongs to a page that
+    /// is gone. Its bytes were read in the old session's scope, so they are not served.
+    @Test func aReadFromAnOldSessionIsNotServed() async throws {
+        let tree = try makeTree()
+        defer { try? FileManager.default.removeItem(at: tree.root) }
+        let handler = Handler()
+        let page = try begin(handler, tree)
+        let task = FakeSchemeTask(url: URL(string: "\(Handler.scheme)://\(page.host()!)/%2F/%2F/img/a.png")!)
+        // Started, then the session is swapped before the read's answer can be delivered.
+        handler.webView(webView, start: task)
+        _ = try begin(handler, tree)
+        try await waitUntil(timeout: .seconds(5)) { task.done }
+        #expect(task.error != nil)
+        #expect(task.response == nil)
+        #expect(handler.requestLog.last?.outcome == .refused("stale session"))
+    }
+
     // MARK: WebKit resolution
 
     /// WebKit must keep the raw `%2F` segments when it resolves relative references, so each
