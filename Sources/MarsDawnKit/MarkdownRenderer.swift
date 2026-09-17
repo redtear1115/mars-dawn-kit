@@ -5,6 +5,11 @@ import Markdown
 ///
 /// Every block element carries a `data-line` attribute (1-based source line) so the
 /// preview can be diffed incrementally and scroll-synced with the editor.
+///
+/// Front matter (see `FrontMatter`) is not parsed as Markdown. It renders first, as a
+/// collapsed `details.front-matter` block holding a table of its `key: value` pairs or its
+/// escaped text, and the body's `data-line` values stay file line numbers. Print and PDF
+/// export hide the block (preview.css).
 public enum MarkdownRenderer {
     public struct Options: Sendable {
         /// Maps an image `src` as written in the document to the URL the preview should load.
@@ -14,14 +19,19 @@ public enum MarkdownRenderer {
         public var maxBytes: Int?
         /// Documents with more nodes than this render as their escaped source.
         public var maxNodes: Int
+        /// The summary of the front-matter block. Rendered as escaped text; the app passes a
+        /// localised string.
+        public var frontMatterLabel: String
 
         public init(
             maxBytes: Int? = nil,
             maxNodes: Int = ParseLimits.defaultMaxNodes,
+            frontMatterLabel: String = "Document info",
             resolveImageSource: @escaping @Sendable (String) -> String = { $0 }
         ) {
             self.maxBytes = maxBytes
             self.maxNodes = maxNodes
+            self.frontMatterLabel = frontMatterLabel
             self.resolveImageSource = resolveImageSource
         }
 
@@ -46,8 +56,10 @@ public enum MarkdownRenderer {
         public let fallback: FallbackReason?
     }
 
-    /// Renders `markdown` to HTML. A document nested too deeply to render safely, or larger
-    /// than `options.maxBytes`, renders as its escaped source in a `pre.source-fallback`.
+    /// Renders `markdown` to HTML. A document larger than `options.maxBytes` renders as its
+    /// escaped source in a `pre.source-fallback`. So does a document nested too deeply to
+    /// render safely, except that its front matter, if any, still renders as usual and the
+    /// fallback holds only the body.
     ///
     /// Parses and renders on a parsing worker and blocks until done (see `MarkdownParsing`).
     public static func render(_ markdown: String, options: Options = Options()) -> String {
@@ -56,40 +68,108 @@ public enum MarkdownRenderer {
 
     /// Like `render`, also saying whether the source fallback was used and why.
     public static func renderResult(_ markdown: String, options: Options = Options()) -> RenderResult {
-        MarkdownParsing.withDocument(markdown, options: options.parseLimits) { outcome in
-            renderResult(outcome, source: markdown, options: options)
+        if let tooLarge = tooLargeResult(markdown, options: options) { return tooLarge }
+        let split = SplitSource(markdown, options: options)
+        return MarkdownParsing.withDocument(split.body, options: options.parseLimits) { outcome in
+            renderResult(outcome, split: split, options: options)
         }
     }
 
     /// Like `render`, waiting for a parsing worker without blocking.
     /// Returns `nil` only if the task was cancelled before rendering started.
     public static func renderResult(_ markdown: String, options: Options = Options()) async -> RenderResult? {
-        await MarkdownParsing.withDocument(markdown, options: options.parseLimits) { outcome in
-            renderResult(outcome, source: markdown, options: options)
+        if let tooLarge = tooLargeResult(markdown, options: options) { return tooLarge }
+        let split = SplitSource(markdown, options: options)
+        return await MarkdownParsing.withDocument(split.body, options: options.parseLimits) { outcome in
+            renderResult(outcome, split: split, options: options)
         }
     }
 
-    private static func renderResult(_ outcome: ParseOutcome, source: String, options: Options) -> RenderResult {
+    /// A document split into its front matter, rendered up front (it is never parsed as
+    /// Markdown), and the body to parse.
+    ///
+    /// The body is parsed on its own, so cmark treats its start as a document start: a
+    /// U+FEFF right after the closing delimiter is dropped as a byte order mark, where it
+    /// would otherwise have been text. Everything else matches parsing the body in place.
+    private struct SplitSource: Sendable {
+        /// The rendered front matter, or "" when there is none.
+        let frontMatterHTML: String
+        let body: String
+        let bodyLineOffset: Int
+
+        init(_ markdown: String, options: Options) {
+            let (frontMatter, body, offset) = FrontMatter.split(markdown)
+            if let frontMatter {
+                frontMatterHTML = MarkdownRenderer.frontMatterHTML(frontMatter, label: options.frontMatterLabel)
+                self.body = String(body)
+            } else {
+                frontMatterHTML = ""
+                self.body = markdown
+            }
+            bodyLineOffset = offset
+        }
+    }
+
+    /// The byte limit applies to the whole file, front matter included. A file over it isn't
+    /// split or parsed at all, and the fallback holds the whole source.
+    private static func tooLargeResult(_ markdown: String, options: Options) -> RenderResult? {
+        guard let maxBytes = options.parseLimits.maxBytes, markdown.utf8.count > maxBytes else { return nil }
+        return RenderResult(html: sourceFallbackHTML(markdown), fallback: .tooLarge)
+    }
+
+    private static func renderResult(_ outcome: ParseOutcome, split: SplitSource, options: Options) -> RenderResult {
         switch outcome {
         case .document(let document):
-            var visitor = HTMLVisitor(options: options)
-            return RenderResult(html: visitor.visit(document), fallback: nil)
+            var visitor = HTMLVisitor(options: options, lineOffset: split.bodyLineOffset)
+            return RenderResult(html: split.frontMatterHTML + visitor.visit(document), fallback: nil)
         case .tooDeep(let depth):
-            return sourceFallback(source, reason: .tooDeep(depth: depth))
+            return sourceFallback(split, reason: .tooDeep(depth: depth))
         case .tooLarge:
-            return sourceFallback(source, reason: .tooLarge)
+            // Not expected: the whole file was checked first, and the body is no larger.
+            return sourceFallback(split, reason: .tooLarge)
         case .tooComplex:
-            return sourceFallback(source, reason: .tooComplex)
+            return sourceFallback(split, reason: .tooComplex)
         }
     }
 
     /// The one fallback for every document that isn't rendered; only the reason differs.
-    private static func sourceFallback(_ source: String, reason: FallbackReason) -> RenderResult {
-        RenderResult(html: sourceFallbackHTML(source), fallback: reason)
+    /// Front matter still renders, and the body keeps its file line numbers.
+    private static func sourceFallback(_ split: SplitSource, reason: FallbackReason) -> RenderResult {
+        let fallback = sourceFallbackHTML(split.body, firstLine: split.bodyLineOffset + 1)
+        return RenderResult(html: split.frontMatterHTML + fallback, fallback: reason)
     }
 
-    static func sourceFallbackHTML(_ source: String) -> String {
-        #"<pre class="source-fallback" data-line="1">"# + escapeHTML(source) + "</pre>"
+    static func sourceFallbackHTML(_ source: String, firstLine: Int = 1) -> String {
+        #"<pre class="source-fallback" data-line=""# + String(firstLine) + #"">"# + escapeHTML(source) + "</pre>"
+    }
+
+    /// `<details class="front-matter" data-line="1"><summary>label</summary>`, then a table
+    /// of the pairs or a `<pre>` of the inner lines, then `</details>`. Everything taken from
+    /// the document or the label is escaped text: no links, no markup, no attributes.
+    static func frontMatterHTML(_ frontMatter: FrontMatter, label: String) -> String {
+        var html = #"<details class="front-matter" data-line=""# + String(frontMatter.lineRange.lowerBound)
+            + #""><summary>"# + frontMatterText(label) + "</summary>"
+        if let pairs = frontMatter.pairs {
+            html += "<table><tbody>"
+            for pair in pairs {
+                html += "<tr><th>" + frontMatterText(pair.key) + "</th><td>" + frontMatterText(pair.value) + "</td></tr>"
+            }
+            html += "</tbody></table>"
+        } else {
+            html += "<pre>" + frontMatterText(frontMatter.lines.joined(separator: "\n")) + "</pre>"
+        }
+        return html + "</details>\n"
+    }
+
+    /// Escaped text for the front-matter block, through the shared `escapeHTML`. NUL becomes
+    /// U+FFFD first, as cmark does for the Markdown body, so no raw NUL reaches the page.
+    private static func frontMatterText(_ text: String) -> String {
+        guard text.utf8.contains(0) else { return escapeHTML(text) }
+        var scalars = String.UnicodeScalarView()
+        for scalar in text.unicodeScalars {
+            scalars.append(scalar == "\u{0}" ? "\u{FFFD}" : scalar)
+        }
+        return escapeHTML(String(scalars))
     }
 }
 
@@ -97,11 +177,14 @@ public enum MarkdownRenderer {
 
 private struct HTMLVisitor: MarkupVisitor {
     let options: MarkdownRenderer.Options
+    /// Source lines before the parsed text (the front matter), added to every `data-line`.
+    let lineOffset: Int
     private var usedSlugs: [String: Int] = [:]
     private var tightListStack: [Bool] = []
 
-    init(options: MarkdownRenderer.Options) {
+    init(options: MarkdownRenderer.Options, lineOffset: Int) {
         self.options = options
+        self.lineOffset = lineOffset
     }
 
     mutating func defaultVisit(_ markup: any Markup) -> String {
@@ -118,7 +201,7 @@ private struct HTMLVisitor: MarkupVisitor {
 
     private func lineAttribute(_ markup: any Markup) -> String {
         guard let line = markup.range?.lowerBound.line else { return "" }
-        return " data-line=\"\(line)\""
+        return " data-line=\"\(line + lineOffset)\""
     }
 
     // MARK: Blocks

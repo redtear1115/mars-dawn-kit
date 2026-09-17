@@ -39,6 +39,16 @@ struct RendererDigestTests {
         "+", ".", "-", "x-", "<link", "</LINK ", "<iframe/", "<objective", "embed>",
     ]
 
+    /// True when F1 reads the document as front matter: line 1 is exactly `---` and a later
+    /// line is exactly `---` or `...`. Written out here rather than calling `FrontMatter`, so
+    /// the same helper can run against a pre-F1 build to take the reference digest.
+    static func hasFrontMatter(_ document: String) -> Bool {
+        var lines = document.split(omittingEmptySubsequences: false, whereSeparator: \.isNewline)
+        guard lines.first == "---" else { return false }
+        lines.removeFirst()
+        return lines.contains { $0 == "---" || $0 == "..." }
+    }
+
     static func digest(documents: Int, strings: Int) -> String {
         var rng = SplitMix64(state: 0x0D15_EA5E)
         var hasher = SHA256()
@@ -55,6 +65,8 @@ struct RendererDigestTests {
             for _ in 0..<Int.random(in: 1...40, using: &rng) {
                 document += pieces.randomElement(using: &rng)!
             }
+            // Front matter is the one group F1 is allowed to change; FrontMatterTests cover it.
+            guard !Self.hasFrontMatter(document) else { continue }
             feed(MarkdownRenderer.render(document))
             feed(MarkdownRenderer.render(document, options: options))
         }
@@ -74,8 +86,37 @@ struct RendererDigestTests {
         return hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }
 
-    @Test func ordinaryOutputMatchesTheDigestFrom0_2_0() {
+    /// Taken on kit main 851b564, the commit before F1, with this same corpus and skip rule.
+    /// The 0.2.0 value it replaces was e9ee39be…3b7ef, over a corpus that still rendered
+    /// front-matter documents as ordinary Markdown.
+    @Test func ordinaryOutputMatchesTheDigestBeforeFrontMatter() {
         #expect(Self.digest(documents: 4000, strings: 20000)
-            == "e9ee39be8279bf44fc90ed51505aa423bf10c1ca27adae9f82a68dad3af3b7ef")
+            == "37663fb387df3121cd04d8cc228f57c892e162dea0d0a8a6ccc9f7cc772937cc")
+    }
+
+    /// The skip has to be exercising something, or the digest above would prove nothing about
+    /// front matter being the only change. Only a handful of generated documents happen to
+    /// start with `---`, so nearly the whole corpus still guards ordinary output;
+    /// `FrontMatterTests` is what covers front matter itself.
+    @Test func theCorpusContainsFrontMatterDocuments() {
+        var rng = SplitMix64(state: 0x0D15_EA5E)
+        var skipped = 0
+        for _ in 0..<4000 {
+            var document = ""
+            for _ in 0..<Int.random(in: 1...40, using: &rng) {
+                document += Self.pieces.randomElement(using: &rng)!
+            }
+            if Self.hasFrontMatter(document) { skipped += 1 }
+        }
+        #expect(skipped > 0)
+        // The helper agrees with the real splitter on every generated document.
+        var check = SplitMix64(state: 0x0D15_EA5E)
+        for _ in 0..<4000 {
+            var document = ""
+            for _ in 0..<Int.random(in: 1...40, using: &check) {
+                document += Self.pieces.randomElement(using: &check)!
+            }
+            #expect(Self.hasFrontMatter(document) == (FrontMatter.split(document).frontMatter != nil))
+        }
     }
 }

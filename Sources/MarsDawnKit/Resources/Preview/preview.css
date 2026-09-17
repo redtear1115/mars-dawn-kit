@@ -96,6 +96,47 @@ pre {
 }
 /* Documents nested too deeply to render safely show their escaped source instead. */
 .source-fallback { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* Front matter: a quiet, collapsed "Document info" block. Preview only: print and PDF
+   export leave it out. */
+.front-matter {
+  margin: 0 0 1.4em;
+  padding: 6px 14px;
+  background: color-mix(in srgb, var(--surface), var(--bg) 35%);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--muted);
+  font-size: 0.85em;
+}
+.front-matter > summary {
+  cursor: pointer;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  user-select: none;
+}
+.front-matter[open] > summary { margin-bottom: 6px; }
+.front-matter table { margin: 0 0 6px; }
+/* `details.` outranks the per-theme `th`/`td` rules further down. */
+details.front-matter th, details.front-matter td {
+  border: 0;
+  border-top: 1px solid var(--border);
+  padding: 3px 14px 3px 0;
+  vertical-align: top;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+details.front-matter th { background: transparent; color: var(--muted); font-weight: 600; white-space: nowrap; }
+details.front-matter td { color: var(--fg); }
+.front-matter pre {
+  margin: 0 0 6px;
+  padding: 8px 10px;
+  background: transparent;
+  border: 1px dashed var(--border);
+  font: 0.95em var(--font-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+@media print { .front-matter { display: none !important; } }
 pre code {
   display: block;
   background: transparent;
