@@ -38,15 +38,25 @@ jobs:
       - run: swift --version
       - run: swift build
       # TEMPORARY diagnostics for PR #22; removed before merge.
-      - name: "Diagnostics: runner and resource bundle"
+      - name: "Diagnostics: the CLI's zh-Hant labels"
+        continue-on-error: true
         run: |
+          set -euo pipefail
           sysctl -n hw.ncpu hw.memsize
-          swift build --build-tests
-          find .build -path '*MarsDawnKit_MarsDawnKit.bundle*' -not -path '*/Preview/*' | head -40
-          find .build -path '*MarsDawnKit_MarsDawnKit.bundle*' -name 'Localizable.strings' | while read -r f; do echo "== $f"; plutil -p "$f" | head -8; done
-      - name: "Diagnostics: failing WebKit suites alone"
-        run: swift test --skip-build --filter 'PreviewMathPageTests|PreviewDOMFilterTests|ContentRuleBehaviorTests|ExportImageLabelTests' 2>&1 | grep -E '✘|✔ Suite|Test run with' || true
-      - run: swift test
+          find .build -path '*MarsDawnKit_MarsDawnKit.bundle*' -name '*.lproj'
+          d=$(mktemp -d); printf '# L10N\n\n![x](missing.png)\n' > "$d/doc.md"
+          defaults write marsdawn AppleLanguages '(zh-Hant)'
+          swift run marsdawn export "$d/doc.md" --json
+          defaults delete marsdawn AppleLanguages
+          printf 'import PDFKit\nlet d = PDFDocument(url: URL(fileURLWithPath: CommandLine.arguments[1]))!\nprint((0..<d.pageCount).map { d.page(at: $0)?.string ?? "" }.joined())\n' > "$d/x.swift"
+          swift "$d/x.swift" "$d/doc.pdf"
+      - name: "Diagnostics: full run, not parallel"
+        run: time swift test --no-parallel
+      - name: "Diagnostics: crash reports"
+        if: failure()
+        run: |
+          ls -t ~/Library/Logs/DiagnosticReports/ | head
+          for f in $(ls -t ~/Library/Logs/DiagnosticReports/*.ips 2>/dev/null | head -2); do echo "== $f"; head -c 8000 "$f"; echo; done
       # Release builds inline more, so stack use per nesting level differs from debug.
       - run: swift test -c release
 
