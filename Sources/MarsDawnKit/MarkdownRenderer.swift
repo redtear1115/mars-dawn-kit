@@ -265,7 +265,7 @@ private struct HTMLVisitor: MarkupVisitor {
 
     mutating func visitHeading(_ heading: Heading) -> String {
         let level = min(max(heading.level, 1), 6)
-        let id = uniqueSlug(for: withoutMath(heading.plainText))
+        let id = uniqueSlug(for: slugSource(heading.plainText))
         return "<h\(level) id=\"\(escapeAttribute(id))\"\(lineAttribute(heading))>\(visitChildren(heading))</h\(level)>\n"
     }
 
@@ -436,16 +436,32 @@ private struct HTMLVisitor: MarkupVisitor {
         }
     }
 
-    /// A heading's plain text with this render's math placeholders dropped, for the slug.
+    /// A heading's text as the document has it, for the slug: every placeholder of this render
+    /// written back as the delimiters and TeX it stands for (`$a$`, `$$x^2$$`).
     ///
-    /// Dropped, not expanded: S5-2 keeps expansion to `visitText`. And a placeholder carries
-    /// the per-render nonce, so leaving it in would give a heading with math in it a different
-    /// `id` on every render — a moving anchor, and a block the preview's diff could never
-    /// match against the one already on the page.
-    private func withoutMath(_ text: String) -> String {
+    /// Two things have to hold at once. The `id` must not move between renders, and a
+    /// placeholder carries a per-render nonce, so slugging the placeholder itself would give a
+    /// heading with math in it a different `id` on every keystroke — a moving anchor, and a
+    /// block the preview's diff could never match. And the `id` must be the one the heading had
+    /// before math existed, because that is what the links already written to it use. Writing
+    /// the source back satisfies both: it never holds the nonce, and `slugify` reads it exactly
+    /// as it read the same characters when nothing was extracted. Dropping the math instead
+    /// would satisfy only the first, and would leave `## $a$` with no `id` at all.
+    ///
+    /// This is not the expansion S5-2 keeps to `visitText`: no TeX reaches the page, and the
+    /// result only ever passes through `slugify`, which keeps letters, digits, `-` and `_` and
+    /// drops everything else — the delimiters, and the U+E000/U+E001 of any placeholder that
+    /// isn't this render's and so comes back as text.
+    private func slugSource(_ text: String) -> String {
         guard math.expressionCount > 0 else { return text }
         return math.segments(in: text).reduce(into: "") { result, segment in
-            if case .text(let string) = segment { result += string }
+            switch segment {
+            case .text(let string):
+                result += string
+            case .math(let tex, let display):
+                let delimiter = display ? "$$" : "$"
+                result += delimiter + tex + delimiter
+            }
         }
     }
 

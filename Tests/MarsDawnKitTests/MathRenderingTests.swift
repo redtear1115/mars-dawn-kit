@@ -198,14 +198,106 @@ struct MathRenderingTests {
         #expect(html.contains(#"title="title $z$ here""#))
     }
 
-    /// The nonce is fresh per render, so a heading's `id` would move on every keystroke if the
-    /// slug were taken from the placeholder. It has to be stable.
-    @Test func headingSlugsWithMathAreStableAcrossRenders() {
-        let source = "# Head $a$\n"
+    // MARK: Heading ids
+
+    /// The ids are slugged from the heading as the document has it, math written back as its
+    /// delimiters and TeX, so every anchor that worked before math existed still works. The
+    /// expected values here were taken by rendering the same sources at 00e0b1f.
+    @Test(arguments: [
+        ("## $a$", "a"),
+        ("# Energy $E=mc^2$", "energy-emc2"),
+        ("## math $x$ tail", "math-x-tail"),
+        ("# Head $a$", "head-a"),
+        ("# $$x^2$$ display", "x2-display"),
+        ("# $$ x = 1 $$", "-x--1-"),
+        (#"# Cost \$5 and $x$"#, "cost-5-and-x"),
+        (#"# Escaped $a\$b$ here"#, "escaped-ab-here"),
+        (#"# Only $\alpha$"#, "only-alpha"),
+        ("# A $x `y` z$ b", "a-x-y-z-b"),
+        ("# `$x$` code", "x-code"),
+        ("# 5 and $6", "5-and-6"),
+    ])
+    func headingIdsAreTheOnesFromBeforeMath(source: String, id: String) {
+        #expect(MarkdownRenderer.render(source).contains("<h1 id=\"\(id)\"")
+            || MarkdownRenderer.render(source).contains("<h2 id=\"\(id)\""))
+    }
+
+    /// Slugging the placeholder away instead would leave these with no `id` at all.
+    @Test func aHeadingThatIsOnlyMathStillGetsAUsableID() {
+        let html = MarkdownRenderer.render("## $a$\n\n## $b$\n\n## $a$\n")
+        let ids = Self.headingIDs(in: html)
+        #expect(ids == ["a", "b", "a-1"])
+        #expect(ids.allSatisfy { !$0.isEmpty })
+        #expect(Set(ids).count == ids.count)
+    }
+
+    /// The nonce is fresh per render, so an id taken from the placeholder would move on every
+    /// keystroke. Rendering the same source twice draws two different nonces and has to give
+    /// the same ids — and the same everything else.
+    @Test func headingIDsAreStableAcrossRenders() {
+        let source = """
+        # Head $a$
+
+        ## $b$
+
+        ### Mixed $c$ and $$d$$ and text
+        """
         let first = MarkdownRenderer.render(source)
         let second = MarkdownRenderer.render(source)
         #expect(first == second)
-        #expect(first.contains(#"<h1 id="head-""#))
+        #expect(Self.headingIDs(in: first) == ["head-a", "b", "mixed-c-and-d-and-text"])
+    }
+
+    /// Nothing from the placeholder machinery can reach an id: not the sentinels, not the
+    /// nonce. A sequence that looks like a placeholder but isn't this render's comes back as
+    /// text, and `slugify` drops its sentinels like any other non-alphanumeric.
+    @Test func noIDHoldsAPlaceholderSentinelOrANonce() {
+        var generator = SplitMix64(state: 0x5EED)
+        let nonce = String(format: "%016x", generator.next())
+        let source = """
+        # Head $a$ and \u{E000}0:\(nonce)\u{E001} foreign
+
+        ## \u{E000}\u{E001} bare
+
+        ### $b$
+        """
+        for _ in 0..<8 {
+            let ids = Self.headingIDs(in: MarkdownRenderer.render(source))
+            #expect(ids.count == 3)
+            for id in ids {
+                #expect(!id.unicodeScalars.contains("\u{E000}"))
+                #expect(!id.unicodeScalars.contains("\u{E001}"))
+            }
+            // The one nonce we know the spelling of never appears; the render's own nonce
+            // can't either, or the ids would differ between runs, which they don't.
+            #expect(ids.first == "head-a-and-0\(nonce)-foreign")
+            // The sentinels go; the space after them still becomes a hyphen, as any space does.
+            #expect(ids[1] == "-bare")
+            #expect(ids[2] == "b")
+        }
+    }
+
+    static func headingIDs(in html: String) -> [String] {
+        var ids: [String] = []
+        var rest = Substring(html)
+        while let start = rest.range(of: " id=\"") {
+            let after = rest[start.upperBound...]
+            guard let end = after.firstIndex(of: "\"") else { break }
+            ids.append(String(after[..<end]))
+            rest = after[end...]
+        }
+        return ids
+    }
+
+    struct SplitMix64: RandomNumberGenerator {
+        var state: UInt64
+        mutating func next() -> UInt64 {
+            state &+= 0x9E37_79B9_7F4A_7C15
+            var z = state
+            z = (z ^ (z >> 30)) &* 0xBF58_476D_1CE4_E5B9
+            z = (z ^ (z >> 27)) &* 0x94D0_49BB_1331_11EB
+            return z ^ (z >> 31)
+        }
     }
 
     // MARK: Nothing else moved
