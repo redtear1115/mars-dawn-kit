@@ -7,3 +7,7 @@
 "Clean and familiar" = "清爽又熟悉";
 "Vivid" = "活潑";
 "Playful, bright and rounded" = "俏皮、明亮又圓潤";
+
+/* Image placeholder labels for exported/printed pages (PreviewWebSupport.swift) */
+"Web image" = "網路圖片";
+"Image not available" = "無法顯示圖片";

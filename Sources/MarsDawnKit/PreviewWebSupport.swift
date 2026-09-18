@@ -170,6 +170,31 @@ public enum PreviewWebView {
     /// Message handler the page calls when the user asks to load remote images.
     public nonisolated static let loadRemoteImagesHandlerName = "loadRemoteImages"
 
+    /// Label for a blocked remote image's placeholder, e.g. "Web image: example.com". Exported
+    /// and printed pages have no window to ask for this, so they use the kit's own localization
+    /// rather than a caller-supplied string (matches the app's own "Web image" wording).
+    public nonisolated static var webImagePlaceholderLabel: String {
+        String(localized: "Web image", bundle: .module)
+    }
+
+    /// Label for a local image the page couldn't load, used when the reason (missing file vs.
+    /// no folder access) isn't known, as when exporting or printing.
+    public nonisolated static var unloadableImagePlaceholderLabel: String {
+        String(localized: "Image not available", bundle: .module)
+    }
+
+    /// `key`'s translation in `.module`'s own strings table for `localization` (e.g. "zh-Hant"),
+    /// bypassing the current process locale. `String(localized:bundle:locale:)`'s `locale:`
+    /// override isn't honored for a Swift package's resource bundle, so tests that need to check
+    /// a specific translation (rather than whatever locale the test process happens to run under)
+    /// go through the bundle's own `.lproj` folder directly instead.
+    static func moduleLocalizedString(_ key: String, localization: String) -> String? {
+        guard let path = Bundle.module.path(forResource: localization, ofType: "lproj"),
+              let bundle = Bundle(path: path)
+        else { return nil }
+        return bundle.localizedString(forKey: key, value: nil, table: nil)
+    }
+
     /// Tells the page whether remote images are blocked, so it can offer to load them.
     public nonisolated static func remoteImagesScript(blocked: Bool, message: String, buttonLabel: String, placeholderLabel: String) -> String {
         let state: [String: Any] = [
