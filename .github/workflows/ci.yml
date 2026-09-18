@@ -38,19 +38,38 @@ jobs:
       - run: swift --version
       - run: swift build
       # TEMPORARY diagnostics for PR #22; removed before merge.
-      - name: "Diagnostics: run each suite alone to find the one that traps"
+      - name: "Diagnostics: CLI export with math (nested parsing), debug and release"
         continue-on-error: true
         run: |
-          swift build --build-tests
-          swift test list --skip-build 2>/dev/null | sed -E 's#/.*##' | sort -u > /tmp/suites
-          wc -l < /tmp/suites
-          while read -r suite; do
-            status=0
-            swift test --skip-build --no-parallel --filter "^${suite//./\\.}/" > /tmp/out.txt 2>&1 || status=$?
-            result=$(grep -E 'Test run with|signal code|Executed' /tmp/out.txt | tr '\n' ' ')
-            echo "SUITE $suite exit=$status $result"
-            if grep -q 'signal code' /tmp/out.txt; then grep -E '◇ Test|✔|✘' /tmp/out.txt | tail -25 || true; fi
-          done < /tmp/suites
+          set -uo pipefail
+          d=$(mktemp -d)
+          printf '# Math\n\nInline $a^2 + b^2 = c^2$ and $x_1$.\n\n$$\n\\sum_{i=1}^{n} i = \\frac{n(n+1)}{2}\n$$\n\n> quoted $y$\n' > "$d/math.md"
+          cat "$d/math.md"
+          for config in debug release; do
+            swift build -c $config --product marsdawn > /dev/null
+            "$(swift build -c $config --show-bin-path)/marsdawn" export "$d/math.md" -o "$d/math-$config.pdf" --json; echo "$config math exit=$?"
+          done
+      - name: "Diagnostics: standalone repro of the nested-calls test pattern, under lldb"
+        continue-on-error: true
+        run: |
+          cat > /tmp/repro.swift <<'SWIFT'
+          import Foundation
+          import Synchronization
+          setvbuf(stdout, nil, _IONBF, 0)
+          for round in 0..<200 {
+              let finished = DispatchSemaphore(value: 0)
+              let inner = Mutex<(Bool, String)?>(nil)
+              Thread.detachNewThread {
+                  inner.withLock { $0 = (true, "x") }
+                  finished.signal()
+              }
+              _ = finished.wait(timeout: .now() + 10)
+              let value = inner.withLock { $0 }
+              if round % 50 == 0 { print("round", round, value as Any) }
+          }
+          print("repro done")
+          SWIFT
+          swiftc -Onone /tmp/repro.swift -o /tmp/repro && lldb --batch -o run -k "bt 25" -k "quit 1" /tmp/repro; echo "lldb exit=$?"
       - name: "Diagnostics: crash reports so far"
         if: always()
         continue-on-error: true
