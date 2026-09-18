@@ -19,8 +19,8 @@ swift test
 
 Two things that have caught people out when writing tests here:
 
-- **Don't compare exported PDFs byte for byte.** AppKit's PDF producer writes a random `/ID` into every file, and under load it sometimes tags an embedded font subset differently, so two exports of the same document are never byte-identical, on any commit. Compare the page count and the extracted text, which is what a reader sees anyway.
-- **Resolve symlinks on both sides when comparing file URLs.** `FileManager.temporaryDirectory` hands back `/var/folders/…` while enumeration reports `/private/var/folders/…`, so a test that compares a hand-built URL against one the file system produced passes under one signing mode and fails under the other.
+- **Don't compare exported PDFs byte for byte.** Two exports of the same document differ only in `/CreationDate`, `/ModDate` and the `/ID` derived from them, which have one-second resolution. Exports within the same second are byte-identical and exports a second apart are not, so a byte comparison passes or fails depending on timing. Compare the page count, the extracted text and the rendered pages instead.
+- **Resolve symlinks on both sides when comparing file URLs.** `FileManager.temporaryDirectory` hands back `/var/folders/…` while enumeration reports `/private/var/folders/…`, so a test that compares a hand-built URL against one the file system produced passes under the signed, sandboxed test host (whose temporary directory is inside the app container) and fails with `CODE_SIGNING_ALLOWED=NO`. `resolvingSymlinksInPath()` maps both back to `/var/…`, so it has to be applied to both sides; resolving only one still fails.
 
 ## Command line
 
