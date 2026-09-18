@@ -58,7 +58,21 @@ jobs:
           }
           print("all done")
           SWIFT
-          swiftc -Onone /tmp/ops.swift -o /tmp/ops && /tmp/ops; echo "exit=$?"
+          swiftc -Onone /tmp/ops.swift -o /tmp/ops && /tmp/ops; echo "Onone exit=$?"
+          swiftc -O /tmp/ops.swift -o /tmp/ops-O && /tmp/ops-O; echo "O exit=$?"
+      - name: "Diagnostics: CLI export on this runner, debug and release builds"
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          d=$(mktemp -d)
+          printf -- '---\na\xd8\x80: x\na\xd8\x80:x\n\xe2\x80\x8da: x\na: \xcc\x81v\na: v \xcc\x81\n\xcc\x81a: x\n\xc3\xa9t\xc3\xa9: x\nab\xe2\x80\x8dc: x\n---\n# Body\n' > "$d/fm.md"
+          python3 -c "print('> ' * 250 + 'deep')" > "$d/deep.md"
+          for config in debug release; do
+            swift build -c $config --product marsdawn
+            for f in fm deep; do
+              "$(swift build -c $config --show-bin-path)/marsdawn" export "$d/$f.md" -o "$d/$f-$config.pdf" --json; echo "$config $f exit=$?"
+            done
+          done
       - name: "Diagnostics: FrontMatterTests alone"
         continue-on-error: true
         run: |
