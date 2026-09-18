@@ -289,14 +289,16 @@ struct WorkerGateTests {
         let gate = WorkerGate(slots: 2)
         let latch = Latch(waiters: 8)
         let running = Counter<Int>()
-        let active = Mutex((now: 0, peak: 0))
+        // In a class: Swift 6.2 won't let the detached tasks capture a local Mutex by reference.
+        final class Occupancy: Sendable { let state = Mutex((now: 0, peak: 0)) }
+        let active = Occupancy()
         let bodies = (0..<8).map { index in
             Task.detached {
                 let body: @Sendable (ParseOutcome) -> Int = { _ in
-                    active.withLock { $0.now += 1; $0.peak = max($0.peak, $0.now) }
+                    active.state.withLock { $0.now += 1; $0.peak = max($0.peak, $0.now) }
                     running.add(index)
                     latch.wait()
-                    active.withLock { $0.now -= 1 }
+                    active.state.withLock { $0.now -= 1 }
                     return index
                 }
                 if index.isMultiple(of: 2) {
@@ -316,7 +318,7 @@ struct WorkerGateTests {
         var values: [Int] = []
         for body in bodies { values.append(await body.value) }
         #expect(values == Array(0..<8))
-        #expect(active.withLock { $0.peak } == 2)
+        #expect(active.state.withLock { $0.peak } == 2)
         #expect(gate.snapshot == (available: 2, queued: 0))
     }
 }

@@ -39,8 +39,10 @@ enum NestingShape: String, CaseIterable, Sendable {
         case .alternatingEmphasis:
             let openers = ["*a ", "_a ", "~~a "]
             let closers = [" a*", " a_", " a~~"]
-            return (0..<n).map { openers[$0 % 3] }.joined() + "x"
-                + (0..<n).reversed().map { closers[$0 % 3] }.joined() + "\n"
+            // Built in steps: Xcode 26's type checker gives up on the single expression.
+            let open: String = (0..<n).map { openers[$0 % 3] }.joined()
+            let close: String = (0..<n).reversed().map { closers[$0 % 3] }.joined()
+            return open + "x" + close + "\n"
         case .inlineAttributes:
             return String(repeating: "^[", count: n) + "x" + String(repeating: "](u)", count: n) + "\n"
         case .quotedLists:
