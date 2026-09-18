@@ -10,6 +10,19 @@ import WebKit
 /// Independent of any window's layout, so a document can be printed or exported even
 /// while only its source is showing, or from a command-line tool with no window at all.
 /// Always uses the light palette of the given theme.
+///
+/// Timing for the benchmark harness: intervals "template", "render", "push", "waitForContent"
+/// and "paginate" in subsystem dev.southern-light.marsdawn, category Performance (the app side
+/// uses the same subsystem/category, so one `log stream --signpost` or `xcrun xctrace record
+/// --template 'os_signpost'` captures both processes). "render" and "push" share their names
+/// with the app's preview signposts, but are distinct intervals here. Names and arguments:
+///   - "template": the offscreen page's navigation, from `load(_:)` to `didFinish`/failure.
+///   - "render": the `MarkdownRenderer.renderResult` call that turns Markdown into HTML.
+///   - "push": the `evaluateJavaScript` call that updates the page with the rendered HTML.
+///   - "waitForContent": the readiness poll loop. Its end event carries
+///     `polls=<Int> outcome=<ready|timeout|error>`, the number of polls taken and how the
+///     wait ended.
+///   - "paginate": `NSPrintOperation.runModal`, which paginates and produces the PDF data.
 @MainActor
 public final class DocumentExporter: NSObject, WKNavigationDelegate {
     public enum ExportError: LocalizedError {
@@ -30,6 +43,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
     }
 
     private static let log = Logger(subsystem: "dev.southern-light.marsdawn", category: "Export")
+    private nonisolated static let signposter = OSSignposter(subsystem: "dev.southern-light.marsdawn", category: "Performance")
     /// Diagrams and images get this long to finish before export gives up.
     private static let contentTimeout: Duration = .seconds(20)
     /// Side and top/bottom page margins in points (about 16 mm and 18 mm).
@@ -42,6 +56,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
     private let assets = DocumentAssetSchemeHandler()
     private var pageLoad: CheckedContinuation<Void, Error>?
     private let allowRemoteImages: Bool
+    private var templateSignpost: OSSignpostIntervalState?
 
     /// - Parameters:
     ///   - baseDirectory: Folder that relative image paths resolve against (the document's folder).
@@ -72,6 +87,9 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
             throw ExportError.pageLoadFailed(error)
         }
         webView.applyContentRuleList(rules)
+        // Its own id, not the exclusive one: two exports, or an export during a preview load,
+        // would otherwise report one tangled "template" interval instead of two.
+        templateSignpost = Self.signposter.beginInterval("template", id: Self.signposter.makeSignpostID())
         try await withCheckedThrowingContinuation { continuation in
             pageLoad = continuation
             let url = PreviewSchemeHandler.pageURL(theme: theme, allowRemoteImages: allowRemoteImages)
@@ -80,16 +98,42 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
             }
         }
         _ = try? await webView.evaluateJavaScript(PreviewWebView.themeScript(theme))
+        // The export page has no window to offer a "Load Images" or "Grant Access" button (both
+        // are hidden by print CSS anyway), so it only needs placeholder labels. A blocked remote
+        // image gets the app's "Web image" wording; a local image the exporter couldn't read gets
+        // one neutral label, since the exporter can't tell a missing file from an ungranted folder.
+        _ = try? await webView.evaluateJavaScript(PreviewWebView.remoteImagesScript(
+            blocked: !allowRemoteImages,
+            message: "",
+            buttonLabel: "",
+            placeholderLabel: PreviewWebView.webImagePlaceholderLabel
+        ))
+        _ = try? await webView.evaluateJavaScript(PreviewWebView.assetStateScript(
+            needsAccess: false,
+            grantLabel: "",
+            missingLabel: PreviewWebView.unloadableImagePlaceholderLabel,
+            blockedLabel: PreviewWebView.unloadableImagePlaceholderLabel
+        ))
 
         let hasBaseDirectory = assets.baseDirectory != nil
         let options = MarkdownRenderer.Options { source in
             DocumentAssetSchemeHandler.previewURL(forImageSource: source, hasBaseDirectory: hasBaseDirectory) ?? source
         }
-        let html = await Task.detached(priority: .userInitiated) {
-            MarkdownRenderer.render(markdown, options: options)
-        }.value
-        _ = try await webView.evaluateJavaScript(PreviewWebView.updateScript(html: html))
-        try await waitForContent()
+        // One deadline covers rendering, updating the page and waiting for its content.
+        let deadline = ContinuousClock.now + Self.contentTimeout
+        let rendered = try await withExportDeadline(deadline, timeoutError: ExportError.contentTimedOut) {
+            let renderSignpost = Self.signposter.beginInterval("render", id: Self.signposter.makeSignpostID())
+            defer { Self.signposter.endInterval("render", renderSignpost) }
+            return await MarkdownRenderer.renderResult(markdown, options: options)
+        }
+        guard let html = rendered?.html else { throw CancellationError() }
+        let updateScript = PreviewWebView.updateScript(html: html)
+        try await withExportDeadline(deadline, timeoutError: ExportError.contentTimedOut) { @MainActor [webView] in
+            let pushSignpost = Self.signposter.beginInterval("push", id: Self.signposter.makeSignpostID())
+            defer { Self.signposter.endInterval("push", pushSignpost) }
+            _ = try await webView.evaluateJavaScript(updateScript)
+        }
+        try await waitForContent(until: deadline)
         let errors = try? await webView.evaluateJavaScript(
             #"[...document.querySelectorAll(".mermaid-block.error")].map((b) => b.getAttribute("data-error") || "")"#
         )
@@ -118,20 +162,40 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
     """
 
 
-    private func waitForContent() async throws {
+    /// Internal, not private, so `MathExportTests` can watch it return on a page whose math was
+    /// skipped rather than rendered.
+    func waitForContent(until deadline: ContinuousClock.Instant) async throws {
         // Diagrams settle as "rendered" or "error"; "stale" means an older diagram is still shown.
+        // Math settles as "math-done", which preview.js sets whether KaTeX rendered the
+        // expression, showed an error for it or skipped it for being too long or too numerous.
+        // So this waits for every expression to have been dealt with and can't hang on one.
+        // KaTeX renders synchronously inside the same update, so in practice this is already
+        // true at the first poll; no new timer, just one more term in the same readiness pass.
+        // The KaTeX fonts are covered by the `document.fonts` check like any other font.
         let script = """
         const diagramsReady = [...document.querySelectorAll(".mermaid-block")]
           .every((b) => (b.classList.contains("rendered") || b.classList.contains("error")) && !b.classList.contains("stale"));
+        const mathReady = document.querySelectorAll(".math-inline:not(.math-done), .math-block:not(.math-done)").length === 0;
         const imagesReady = [...document.images].every((img) => img.complete);
-        return diagramsReady && imagesReady && document.fonts.status === "loaded";
+        return diagramsReady && mathReady && imagesReady && document.fonts.status === "loaded";
         """
-        let deadline = ContinuousClock.now + Self.contentTimeout
-        while ContinuousClock.now < deadline {
-            let ready = try await webView.callAsyncJavaScript(script, contentWorld: .page) as? Bool ?? false
-            if ready { return }
-            try await Task.sleep(for: .milliseconds(50))
+        let signpost = Self.signposter.beginInterval("waitForContent", id: Self.signposter.makeSignpostID())
+        var polls = 0
+        do {
+            while ContinuousClock.now < deadline {
+                polls += 1
+                let ready = try await webView.callAsyncJavaScript(script, contentWorld: .page) as? Bool ?? false
+                if ready {
+                    Self.signposter.endInterval("waitForContent", signpost, "polls=\(polls) outcome=ready")
+                    return
+                }
+                try await Task.sleep(for: .milliseconds(50))
+            }
+        } catch {
+            Self.signposter.endInterval("waitForContent", signpost, "polls=\(polls) outcome=error")
+            throw error
         }
+        Self.signposter.endInterval("waitForContent", signpost, "polls=\(polls) outcome=timeout")
         throw ExportError.contentTimedOut
     }
 
@@ -198,6 +262,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         let operation = exporter.printOperation(printInfo: printInfo)
         configure(operation.printInfo, operation)
         let host = window ?? exporter.hiddenWindow()
+        let paginateSignpost = signposter.beginInterval("paginate", id: signposter.makeSignpostID())
         let completed = await withCheckedContinuation { continuation in
             let completion = Completion { continuation.resume(returning: $0) }
             operation.runModal(
@@ -207,6 +272,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
                 contextInfo: Unmanaged.passRetained(completion).toOpaque()
             )
         }
+        signposter.endInterval("paginate", paginateSignpost)
         return (completed, exporter.diagramErrors)
     }
 
@@ -286,6 +352,10 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
     }
 
     public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        if let templateSignpost {
+            Self.signposter.endInterval("template", templateSignpost)
+            self.templateSignpost = nil
+        }
         if pageLoad != nil { pushRemoteImageState() }
         pageLoad?.resume()
         pageLoad = nil
@@ -305,6 +375,10 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
 
     private func failPageLoad(_ error: Error) {
         Self.log.error("Export page failed to load: \(error.localizedDescription, privacy: .public)")
+        if let templateSignpost {
+            Self.signposter.endInterval("template", templateSignpost, "outcome=failed")
+            self.templateSignpost = nil
+        }
         pageLoad?.resume(throwing: ExportError.pageLoadFailed(error))
         pageLoad = nil
     }

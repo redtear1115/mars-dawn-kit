@@ -11,11 +11,13 @@ struct MarsDawnCommand: AsyncParsableCommand {
         commandName: "marsdawn",
         abstract: "Open Markdown documents in MarsDawn or export them to PDF.",
         discussion: """
-        Both commands need MarsDawn installed from the Mac App Store.
+        export renders on its own and needs nothing else installed. open hands the files to the \
+        MarsDawn app, so it needs MarsDawn from the Mac App Store.
         Pass --json for machine-readable results. Exit codes: 0 success, \(CLIFailure.Code.inputNotFound.rawValue) input not found, \
-        \(CLIFailure.Code.appNotInstalled.rawValue) MarsDawn not installed, \(CLIFailure.Code.outputExists.rawValue) output exists \
-        (use --force), \(CLIFailure.Code.exportFailed.rawValue) export failed.
+        \(CLIFailure.Code.appNotInstalled.rawValue) MarsDawn not installed (open only), \(CLIFailure.Code.outputExists.rawValue) output exists \
+        (use --force), \(CLIFailure.Code.exportFailed.rawValue) export failed, 64 usage error.
         """,
+        version: MarsDawnCLI.version,
         subcommands: [Open.self, Export.self]
     )
 }
@@ -69,6 +71,13 @@ struct CLIFailure: Error, CustomStringConvertible {
     }
 }
 
+/// The status `marsdawn` exits with for an error: a `CLIFailure`'s own code, and otherwise
+/// ArgumentParser's — 64 for a usage error, 0 for `--help` and `--version`.
+func cliExitCode(for error: Error) -> Int32 {
+    if let failure = error as? CLIFailure { return failure.code.rawValue }
+    return MarsDawnCommand.exitCode(for: error).rawValue
+}
+
 /// Where MarsDawn is installed. Replaceable for tests.
 enum MarsDawnApp {
     static let bundleIdentifier = "dev.southern-light.marsdawn"
@@ -109,25 +118,101 @@ extension DocumentExporter.Paper: ExpressibleByArgument {}
 
 // MARK: - open
 
+/// One file `open` hands to MarsDawn, with the line it should land on.
+struct OpenTarget: Equatable {
+    var url: URL
+    var line: Int?
+}
+
 extension MarsDawnCommand {
     struct Open: AsyncParsableCommand {
-        static let configuration = CommandConfiguration(abstract: "Open Markdown files in MarsDawn for review.")
+        static let configuration = CommandConfiguration(
+            abstract: "Open Markdown files in MarsDawn for review.",
+            discussion: """
+            A file argument can name a line: `notes.md:120` opens notes.md and lands on line 120. \
+            A column after the line, as in `notes.md:120:8`, is accepted and ignored. An argument \
+            that names a file which exists is always the whole filename, so a file called \
+            `weird:12` still opens as itself.
+            --line says the same thing for a single file, and is the way to ask for a line on a \
+            path that itself ends in a colon and digits. Lines run from \
+            \(RevealRequest.lineRange.lowerBound) to \(RevealRequest.lineRange.upperBound).
+            """
+        )
 
-        @Argument(help: "Markdown files to open.")
+        @Argument(help: ArgumentHelp("Markdown files to open, each optionally as path:line.", valueName: "file"))
         var files: [String]
+
+        @Option(name: .long, help: ArgumentHelp("Line to land on. Needs exactly one file.", valueName: "n"))
+        var line: Int?
 
         @OptionGroup var output: OutputOptions
 
+        func validate() throws {
+            guard line == nil || files.count == 1 else {
+                throw ValidationError(
+                    "--line needs exactly one file, but \(files.count) were given. "
+                        + "Write the line on each file instead, as path:line."
+                )
+            }
+            if let line, !RevealRequest.lineRange.contains(line) {
+                throw ValidationError(Open.outOfRange(line))
+            }
+        }
+
+        static func outOfRange(_ line: Int) -> String {
+            "Line \(line) is out of range: lines run from "
+                + "\(RevealRequest.lineRange.lowerBound) to \(RevealRequest.lineRange.upperBound)."
+        }
+
+        static func fileExists(_ path: String) -> Bool {
+            FileManager.default.fileExists(atPath: (path as NSString).expandingTildeInPath)
+        }
+
+        /// Resolves every argument to a file and the line it asked for. A line the app would have
+        /// to guess at is a usage error here, before anything is sent.
+        func resolvedTargets(fileExists: (String) -> Bool = Open.fileExists) throws -> [OpenTarget] {
+            try files.map { argument in
+                let parsed = RevealRequest.parseArgument(argument, fileExists: fileExists)
+                let url = try existingFile(parsed.path)
+                guard let requested = parsed.line ?? line else {
+                    return OpenTarget(url: url, line: nil)
+                }
+                guard RevealRequest.lineRange.contains(requested) else {
+                    throw ValidationError(Open.outOfRange(requested) + " \(parsed.path) asked for one.")
+                }
+                // What travels is the resolved, standardized path, so the app can match it against
+                // an open document's URL without touching the filesystem with it itself.
+                let resolved = url.resolvingSymlinksInPath().standardizedFileURL
+                guard let request = RevealRequest(path: resolved.path, line: requested) else {
+                    throw ValidationError("Can’t send a line for \(resolved.path): MarsDawn won’t accept that path.")
+                }
+                return OpenTarget(url: URL(fileURLWithPath: request.path), line: request.line)
+            }
+        }
+
         @MainActor
         func run() async throws {
-            let urls = try files.map(existingFile)
+            let targets = try resolvedTargets()
             let app = try MarsDawnApp.require()
-            let configuration = NSWorkspace.OpenConfiguration()
-            configuration.activates = true
-            _ = try await NSWorkspace.shared.open(urls, withApplicationAt: app, configuration: configuration)
+            // Files asking for the same line travel in one event; the line applies to all of them.
+            for group in RevealEvent.groups(for: targets) {
+                let configuration = NSWorkspace.OpenConfiguration()
+                configuration.activates = true
+                configuration.appleEvent = RevealEvent.openDocuments(urls: group.urls, line: group.line)
+                _ = try await NSWorkspace.shared.open(group.urls, withApplicationAt: app, configuration: configuration)
+            }
             output.report(
-                ["opened": urls.map(\.path), "app": app.path],
-                text: urls.map { "Opened \($0.path)" }.joined(separator: "\n")
+                [
+                    "opened": targets.map { target -> [String: Any] in
+                        guard let line = target.line else { return ["path": target.url.path] }
+                        return ["path": target.url.path, "line": line]
+                    },
+                    "app": app.path,
+                ],
+                text: targets.map { target in
+                    guard let line = target.line else { return "Opened \(target.url.path)" }
+                    return "Opened \(target.url.path) at line \(line)"
+                }.joined(separator: "\n")
             )
         }
     }
@@ -139,7 +224,11 @@ extension MarsDawnCommand {
     struct Export: AsyncParsableCommand {
         static let configuration = CommandConfiguration(
             abstract: "Export a Markdown file to a paginated PDF, rendered like MarsDawn's preview.",
-            discussion: "Relative images resolve against the input file's folder. Web images are left out unless --allow-remote-images is given."
+            discussion: """
+            Runs on its own: the MarsDawn app does not have to be installed. Relative images \
+            resolve against the input file's folder. Web images are left out unless \
+            --allow-remote-images is given.
+            """
         )
 
         @Argument(help: "The Markdown file to export.")
@@ -175,8 +264,10 @@ extension MarsDawnCommand {
 
         @MainActor
         func run() async throws {
+            // No MarsDawnApp.require() here: export is the same rendering the app does, and it
+            // ships in this package, so it must work with nothing else installed (Homebrew builds
+            // and tests the tool on machines that have no MarsDawn.app). `open` still needs it.
             let input = try existingFile(file)
-            _ = try MarsDawnApp.require()
             let destination = outputURL(for: input)
             if FileManager.default.fileExists(atPath: destination.path), !force {
                 throw CLIFailure(code: .outputExists, message: "\(destination.path) already exists. Pass --force to replace it.")

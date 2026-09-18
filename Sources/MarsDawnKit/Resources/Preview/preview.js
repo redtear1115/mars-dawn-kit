@@ -3,6 +3,23 @@
 (() => {
   const content = () => document.getElementById("content");
   const darkQuery = window.matchMedia("(prefers-color-scheme: dark)");
+  const themeIDPattern = /^[a-z0-9-]+$/;
+
+  // The light/dark theme pair (S2). Initialized from theme-boot's query so a scheme flip
+  // before any `setThemes` call still picks the right one.
+  function initialThemePair() {
+    const params = new URLSearchParams(location.search);
+    const theme = params.get("theme");
+    const darkTheme = params.get("darkTheme");
+    const light = theme && themeIDPattern.test(theme) ? theme : (document.documentElement.dataset.theme || "dawn");
+    const dark = darkTheme && themeIDPattern.test(darkTheme) ? darkTheme : light;
+    return { light, dark };
+  }
+  let themePair = initialThemePair();
+
+  function pickTheme(pair) {
+    return darkQuery.matches && pair.dark ? pair.dark : pair.light;
+  }
 
   // Rendered mermaid SVG keyed by diagram source, so unchanged diagrams never re-render.
   const svgCache = new Map();
@@ -109,6 +126,64 @@
       const lang = code.className.replace(/^.*language-/, "").split(/\s/)[0];
       if (window.hljs && hljs.getLanguage(lang)) hljs.highlightElement(code);
     });
+  }
+
+  // MARK: Math
+  //
+  // The renderer emits `<span class="math-inline">`, `<span class="math-inline math-display">`
+  // and `<div class="math-block" data-line="N">`, each holding only the escaped TeX. Nothing
+  // here reads an attribute: the TeX comes from `textContent` and the display mode from the
+  // class. `katex.render` replaces the element's children, so the TeX is never markup and
+  // `innerHTML` is never set from it.
+
+  // The frozen option set (S5-1). `trust: false` keeps \href, \url and \includegraphics from
+  // producing links or images; `maxExpand` and `maxSize` bound a macro bomb. No `macros`
+  // key at all, so no expansion of one expression's \def can leak into the next. Every call
+  // spreads these into a fresh object and adds only `displayMode`.
+  const mathOptions = Object.freeze({
+    throwOnError: false,
+    trust: false,
+    strict: "ignore",
+    maxExpand: 1000,
+    maxSize: 50,
+    output: "htmlAndMathml",
+  });
+
+  // S5-4: an expression longer than this stays as its source text, and only this many are
+  // rendered per update; the rest stay as source too. Either way the element is marked done,
+  // so the exporter's readiness check always terminates.
+  const maxMathLength = 10000;
+  const maxMathPerUpdate = 2000;
+
+  // Written out per class: `:not()` binds to one compound selector, so ".math-inline,
+  // .math-block:not(.math-done)" would leave every inline expression pending forever and
+  // re-render it on each update.
+  const pendingMathSelector = ".math-inline:not(.math-done), .math-block:not(.math-done)";
+
+  function renderMath() {
+    const pending = content().querySelectorAll(pendingMathSelector);
+    let rendered = 0;
+    for (const el of pending) {
+      const tex = el.textContent;
+      const displayMode = el.classList.contains("math-block") || el.classList.contains("math-display");
+      // Marked before rendering, so a throw below can't leave the element pending.
+      el.classList.add("math-done");
+      if (tex.length > maxMathLength || rendered >= maxMathPerUpdate) {
+        el.classList.add("math-skipped");
+        continue;
+      }
+      rendered += 1;
+      try {
+        katex.render(tex, el, { ...mathOptions, displayMode });
+      } catch (err) {
+        // throwOnError:false already turns a parse error into KaTeX's own error text, so
+        // this is for the rest. Keep the source visible and say why.
+        el.classList.add("math-error");
+        el.textContent = tex;
+        el.setAttribute("title", String(err?.message ?? err).split("\n")[0]);
+      }
+    }
+    return rendered;
   }
 
   async function renderMermaid(block, placeholderSVG) {
@@ -376,12 +451,20 @@
     retryImages();
   }
 
+  // Every tag in RawHTMLSafety.swift's `neutralizedRawHTMLTags`, plus `meta` (a refresh navigates)
+  // and `base` (changes how relative URLs resolve).
+  const blockedElements = "link, meta, base, iframe, frame, object, embed, portal, fencedframe";
+
   function update(html, lines) {
     if (lines) lineCount = lines;
     invalidateAnchors();
     const root = content();
     const template = document.createElement("template");
     template.innerHTML = html;
+    // Defence in depth for RawHTMLSafety.swift: drop every element that can open a connection or
+    // a nested document before anything reaches the page. Template content is inert, so none of
+    // these has loaded anything yet.
+    template.content.querySelectorAll(blockedElements).forEach((el) => el.remove());
     const incoming = [...template.content.children];
 
     // Pool existing blocks by key so unchanged ones (and their rendered diagrams) are reused.
@@ -426,6 +509,9 @@
       const blocks = el.classList.contains("mermaid-block") ? [el] : el.querySelectorAll(".mermaid-block");
       for (const block of blocks) renders.push(renderMermaid(block, staleSVGs.shift()));
     }
+    // Synchronous, and only over elements the pool didn't reuse: math whose source hasn't
+    // changed keeps the KaTeX output it already has.
+    renderMath();
     reapplySync();
     pendingWork = Promise.allSettled(renders);
     if (renders.length) {
@@ -455,12 +541,23 @@
   }
 
   function setTheme(theme) {
-    if (!/^[a-z0-9-]+$/.test(theme)) return;
-    document.documentElement.dataset.theme = theme;
+    setThemes(theme, theme);
+  }
+
+  // Stores a separate light and dark theme (S2); an invalid or missing dark id falls back to
+  // the light id. Sets `data-theme` to whichever one matches the current color scheme.
+  function setThemes(light, dark) {
+    if (!themeIDPattern.test(light)) return;
+    const validDark = dark && themeIDPattern.test(dark) ? dark : light;
+    themePair = { light, dark: validDark };
+    document.documentElement.dataset.theme = pickTheme(themePair);
     refreshTheme();
   }
 
-  darkQuery.addEventListener("change", refreshTheme);
+  darkQuery.addEventListener("change", () => {
+    document.documentElement.dataset.theme = pickTheme(themePair);
+    refreshTheme();
+  });
 
   document.addEventListener("DOMContentLoaded", () => {
     configureMermaid();
@@ -478,5 +575,5 @@
     window.scrollTo(0, y);
   }
 
-  window.MarsDawn = { update, setTheme, scrollToLine, setAssetState, setRemoteImageState, restoreScroll, idle };
+  window.MarsDawn = { update, setTheme, setThemes, scrollToLine, setAssetState, setRemoteImageState, restoreScroll, idle };
 })();

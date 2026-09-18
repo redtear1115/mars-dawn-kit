@@ -94,6 +94,49 @@ pre {
   overflow: auto;
   line-height: 1.5;
 }
+/* Documents nested too deeply to render safely show their escaped source instead. */
+.source-fallback { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* Front matter: a quiet, collapsed "Document info" block. Preview only: print and PDF
+   export leave it out. */
+.front-matter {
+  margin: 0 0 1.4em;
+  padding: 6px 14px;
+  background: color-mix(in srgb, var(--surface), var(--bg) 35%);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--muted);
+  font-size: 0.85em;
+}
+.front-matter > summary {
+  cursor: pointer;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  user-select: none;
+}
+.front-matter[open] > summary { margin-bottom: 6px; }
+.front-matter table { margin: 0 0 6px; }
+/* `details.` outranks the per-theme `th`/`td` rules further down. */
+details.front-matter th, details.front-matter td {
+  border: 0;
+  border-top: 1px solid var(--border);
+  padding: 3px 14px 3px 0;
+  vertical-align: top;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+details.front-matter th { background: transparent; color: var(--muted); font-weight: 600; white-space: nowrap; }
+details.front-matter td { color: var(--fg); }
+.front-matter pre {
+  margin: 0 0 6px;
+  padding: 8px 10px;
+  background: transparent;
+  border: 1px dashed var(--border);
+  font: 0.95em var(--font-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+@media print { .front-matter { display: none !important; } }
 pre code {
   display: block;
   background: transparent;
@@ -189,6 +232,34 @@ img { max-width: 100%; }
   text-align: left;
 }
 
+/* Math (KaTeX)
+   KaTeX's stylesheet sets sizes and fonts but no colour, so its output inherits; these
+   rules say so, give the block the same spacing as a paragraph, and keep an expression
+   wider than the column from pushing the page sideways. Nothing here is per theme: math
+   follows --fg wherever it is. */
+.math-block { margin: 0 0 1em; color: var(--fg); }
+.math-inline { color: var(--fg); }
+/* A `$$…$$` that stayed inside a paragraph is a span, so it needs a block box of its own
+   before the overflow and the display layout mean anything. */
+.math-inline.math-display { display: block; }
+.math-block, .math-inline.math-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  /* Room for the scrollbar, and for the descenders the overflow box would clip. */
+  padding: 2px 0;
+}
+/* KaTeX's own 1em above and below would sit on top of the block's margin. */
+.math-block > .katex-display, .math-inline > .katex-display { margin: 0; }
+/* An expression left as source: over the length limit, over the per-update count, or one
+   KaTeX refused outright. Shown as written, never as markup. */
+.math-skipped, .math-error {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.math-error { color: var(--hl-keyword); }
+
 /* ---- Classic: book-like serif, centred title, quiet rules ---- */
 :root[data-theme="classic"] {
   --heading-weight: 600;
@@ -283,12 +354,19 @@ img { max-width: 100%; }
      after it (when that block is short) and keeps the pair on one page. */
   .keep-with-next { break-inside: avoid; page-break-inside: avoid; }
   p, li, blockquote { orphans: 3; widows: 3; }
-  pre, blockquote, tr, img, .mermaid-block, .image-placeholder {
+  pre, blockquote, tr, img, .mermaid-block, .math-block, .image-placeholder {
     break-inside: avoid;
     page-break-inside: avoid;
   }
   /* Long code may still need to split; wrap instead of clipping at the page edge. */
   pre { overflow: visible; white-space: pre-wrap; overflow-wrap: anywhere; }
+  /* Paper has no scrollbar, and TeX has no line breaking, so an expression wider than the
+     column can only be cut. Cut it at the column, not at the paper's edge: `hidden` keeps
+     the block's own width at 100%, so an over-wide expression can't widen the page box and
+     push every other block out of place. Source shown instead of math still wraps. */
+  .math-block, .math-inline.math-display { overflow: hidden; }
+  .katex-display > .katex { max-width: 100%; }
+  .math-skipped, .math-error { white-space: pre-wrap; overflow-wrap: anywhere; }
   table { display: table; width: auto; overflow: visible; }
   thead { display: table-header-group; }
 

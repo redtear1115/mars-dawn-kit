@@ -8,5 +8,7 @@
 "Vivid" = "活潑";
 "Playful, bright and rounded" = "俏皮、明亮又圓潤";
 
-/* Label of a blocked web image in exported documents (KitStrings.webImage) */
+/* Image placeholder labels for exported/printed pages. Note that this merge left two
+   accessors for "Web image": PreviewWebView.webImagePlaceholderLabel and KitStrings.webImage. */
 "Web image" = "網路圖片";
+"Image not available" = "無法顯示圖片";

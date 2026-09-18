@@ -31,14 +31,17 @@ public final class DocumentAssetSchemeHandler: NSObject, WKURLSchemeHandler {
     /// Relative paths need a saved document (`hasBaseDirectory`) to resolve.
     public nonisolated static func previewURL(forImageSource source: String, hasBaseDirectory: Bool) -> String? {
         let trimmed = source.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, !trimmed.hasPrefix("#") else { return nil }
-        if let colon = trimmed.firstIndex(of: ":"),
-           !trimmed[..<colon].contains(where: { "/?#".contains($0) }) {
+        // Scalars, not Characters, so a combining mark can't hide a ':', '?' or '#' (and so this
+        // agrees with `sanitizedURL` about what has a scheme).
+        let scalars = trimmed.unicodeScalars
+        guard let first = scalars.first, first != "#" else { return nil }
+        if let colon = scalars.firstIndex(of: ":"),
+           !scalars[..<colon].contains(where: { $0 == "/" || $0 == "?" || $0 == "#" }) {
             return nil  // has a scheme (https:, data:, …): leave it to the sanitizer
         }
         var path = trimmed
-        if let cut = path.firstIndex(where: { $0 == "?" || $0 == "#" }) {
-            path = String(path[..<cut])
+        if let cut = scalars.firstIndex(where: { $0 == "?" || $0 == "#" }) {
+            path = String(scalars[..<cut])
         }
         path = path.removingPercentEncoding ?? path
 

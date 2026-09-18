@@ -1,14 +1,35 @@
 import Foundation
-import UniformTypeIdentifiers
 import WebKit
 
-/// Serves the bundled preview page (HTML, CSS, mermaid.js, highlight.js) from a private
-/// URL scheme so the page can run under a strict Content-Security-Policy.
+/// Serves the bundled preview page (HTML, CSS, mermaid.js, highlight.js, KaTeX and its
+/// fonts) from a private URL scheme so the page can run under a strict
+/// Content-Security-Policy.
 public final class PreviewSchemeHandler: NSObject, WKURLSchemeHandler {
     public nonisolated static let scheme = "marsdawn-app"
     public nonisolated static let pageURL = URL(string: "\(scheme)://preview/index.html")!
     /// Generated from `PreviewTheme.all` rather than read from the bundle.
     nonisolated static let themesStylesheetName = "themes.css"
+
+    /// Content types for the file kinds the Preview folder holds, by lower-case extension.
+    ///
+    /// A fixed table, not `UTType(filenameExtension:)`: that has no answer for `woff2`
+    /// (`preferredMIMEType` is nil), so KaTeX's fonts would be served as
+    /// `application/octet-stream` and, with `nosniff` below, never load. The html, css and
+    /// js spellings are the ones `UTType` gave before, so nothing else changes.
+    ///
+    /// An extension not listed here is served as `application/octet-stream`, which
+    /// `nosniff` then stops the page from using as script, style or font. Add a kind here
+    /// deliberately rather than widening the fallback.
+    nonisolated static let contentTypes: [String: String] = [
+        "html": "text/html",
+        "css": "text/css",
+        "js": "text/javascript",
+        "woff2": "font/woff2",
+    ]
+
+    nonisolated static func contentType(forPathExtension pathExtension: String) -> String {
+        contentTypes[pathExtension.lowercased()] ?? "application/octet-stream"
+    }
 
     /// Placeholder in index.html's CSP `img-src`, filled per load.
     nonisolated static let remoteImagesToken = "__REMOTE_IMAGE_SOURCES__"
@@ -19,6 +40,21 @@ public final class PreviewSchemeHandler: NSObject, WKURLSchemeHandler {
     public nonisolated static func pageURL(theme: PreviewTheme, allowRemoteImages: Bool = false) -> URL {
         var components = URLComponents(url: pageURL, resolvingAgainstBaseURL: false)!
         components.queryItems = [URLQueryItem(name: "theme", value: theme.id)]
+        if allowRemoteImages {
+            components.queryItems?.append(URLQueryItem(name: remoteImagesQueryItem, value: "1"))
+        }
+        return components.url!
+    }
+
+    /// The page URL with separate light and dark themes applied before first paint (S2).
+    /// `theme-boot.js` picks between them by `prefers-color-scheme`. Remote (https) images
+    /// are blocked by the page's CSP unless `allowRemoteImages` is set.
+    public nonisolated static func pageURL(lightTheme: PreviewTheme, darkTheme: PreviewTheme, allowRemoteImages: Bool = false) -> URL {
+        var components = URLComponents(url: pageURL, resolvingAgainstBaseURL: false)!
+        components.queryItems = [
+            URLQueryItem(name: "theme", value: lightTheme.id),
+            URLQueryItem(name: "darkTheme", value: darkTheme.id),
+        ]
         if allowRemoteImages {
             components.queryItems?.append(URLQueryItem(name: remoteImagesQueryItem, value: "1"))
         }
@@ -57,12 +93,17 @@ public final class PreviewSchemeHandler: NSObject, WKURLSchemeHandler {
             urlSchemeTask.didFailWithError(URLError(.fileDoesNotExist))
             return
         }
-        let mimeType = UTType(filenameExtension: pathExtension)?.preferredMIMEType ?? "application/octet-stream"
         let response = HTTPURLResponse(
             url: requestURL,
             statusCode: 200,
             httpVersion: "HTTP/1.1",
-            headerFields: ["Content-Type": mimeType, "Content-Length": "\(data.count)"]
+            headerFields: [
+                "Content-Type": Self.contentType(forPathExtension: pathExtension),
+                "Content-Length": "\(data.count)",
+                // The types above are the page's whole contract; never let WebKit guess
+                // another one from the bytes.
+                "X-Content-Type-Options": "nosniff",
+            ]
         )!
         urlSchemeTask.didReceive(response)
         urlSchemeTask.didReceive(data)
@@ -120,8 +161,39 @@ public enum PreviewWebView {
         "window.MarsDawn && MarsDawn.setTheme(\(jsonStringLiteral(theme.id)));"
     }
 
+    /// JavaScript that switches the page to separate light and dark themes (S2), re-rendering
+    /// diagrams. The page keeps whichever one matches the current color scheme.
+    public nonisolated static func themeScript(light: PreviewTheme, dark: PreviewTheme) -> String {
+        "window.MarsDawn && MarsDawn.setThemes(\(jsonStringLiteral(light.id)), \(jsonStringLiteral(dark.id)));"
+    }
+
     /// Message handler the page calls when the user asks to load remote images.
     public nonisolated static let loadRemoteImagesHandlerName = "loadRemoteImages"
+
+    /// Label for a blocked remote image's placeholder, e.g. "Web image: example.com". Exported
+    /// and printed pages have no window to ask for this, so they use the kit's own localization
+    /// rather than a caller-supplied string (matches the app's own "Web image" wording).
+    public nonisolated static var webImagePlaceholderLabel: String {
+        String(localized: "Web image", bundle: .module)
+    }
+
+    /// Label for a local image the page couldn't load, used when the reason (missing file vs.
+    /// no folder access) isn't known, as when exporting or printing.
+    public nonisolated static var unloadableImagePlaceholderLabel: String {
+        String(localized: "Image not available", bundle: .module)
+    }
+
+    /// `key`'s translation in `.module`'s own strings table for `localization` (e.g. "zh-Hant"),
+    /// bypassing the current process locale. `String(localized:bundle:locale:)`'s `locale:`
+    /// override isn't honored for a Swift package's resource bundle, so tests that need to check
+    /// a specific translation (rather than whatever locale the test process happens to run under)
+    /// go through the bundle's own `.lproj` folder directly instead.
+    static func moduleLocalizedString(_ key: String, localization: String) -> String? {
+        guard let path = Bundle.module.path(forResource: localization, ofType: "lproj"),
+              let bundle = Bundle(path: path)
+        else { return nil }
+        return bundle.localizedString(forKey: key, value: nil, table: nil)
+    }
 
     /// Tells the page whether remote images are blocked, so it can offer to load them.
     public nonisolated static func remoteImagesScript(blocked: Bool, message: String, buttonLabel: String, placeholderLabel: String) -> String {
@@ -157,8 +229,16 @@ public enum PreviewWebView {
 /// Content rule lists that keep the preview web views off the network.
 ///
 /// The page's CSP is the first layer; these lists are the second, and also cover requests the
-/// CSP doesn't govern, such as `<link rel=preconnect>`. Attach the list for the page's
-/// remote-image state before loading the page.
+/// CSP doesn't govern, such as `<link rel=preconnect>` (`PreconnectRuleBehaviorTests` watches a
+/// real preconnect being stopped). Attach the list for the page's remote-image state before
+/// loading the page.
+///
+/// `<link rel=dns-prefetch>` is not known to be covered. WebKit hands it to `prefetchDNSIfNeeded`,
+/// which is not a resource load and so plausibly never reaches the content-rule check. Watching
+/// mDNSResponder's log on one Mac saw no lookup with or without the rules, but that same watch
+/// saw none for an ordinary `<img>` load either, so it shows nothing. Treat dns-prefetch as
+/// unverified here: the guards that hold are `RawHTMLSafety`'s rename and preview.js's element
+/// filter, which keep a real `link` element out of the page.
 @MainActor
 public enum PreviewContentRules {
     /// Bump when the rules change, so a list compiled from older rules is never reused.
