@@ -262,25 +262,29 @@ public enum PreviewWebView {
 @MainActor
 public enum PreviewContentRules {
     /// Bump when the rules change, so a list compiled from older rules is never reused.
-    nonisolated static let version = 1
+    nonisolated static let version = 2
     nonisolated static let identifierPrefix = "dev.southern-light.marsdawn.preview-rules"
     /// Every web and WebSocket URL, whatever the case of the scheme. WebKit's rule regexes
     /// have no alternation (`|`), so the schemes take one filter each.
     nonisolated static let networkURLFilters = ["^https?:", "^wss?:"]
+    /// The encrypted ones. Only these are ever lifted: MarsDawn supports https only, so
+    /// plaintext http stays blocked in every state, and is never upgraded either.
+    nonisolated static let secureURLFilters = ["^https:", "^wss:"]
 
     /// The store identifier of the list for a remote-image state.
     public nonisolated static func identifier(allowRemoteImages: Bool) -> String {
         "\(identifierPrefix).v\(version).\(allowRemoteImages ? "remote-images-allowed" : "blocked")"
     }
 
-    /// Rule list JSON. Blocked: every web request. Allowed: every web request except images.
+    /// Rule list JSON. Blocked: every web request. Allowed: every web request except https images.
     public nonisolated static func encodedRules(allowRemoteImages: Bool) -> String {
         var rules: [[String: Any]] = networkURLFilters.map { filter in
             ["trigger": ["url-filter": filter], "action": ["type": "block"]]
         }
         if allowRemoteImages {
-            // Rules apply in order: lift the block for images only, so every other type stays blocked.
-            rules += networkURLFilters.map { filter in
+            // Rules apply in order: lift the block for https images only, so every other type,
+            // and plaintext http whatever the type, stays blocked.
+            rules += secureURLFilters.map { filter in
                 ["trigger": ["url-filter": filter, "resource-type": ["image"]], "action": ["type": "ignore-previous-rules"]]
             }
         }

@@ -345,11 +345,20 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
 
     // MARK: WKNavigationDelegate
 
+    /// Tells the page whether web images are blocked, with the app preview's placeholder label.
+    /// Sent before the content, so a blocked image's placeholder already has the label.
+    private func pushRemoteImageState() {
+        webView.evaluateJavaScript(PreviewWebView.remoteImagesScript(
+            blocked: !allowRemoteImages, message: "", buttonLabel: "", placeholderLabel: KitStrings.webImage
+        ))
+    }
+
     public func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         if let templateSignpost {
             Self.signposter.endInterval("template", templateSignpost)
             self.templateSignpost = nil
         }
+        if pageLoad != nil { pushRemoteImageState() }
         pageLoad?.resume()
         pageLoad = nil
     }

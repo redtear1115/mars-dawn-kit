@@ -1,12 +1,13 @@
 import Foundation
-import UniformTypeIdentifiers
 import WebKit
 
 /// Serves images referenced by a document (`![](img/a.png)`, `![](/abs/b.jpg)`) to the preview.
 ///
-/// A request is served only if, after resolving symlinks, it names a regular image file inside
-/// the handler's `scopeRoot` (the document's folder, or a granted folder containing it). The
-/// sandbox still decides whether the file can actually be read. Files are read off the main thread.
+/// A request is served only if its lexically standardized path is inside the handler's
+/// `scopeRoot` (the document's folder, or a granted folder containing it), has an image
+/// extension from `ServedFileType`, and opens as a regular file through `ScopedFileReader`,
+/// which never follows a symlink, even one inside the scope. The sandbox still decides whether
+/// the file can actually be read. Files are mapped and read off the main thread.
 public final class DocumentAssetSchemeHandler: NSObject, WKURLSchemeHandler {
     public nonisolated static let scheme = "marsdawn-asset"
     nonisolated static let relativeHost = "doc"
@@ -58,63 +59,80 @@ public final class DocumentAssetSchemeHandler: NSObject, WKURLSchemeHandler {
         return "\(scheme)://\(host)/\(encoded)"
     }
 
-    /// The file a preview URL refers to, if it resolves (symlinks included) to an image inside `scopeRoot`.
+    /// The file a preview URL refers to, if it is an image inside `scopeRoot` that opens without
+    /// following a symlink. The path is the lexical one; symlinks are never resolved.
     public nonisolated static func fileURL(for requestURL: URL, baseDirectory: URL?, scopeRoot: URL?) -> URL? {
+        guard let target = resolve(requestURL, baseDirectory: baseDirectory, scopeRoot: scopeRoot),
+              (try? ScopedFileReader.withDatalessFilesNotMaterialized({ () throws(ScopedFileReader.Failure) in
+                  _ = try target.reader.open(components: target.components, maxSize: Int64(maximumFileSize))
+              })) != nil
+        else { return nil }
+        return URL(fileURLWithPath: target.path)
+    }
+
+    /// Maps a preview URL to its lexical absolute path and the reader and components that open it.
+    nonisolated static func resolve(_ requestURL: URL, baseDirectory: URL?, scopeRoot: URL?) -> (reader: ScopedFileReader, components: [String], path: String)? {
         guard requestURL.scheme == scheme else { return nil }
         let path = requestURL.path  // percent-decoded
         guard !path.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) else { return nil }
-        let file: URL
+        let file: String
         switch requestURL.host {
         case relativeHost:
             guard let baseDirectory else { return nil }
             let relative = path.hasPrefix("/") ? String(path.dropFirst()) : path
-            file = baseDirectory.appendingPathComponent(relative)
+            file = baseDirectory.appendingPathComponent(relative).standardizedFileURL.path
         case absoluteHost:
-            file = URL(fileURLWithPath: path)
+            file = URL(fileURLWithPath: path).standardizedFileURL.path
         default:
             return nil
         }
-        guard let root = scopeRoot ?? baseDirectory else { return nil }
-
-        // Check the file that will actually be read, not the name that was asked for.
-        let resolved = file.standardizedFileURL.resolvingSymlinksInPath()
-        let rootPath = root.standardizedFileURL.resolvingSymlinksInPath().path
-        guard resolved.path.hasPrefix(rootPath.hasSuffix("/") ? rootPath : rootPath + "/") else { return nil }
-        guard let type = UTType(filenameExtension: resolved.pathExtension), type.conforms(to: .image) else {
-            return nil
-        }
-        return resolved
+        // Only the final path is checked, against both spellings of the root.
+        guard let root = scopeRoot ?? baseDirectory,
+              let reader = try? ScopedFileReader(root: root),
+              let components = reader.components(forAbsolutePath: file),
+              let name = components.last,
+              ServedFileType.entry(forFileName: name)?.kind == .image
+        else { return nil }
+        return (reader, components, file)
     }
 
-    /// Reads an image file if it is a regular file of known size within the limit.
+    /// Reads the image a preview URL refers to, with its MIME type. Fails with
+    /// `noPermissionsToReadFile` if the URL isn't an image in the scope, and with
+    /// `fileDoesNotExist` if the file can't be read (missing, a symlink, not regular, too large).
+    nonisolated static func loadImage(for requestURL: URL, baseDirectory: URL?, scopeRoot: URL?) -> Result<(data: Data, mimeType: String), URLError> {
+        guard let target = resolve(requestURL, baseDirectory: baseDirectory, scopeRoot: scopeRoot),
+              let name = target.components.last,
+              let type = ServedFileType.entry(forFileName: name)
+        else { return .failure(URLError(.noPermissionsToReadFile)) }
+        guard let data = try? ScopedFileReader.withDatalessFilesNotMaterialized({ () throws(ScopedFileReader.Failure) -> Data in
+            try target.reader.open(components: target.components, maxSize: Int64(maximumFileSize)).readAll()
+        }) else { return .failure(URLError(.fileDoesNotExist)) }
+        return .success((data, type.mimeType))
+    }
+
+    /// Reads a regular file within the size limit, confined to its own folder (no symlinks).
     nonisolated static func readImage(at file: URL) -> Data? {
-        guard let values = try? file.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey]),
-              values.isRegularFile == true,
-              let size = values.fileSize, size <= maximumFileSize,
-              let handle = try? FileHandle(forReadingFrom: file)
-        else { return nil }
-        defer { try? handle.close() }
-        // A plain read, not a memory map: a file truncated mid-read must not crash the app.
-        return try? handle.readToEnd()
+        guard let reader = try? ScopedFileReader(root: file.deletingLastPathComponent()) else { return nil }
+        return try? reader.readFile(atPath: file.standardizedFileURL.path, maxSize: Int64(maximumFileSize))
     }
 
     // MARK: WKURLSchemeHandler
 
     public func webView(_ webView: WKWebView, start urlSchemeTask: any WKURLSchemeTask) {
-        guard let requestURL = urlSchemeTask.request.url,
-              let file = Self.fileURL(for: requestURL, baseDirectory: baseDirectory, scopeRoot: scopeRoot)
-        else {
+        guard let requestURL = urlSchemeTask.request.url, requestURL.scheme == Self.scheme else {
             urlSchemeTask.didFailWithError(URLError(.noPermissionsToReadFile))
             return
         }
         let id = ObjectIdentifier(urlSchemeTask)
         activeTasks[id] = urlSchemeTask
+        let baseDirectory = baseDirectory
+        let scopeRoot = scopeRoot
         readQueue.async { [weak self] in
-            let data = Self.readImage(at: file)
+            let image = Self.loadImage(for: requestURL, baseDirectory: baseDirectory, scopeRoot: scopeRoot)
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
                     guard let task = self?.activeTasks.removeValue(forKey: id) else { return }
-                    Self.respond(to: task, url: requestURL, file: file, data: data)
+                    Self.respond(to: task, url: requestURL, image: image)
                 }
             }
         }
@@ -124,12 +142,15 @@ public final class DocumentAssetSchemeHandler: NSObject, WKURLSchemeHandler {
         activeTasks.removeValue(forKey: ObjectIdentifier(urlSchemeTask))
     }
 
-    private static func respond(to task: any WKURLSchemeTask, url: URL, file: URL, data: Data?) {
-        guard let data else {
-            task.didFailWithError(URLError(.fileDoesNotExist))
+    private static func respond(to task: any WKURLSchemeTask, url: URL, image: Result<(data: Data, mimeType: String), URLError>) {
+        let data: Data, mimeType: String
+        switch image {
+        case .success(let image):
+            (data, mimeType) = image
+        case .failure(let error):
+            task.didFailWithError(error)
             return
         }
-        let mimeType = UTType(filenameExtension: file.pathExtension)?.preferredMIMEType ?? "application/octet-stream"
         guard let response = HTTPURLResponse(
             url: url,
             statusCode: 200,
