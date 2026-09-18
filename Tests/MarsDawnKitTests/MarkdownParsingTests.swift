@@ -61,17 +61,18 @@ struct MarkdownParsingWorkerTests {
         #expect(summary == "Heading,BlockQuote")
     }
 
-    // Built with Swift 6.2 and run on macOS 15, an earlier version of this test trapped
-    // (SIGTRAP) inside the test process. It called swift-markdown's `format()` in the nested
-    // body and kept its result in a local `Mutex` captured by the thread. The cause wasn't
-    // pinned down (mars-dawn-kit#22). Product code does neither, so the test now checks the
-    // parsed tree and keeps its result in a heap-allocated lock.
-    @Test func nestedCallsRunInlineEvenWithEverySlotTaken() {
+    // Runs the nested call through `onSmallStackThread`, whose closure is explicitly `@Sendable`.
+    // Handing the body to `Thread.detachNewThread` instead made the closure carry the test's
+    // isolation, and running it on another thread then called `swift_task_isCurrentExecutor`,
+    // which traps through `dispatch_assert_queue` on macOS 15's Concurrency runtime
+    // (mars-dawn-kit#22: EXC_BREAKPOINT in `_dispatch_assert_queue_fail`, seen under lldb on the
+    // runner). macOS 26's runtime returns false there instead of trapping, which is why the
+    // whole suite passed on one runner and died on the other.
+    // A minute, so a nested call that waits for a slot fails as a test instead of hanging CI.
+    @Test(.timeLimit(.minutes(1))) func nestedCallsRunInlineEvenWithEverySlotTaken() {
         let gate = WorkerGate(slots: 1)
-        let finished = DispatchSemaphore(value: 0)
-        let inner = OSAllocatedUnfairLock<(onWorker: Bool, emphasis: Bool)?>(initialState: nil)
-        Thread.detachNewThread {
-            let value = MarkdownParsing.withDocument("outer", options: .default, gate: gate) { _ in
+        let value = onSmallStackThread {
+            MarkdownParsing.withDocument("outer", options: .default, gate: gate) { _ in
                 // The only slot is ours; a nested call must not wait for one.
                 MarkdownParsing.withDocument("*inner*", options: .default, gate: gate) { outcome -> (onWorker: Bool, emphasis: Bool) in
                     guard case .document(let document) = outcome,
@@ -80,13 +81,9 @@ struct MarkdownParsingWorkerTests {
                     return (MarkdownParsing.isOnWorker, paragraph.child(at: 0) is Emphasis)
                 }
             }
-            inner.withLock { $0 = value }
-            finished.signal()
         }
-        #expect(finished.wait(timeout: .now() + 10) == .success, "nested withDocument deadlocked")
-        let value = inner.withLock { $0 }
-        #expect(value?.onWorker == true)
-        #expect(value?.emphasis == true)
+        #expect(value.onWorker)
+        #expect(value.emphasis)
 
         // The shared gate as well, and the public entry point.
         let shared = MarkdownParsing.withDocument("a") { _ in

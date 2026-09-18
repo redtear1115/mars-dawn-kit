@@ -664,12 +664,14 @@ struct MathExtractorTests {
         let results = box.values
         #expect(results.count == 2)
         guard results.count == 2 else { return }
-        // Two guarded parses plus linear work: the part beyond parsing is small and grows
-        // linearly. A soft check with a generous bound (F18): it is wall-clock time on a
-        // machine running the rest of the suite beside it.
+        // Two guarded parses plus linear work: the part beyond parsing grows linearly and stays
+        // smaller than the parsing it rides on (F18). Both bounds are relative to what this
+        // machine just measured, because the figures are wall-clock time from a machine that may
+        // be running anything else: an absolute cap of 0.1s failed on a 3-CPU CI runner at
+        // 0.1018s with nothing wrong (mars-dawn-kit#15).
         let ownSmall = max(results[0].extract - results[0].parse, 0.002)
         let ownLarge = max(results[1].extract - results[1].parse, 0)
-        #expect(ownLarge < 0.1, "own work \(ownLarge)s for 40 × depth 500")
+        #expect(ownLarge < results[1].parse, "own work \(ownLarge)s against \(results[1].parse)s of parsing")
         #expect(ownLarge < ownSmall * 4 * 3 + 0.05, "\(ownSmall)s → \(ownLarge)s")
     }
 
