@@ -156,20 +156,6 @@ final class Counter<Key: Hashable & Sendable>: Sendable {
     }
 }
 
-/// A task executor whose jobs can be held back, to stand in for a saturated task pool.
-final class SuspendableExecutor: TaskExecutor {
-    private let queue = DispatchQueue(label: "SuspendableExecutor")
-
-    func enqueue(_ job: consuming ExecutorJob) {
-        let job = UnownedJob(job)
-        queue.async { [self] in
-            job.runSynchronously(on: asUnownedTaskExecutor())
-        }
-    }
-
-    func suspend() { queue.suspend() }
-    func resume() { queue.resume() }
-}
 
 /// Polls `condition` until it holds or `timeout` passes.
 func eventually(timeout: Duration = .seconds(10), _ condition: () -> Bool) async -> Bool {

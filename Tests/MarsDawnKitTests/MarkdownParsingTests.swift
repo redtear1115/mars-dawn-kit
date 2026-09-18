@@ -1,5 +1,6 @@
 import Foundation
 import Markdown
+import os
 import Synchronization
 import Testing
 @testable import MarsDawnKit
@@ -60,16 +61,23 @@ struct MarkdownParsingWorkerTests {
         #expect(summary == "Heading,BlockQuote")
     }
 
+    // Built with Swift 6.2 and run on macOS 15, an earlier version of this test trapped
+    // (SIGTRAP) inside the test process. It called swift-markdown's `format()` in the nested
+    // body and kept its result in a local `Mutex` captured by the thread. The cause wasn't
+    // pinned down (mars-dawn-kit#22). Product code does neither, so the test now checks the
+    // parsed tree and keeps its result in a heap-allocated lock.
     @Test func nestedCallsRunInlineEvenWithEverySlotTaken() {
         let gate = WorkerGate(slots: 1)
         let finished = DispatchSemaphore(value: 0)
-        let inner = Mutex<(Bool, String)?>(nil)
+        let inner = OSAllocatedUnfairLock<(onWorker: Bool, emphasis: Bool)?>(initialState: nil)
         Thread.detachNewThread {
             let value = MarkdownParsing.withDocument("outer", options: .default, gate: gate) { _ in
                 // The only slot is ours; a nested call must not wait for one.
-                MarkdownParsing.withDocument("*inner*", options: .default, gate: gate) { outcome -> (Bool, String) in
-                    guard case .document(let document) = outcome else { return (false, "") }
-                    return (MarkdownParsing.isOnWorker, document.format())
+                MarkdownParsing.withDocument("*inner*", options: .default, gate: gate) { outcome -> (onWorker: Bool, emphasis: Bool) in
+                    guard case .document(let document) = outcome,
+                          let paragraph = document.child(at: 0) as? Paragraph
+                    else { return (false, false) }
+                    return (MarkdownParsing.isOnWorker, paragraph.child(at: 0) is Emphasis)
                 }
             }
             inner.withLock { $0 = value }
@@ -77,8 +85,8 @@ struct MarkdownParsingWorkerTests {
         }
         #expect(finished.wait(timeout: .now() + 10) == .success, "nested withDocument deadlocked")
         let value = inner.withLock { $0 }
-        #expect(value?.0 == true)
-        #expect(value?.1 == "*inner*")
+        #expect(value?.onWorker == true)
+        #expect(value?.emphasis == true)
 
         // The shared gate as well, and the public entry point.
         let shared = MarkdownParsing.withDocument("a") { _ in
@@ -159,43 +167,43 @@ struct WorkerGateTests {
     /// Regression: a slot handed to an async caller used to wait until that caller's task was
     /// scheduled. With the task pool full of blocking callers, that never happened, and every
     /// caller waited forever. Here the async caller's executor is suspended instead.
-    @Test func aSlotHandedToAnAsyncCallerNeverWaitsForItsExecutor() async {
+    /// A slot freed by one caller goes straight to the next waiting async job: the gate starts
+    /// that job's worker on the releasing thread, before `release()` returns, so the job never
+    /// waits for its task's executor to be scheduled. `blockingCallersFillingTheTaskPoolDontStallAsyncCallers`
+    /// below checks the same property end to end, with the real task pool.
+    ///
+    /// Built with Swift 6.2 and run on macOS 15, an earlier version of this test trapped (SIGTRAP).
+    /// It suspended a custom `TaskExecutor` through `Task(executorPreference:)`. The cause wasn't
+    /// pinned down (mars-dawn-kit#22). Product code never uses an executor preference, so the
+    /// test now checks the mechanism directly.
+    @Test func aFreedSlotStartsTheWaitingJobOnTheReleasingThread() {
         let gate = WorkerGate(slots: 1)
-        let latch = Latch(waiters: 1)
-        let holding = Counter<Int>()
-        let finished = Counter<String>()
-        Thread.detachNewThread {
-            _ = MarkdownParsing.withDocument("h", options: .default, gate: gate) { _ in
-                holding.add(0)
-                latch.wait()
-                return 0
-            }
-            finished.add("holder")
-        }
-        #expect(await eventually { !holding.values.isEmpty })
+        gate.acquireBlocking()  // the only slot is taken
+        let startedOn = OSAllocatedUnfairLock<Int?>(initialState: nil)
+        let ticket = gate.register()
+        gate.submit(
+            ticket,
+            start: {
+                startedOn.withLock { $0 = Int(bitPattern: pthread_self()) }
+                gate.release()
+            },
+            cancel: { Issue.record("a job that was never cancelled was cancelled") }
+        )
+        #expect(gate.snapshot == (available: 0, queued: 1))
+        #expect(startedOn.withLock { $0 } == nil)
 
-        let executor = SuspendableExecutor()
-        let bodyRan = Counter<Int>()
-        let waiter = Task(executorPreference: executor) {
-            await MarkdownParsing.withDocument("w", options: .default, gate: gate) { _ in
-                bodyRan.add(0)
-                return 7
-            }
-        }
-        #expect(await eventually { gate.snapshot.queued == 1 })
-
-        executor.suspend()
-        latch.open()
-        #expect(await eventually { finished.values["holder"] == 1 })
-        // The waiter's body runs, and its slot comes back, while its executor can't run anything.
-        #expect(await eventually { !bodyRan.values.isEmpty })
+        let released = DispatchSemaphore(value: 0)
+        let result = OSAllocatedUnfairLock<(releasing: Int, startedBeforeReturn: Int?)?>(initialState: nil)
         Thread.detachNewThread {
-            _ = MarkdownParsing.withDocument("b", options: .default, gate: gate) { _ in 8 }
-            finished.add("blocking caller")
+            let releasing = Int(bitPattern: pthread_self())
+            gate.release()
+            let started = startedOn.withLock { $0 }
+            result.withLock { $0 = (releasing, started) }
+            released.signal()
         }
-        #expect(await eventually { finished.values["blocking caller"] == 1 }, "the slot stayed with a suspended task")
-        executor.resume()
-        #expect(await waiter.value == 7)
+        #expect(released.wait(timeout: .now() + 10) == .success)
+        let outcome = result.withLock { $0 }
+        #expect(outcome?.startedBeforeReturn == outcome?.releasing, "the job didn't start on the releasing thread")
         #expect(gate.snapshot == (available: 1, queued: 0))
     }
 

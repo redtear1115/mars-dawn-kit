@@ -48,7 +48,15 @@ struct JoinerScalarSetTests {
     @Test func prependSeedsJoinTheFollowingCharacter() {
         let before = Set(JoinerScalars.before)
         let notJoining = JoinerScalars.prependSeeds.filter { "\(JoinerScalars.scalar($0))<".count != 1 }
-        #expect(notJoining == [0x11A3A], "this runtime's Prepend data changed: \(notJoining.map { String($0, radix: 16) })")
+        // The grapheme data ships with the OS's Swift runtime. macOS 26's no longer joins
+        // U+11A3A (ZANABAZAR SQUARE CLUSTER-INITIAL LETTER RA); macOS 15's still does.
+        let expected: [UInt32]
+        if #available(macOS 26, iOS 26, *) {
+            expected = [0x11A3A]
+        } else {
+            expected = []
+        }
+        #expect(notJoining == expected, "this runtime's Prepend data changed: \(notJoining.map { String($0, radix: 16) })")
         for value in JoinerScalars.prependSeeds where !notJoining.contains(value) {
             #expect(before.contains(JoinerScalars.scalar(value)), "U+\(String(value, radix: 16, uppercase: true))")
         }
