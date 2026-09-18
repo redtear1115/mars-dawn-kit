@@ -128,6 +128,64 @@
     });
   }
 
+  // MARK: Math
+  //
+  // The renderer emits `<span class="math-inline">`, `<span class="math-inline math-display">`
+  // and `<div class="math-block" data-line="N">`, each holding only the escaped TeX. Nothing
+  // here reads an attribute: the TeX comes from `textContent` and the display mode from the
+  // class. `katex.render` replaces the element's children, so the TeX is never markup and
+  // `innerHTML` is never set from it.
+
+  // The frozen option set (S5-1). `trust: false` keeps \href, \url and \includegraphics from
+  // producing links or images; `maxExpand` and `maxSize` bound a macro bomb. No `macros`
+  // key at all, so no expansion of one expression's \def can leak into the next. Every call
+  // spreads these into a fresh object and adds only `displayMode`.
+  const mathOptions = Object.freeze({
+    throwOnError: false,
+    trust: false,
+    strict: "ignore",
+    maxExpand: 1000,
+    maxSize: 50,
+    output: "htmlAndMathml",
+  });
+
+  // S5-4: an expression longer than this stays as its source text, and only this many are
+  // rendered per update; the rest stay as source too. Either way the element is marked done,
+  // so the exporter's readiness check always terminates.
+  const maxMathLength = 10000;
+  const maxMathPerUpdate = 2000;
+
+  // Written out per class: `:not()` binds to one compound selector, so ".math-inline,
+  // .math-block:not(.math-done)" would leave every inline expression pending forever and
+  // re-render it on each update.
+  const pendingMathSelector = ".math-inline:not(.math-done), .math-block:not(.math-done)";
+
+  function renderMath() {
+    const pending = content().querySelectorAll(pendingMathSelector);
+    let rendered = 0;
+    for (const el of pending) {
+      const tex = el.textContent;
+      const displayMode = el.classList.contains("math-block") || el.classList.contains("math-display");
+      // Marked before rendering, so a throw below can't leave the element pending.
+      el.classList.add("math-done");
+      if (tex.length > maxMathLength || rendered >= maxMathPerUpdate) {
+        el.classList.add("math-skipped");
+        continue;
+      }
+      rendered += 1;
+      try {
+        katex.render(tex, el, { ...mathOptions, displayMode });
+      } catch (err) {
+        // throwOnError:false already turns a parse error into KaTeX's own error text, so
+        // this is for the rest. Keep the source visible and say why.
+        el.classList.add("math-error");
+        el.textContent = tex;
+        el.setAttribute("title", String(err?.message ?? err).split("\n")[0]);
+      }
+    }
+    return rendered;
+  }
+
   async function renderMermaid(block, placeholderSVG) {
     const source = block.querySelector(".mermaid-source")?.textContent ?? "";
     const target = document.createElement("div");
@@ -451,6 +509,9 @@
       const blocks = el.classList.contains("mermaid-block") ? [el] : el.querySelectorAll(".mermaid-block");
       for (const block of blocks) renders.push(renderMermaid(block, staleSVGs.shift()));
     }
+    // Synchronous, and only over elements the pool didn't reuse: math whose source hasn't
+    // changed keeps the KaTeX output it already has.
+    renderMath();
     reapplySync();
     pendingWork = Promise.allSettled(renders);
     if (renders.length) {

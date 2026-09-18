@@ -142,6 +142,20 @@ public enum MarkdownParsing {
         await withDocument(source, options: options, gate: sharedGate, body)
     }
 
+    /// Runs `body` on a parsing worker, suspending (without blocking a thread) until a worker
+    /// slot is free and the body has finished.
+    ///
+    /// For a caller that parses more than once and can only decide what to parse next after
+    /// the first parse: the renderer, which lifts the math out of a body before parsing it.
+    /// `withDocument` calls inside `body` see `isOnWorker` and run inline, so the whole
+    /// sequence takes one slot between them and the caller's thread is never blocked.
+    ///
+    /// Returns `nil` only if the task was cancelled before the body started. Getting onto the
+    /// worker parses an empty source, whose outcome is discarded.
+    static func onWorker<T: Sendable>(_ body: @escaping @Sendable () -> T) async -> T? {
+        await withDocument("") { _ in body() }
+    }
+
     // MARK: Internals
 
     static func withDocument<T: Sendable>(

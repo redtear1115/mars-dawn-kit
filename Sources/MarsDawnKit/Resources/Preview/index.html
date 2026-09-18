@@ -7,9 +7,12 @@
       content="default-src 'none'; script-src marsdawn-app:; style-src marsdawn-app: 'unsafe-inline'; img-src marsdawn-app: marsdawn-asset: data: __REMOTE_IMAGE_SOURCES__; font-src marsdawn-app: data:; base-uri 'none'; form-action 'none'">
 <script src="theme-boot.js"></script>
 <link rel="stylesheet" href="themes.css">
+<!-- KaTeX's own stylesheet first, so preview.css can override its colours with --fg. -->
+<link rel="stylesheet" href="vendor/katex.min.css">
 <link rel="stylesheet" href="preview.css">
 <script src="vendor/highlight.min.js"></script>
 <script src="vendor/mermaid.min.js"></script>
+<script src="vendor/katex.min.js"></script>
 <script src="preview.js"></script>
 </head>
 <body>

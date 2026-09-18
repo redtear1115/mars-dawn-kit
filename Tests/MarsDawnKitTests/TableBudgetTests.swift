@@ -68,14 +68,40 @@ struct TableBudgetTests {
         #expect(peak < 2_000)
     }
 
+    /// The table budget itself, measured on a body with no `$` in it, so it stays the bound on
+    /// the table machinery alone that it has always been. `maxedTables` keeps the repro's `$x$`
+    /// row; here it is spelled without the dollars, and `aPaddedTableWithMathCostsOneMoreParse`
+    /// below measures what putting them back costs.
     @Test func aPaddedTableWithinTheBudgetRenders() {
-        let source = Self.maxedTables(1, rows: 3_000)
+        let source = Self.maxedTables(1, rows: 3_000).replacingOccurrences(of: "$x$", with: "xx")
+        #expect(!source.contains("$"))
         #expect(CMarkDepthScan.measure(source).nodes < ParseLimits.defaultMaxNodes)
         let (result, seconds, peak) = Self.timedRender(source)
         print("K1 tables: padded table of 384,000 cells rendered in \(seconds) s, peak \(peak) MB")
         #expect(result.fallback == nil)
         #expect(result.html.components(separatedBy: "<tr").count - 1 == 3_002)
         #expect(seconds < 1.0 * Self.slack)
+        #expect(peak < 2_000)
+    }
+
+    /// S5: a body with a `$` in it is scanned for math before it is parsed, and that scan parses
+    /// it once itself (`MathExtractor`, which then refuses this one for having more block nodes
+    /// than `maxBlocks` and hands the body back unchanged). So the worst case costs one more
+    /// parse than the same table without dollars — measured 2026-09-18 (release, Apple silicon):
+    /// 0.50 s without, 0.90 s with. Two parses, not "a few", is the bound this holds to.
+    @Test func aPaddedTableWithMathCostsOneMoreParse() {
+        let plain = Self.maxedTables(1, rows: 3_000).replacingOccurrences(of: "$x$", with: "xx")
+        let withMath = Self.maxedTables(1, rows: 3_000)
+        #expect(withMath.contains("$x$"))
+        let (plainResult, plainSeconds, _) = Self.timedRender(plain)
+        let (mathResult, mathSeconds, peak) = Self.timedRender(withMath)
+        print("K1 tables: padded table rendered in \(plainSeconds) s without math, \(mathSeconds) s with, peak \(peak) MB")
+        // Same output either way: the table is too big to rewrite, so the `$x$` stays text.
+        #expect(plainResult.fallback == nil)
+        #expect(mathResult.fallback == nil)
+        #expect(mathResult.html.contains("$x$"))
+        #expect(mathResult.html.components(separatedBy: "<tr").count - 1 == 3_002)
+        #expect(mathSeconds < 2.0 * Self.slack)
         #expect(peak < 2_000)
     }
 
