@@ -31,7 +31,7 @@ struct ExportDeadlineTests {
             try await withExportDeadline(start + .milliseconds(200), timeoutError: Timeout()) {
                 // Ignores cancellation, like a render that has already started.
                 await withCheckedContinuation { continuation in
-                    Thread.detachNewThread {
+                    Thread.detachNewThread { @Sendable in
                         release.wait()
                         finished.withLock { $0 = true }
                         continuation.resume(returning: 1)

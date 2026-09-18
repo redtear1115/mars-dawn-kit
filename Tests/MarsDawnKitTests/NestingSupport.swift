@@ -73,7 +73,7 @@ enum NestingShape: String, CaseIterable, Sendable {
 func onSmallStackThread<T: Sendable>(stackSize: Int = 512 << 10, _ work: @escaping @Sendable () -> T) -> T {
     let result = Mutex<T?>(nil)
     let done = DispatchSemaphore(value: 0)
-    let thread = Thread {
+    let thread = Thread { @Sendable in
         let value = work()
         result.withLock { $0 = value }
         done.signal()

@@ -173,34 +173,28 @@ struct WorkerGateTests {
     /// It suspended a custom `TaskExecutor` through `Task(executorPreference:)`. The cause wasn't
     /// pinned down (mars-dawn-kit#22). Product code never uses an executor preference, so the
     /// test now checks the mechanism directly.
-    @Test func aFreedSlotStartsTheWaitingJobOnTheReleasingThread() {
+    @Test(.timeLimit(.minutes(1))) func aFreedSlotStartsTheWaitingJobOnTheReleasingThread() {
         let gate = WorkerGate(slots: 1)
         gate.acquireBlocking()  // the only slot is taken
         let startedOn = OSAllocatedUnfairLock<Int?>(initialState: nil)
         let ticket = gate.register()
         gate.submit(
             ticket,
-            start: {
+            start: { @Sendable in
                 startedOn.withLock { $0 = Int(bitPattern: pthread_self()) }
                 gate.release()
             },
-            cancel: { Issue.record("a job that was never cancelled was cancelled") }
+            cancel: { @Sendable in Issue.record("a job that was never cancelled was cancelled") }
         )
         #expect(gate.snapshot == (available: 0, queued: 1))
         #expect(startedOn.withLock { $0 } == nil)
 
-        let released = DispatchSemaphore(value: 0)
-        let result = OSAllocatedUnfairLock<(releasing: Int, startedBeforeReturn: Int?)?>(initialState: nil)
-        Thread.detachNewThread {
+        let outcome: (releasing: Int, startedBeforeReturn: Int?) = onSmallStackThread {
             let releasing = Int(bitPattern: pthread_self())
             gate.release()
-            let started = startedOn.withLock { $0 }
-            result.withLock { $0 = (releasing, started) }
-            released.signal()
+            return (releasing, startedOn.withLock { $0 })
         }
-        #expect(released.wait(timeout: .now() + 10) == .success)
-        let outcome = result.withLock { $0 }
-        #expect(outcome?.startedBeforeReturn == outcome?.releasing, "the job didn't start on the releasing thread")
+        #expect(outcome.startedBeforeReturn == outcome.releasing, "the job didn't start on the releasing thread")
         #expect(gate.snapshot == (available: 1, queued: 0))
     }
 
@@ -309,7 +303,7 @@ struct WorkerGateTests {
                 if index.isMultiple(of: 2) {
                     // Blocking callers wait on threads of their own, not on the task pool.
                     return await withCheckedContinuation { continuation in
-                        Thread.detachNewThread {
+                        Thread.detachNewThread { @Sendable in
                             continuation.resume(returning: MarkdownParsing.withDocument("x", options: .default, gate: gate, body))
                         }
                     }
