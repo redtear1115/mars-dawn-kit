@@ -38,46 +38,19 @@ jobs:
       - run: swift --version
       - run: swift build
       # TEMPORARY diagnostics for PR #22; removed before merge.
-      - name: "Diagnostics: which String operation traps (plain program, no Swift Testing)"
-        continue-on-error: true
-        run: |
-          cat > /tmp/ops.swift <<'SWIFT'
-          import Foundation
-          setvbuf(stdout, nil, _IONBF, 0)
-          let lines = ["été: x", "\u{200D}a: x", "a\u{0600}: x", "a\u{0600}:x", "a:\u{0301} x", "a: \u{0301}v", "a: v \u{0301}", "\u{0301}a: x", "ab\u{200D}c: x"]
-          for (n, line) in lines.enumerated() {
-              let value: (line: String, key: String?, value: String?) = (line, nil, nil)
-              print(n, "scalars", line.unicodeScalars.map { String($0.value, radix: 16) })
-              print(n, "count", line.count)
-              print(n, "==", line == String(line.reversed().reversed()))
-              print(n, "hash", line.hashValue != 0 || true)
-              print(n, "description", String(describing: line).count)
-              print(n, "debugDescription", line.debugDescription)
-              print(n, "reflecting tuple", String(reflecting: value))
-              print(n, "json", String(decoding: try! JSONEncoder().encode(line), as: UTF8.self))
-          }
-          print("all done")
-          SWIFT
-          swiftc -Onone /tmp/ops.swift -o /tmp/ops && /tmp/ops; echo "Onone exit=$?"
-          swiftc -O /tmp/ops.swift -o /tmp/ops-O && /tmp/ops-O; echo "O exit=$?"
-      - name: "Diagnostics: CLI export on this runner, debug and release builds"
-        continue-on-error: true
-        run: |
-          set -uo pipefail
-          d=$(mktemp -d)
-          printf -- '---\na\xd8\x80: x\na\xd8\x80:x\n\xe2\x80\x8da: x\na: \xcc\x81v\na: v \xcc\x81\n\xcc\x81a: x\n\xc3\xa9t\xc3\xa9: x\nab\xe2\x80\x8dc: x\n---\n# Body\n' > "$d/fm.md"
-          python3 -c "print('> ' * 250 + 'deep')" > "$d/deep.md"
-          for config in debug release; do
-            swift build -c $config --product marsdawn
-            for f in fm deep; do
-              "$(swift build -c $config --show-bin-path)/marsdawn" export "$d/$f.md" -o "$d/$f-$config.pdf" --json; echo "$config $f exit=$?"
-            done
-          done
-      - name: "Diagnostics: FrontMatterTests alone"
+      - name: "Diagnostics: run each suite alone to find the one that traps"
         continue-on-error: true
         run: |
           swift build --build-tests
-          swift test --skip-build --no-parallel --filter 'FrontMatterTests' 2>&1 | grep -E 'keyValueRule|signal|Test run with|✘' | tail -60
+          swift test list --skip-build 2>/dev/null | sed -E 's#/.*##' | sort -u > /tmp/suites
+          wc -l < /tmp/suites
+          while read -r suite; do
+            swift test --skip-build --no-parallel --filter "^${suite//./\\.}/" > /tmp/out.txt 2>&1
+            status=$?
+            result=$(grep -E 'Test run with|signal code|Executed' /tmp/out.txt | tr '\n' ' ')
+            echo "SUITE $suite exit=$status $result"
+            if grep -q 'signal code' /tmp/out.txt; then grep -E '◇ Test|✔|✘' /tmp/out.txt | tail -25; fi
+          done < /tmp/suites
       - name: "Diagnostics: crash reports so far"
         if: always()
         continue-on-error: true
