@@ -38,38 +38,17 @@ jobs:
       - run: swift --version
       - run: swift build
       # TEMPORARY diagnostics for PR #22; removed before merge.
-      - name: "Diagnostics: CLI export with math (nested parsing), debug and release"
+      - name: "Diagnostics: the two trapping tests under lldb"
         continue-on-error: true
         run: |
-          set -uo pipefail
-          d=$(mktemp -d)
-          printf '# Math\n\nInline $a^2 + b^2 = c^2$ and $x_1$.\n\n$$\n\\sum_{i=1}^{n} i = \\frac{n(n+1)}{2}\n$$\n\n> quoted $y$\n' > "$d/math.md"
-          cat "$d/math.md"
-          for config in debug release; do
-            swift build -c $config --product marsdawn > /dev/null
-            "$(swift build -c $config --show-bin-path)/marsdawn" export "$d/math.md" -o "$d/math-$config.pdf" --json; echo "$config math exit=$?"
+          swift build --build-tests > /dev/null
+          H="$(xcode-select -p)/Toolchains/XcodeDefault.xctoolchain/usr/libexec/swift/pm/swiftpm-testing-helper"
+          B=$(find .build -path '*PackageTests.xctest/Contents/MacOS/*' -type f | head -1)
+          echo "helper=$H bundle=$B"
+          for t in nestedCallsRunInlineEvenWithEverySlotTaken aSlotHandedToAnAsyncCallerNeverWaitsForItsExecutor; do
+            echo "=== $t"
+            lldb --batch -o run -k "thread list" -k "bt 30" -k "thread backtrace all -c 12" -k "quit 1" -- "$H" --test-bundle-path "$B" --filter "$t" "$B" --testing-library swift-testing 2>&1 | grep -vE '^\s*$' | tail -120
           done
-      - name: "Diagnostics: standalone repro of the nested-calls test pattern, under lldb"
-        continue-on-error: true
-        run: |
-          cat > /tmp/repro.swift <<'SWIFT'
-          import Foundation
-          import Synchronization
-          setvbuf(stdout, nil, _IONBF, 0)
-          for round in 0..<200 {
-              let finished = DispatchSemaphore(value: 0)
-              let inner = Mutex<(Bool, String)?>(nil)
-              Thread.detachNewThread {
-                  inner.withLock { $0 = (true, "x") }
-                  finished.signal()
-              }
-              _ = finished.wait(timeout: .now() + 10)
-              let value = inner.withLock { $0 }
-              if round % 50 == 0 { print("round", round, value as Any) }
-          }
-          print("repro done")
-          SWIFT
-          swiftc -Onone /tmp/repro.swift -o /tmp/repro && lldb --batch -o run -k "bt 25" -k "quit 1" /tmp/repro; echo "lldb exit=$?"
       - name: "Diagnostics: crash reports so far"
         if: always()
         continue-on-error: true
