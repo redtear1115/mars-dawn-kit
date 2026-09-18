@@ -183,6 +183,14 @@ public enum PreviewWebView {
         String(localized: "Image not available", bundle: .module)
     }
 
+    /// Label for an `http` image's placeholder. Unlike a blocked `https` image, this one is not
+    /// waiting on a setting: the page's CSP only ever admits `https`, so the label says why rather
+    /// than offering to load it. The kit owns this wording, rather than taking it from the caller
+    /// like the remote-image labels, because it states the page's own policy.
+    public nonisolated static var insecureImagePlaceholderLabel: String {
+        String(localized: "Not loaded: unencrypted connection (http)", bundle: .module)
+    }
+
     /// `key`'s translation in `.module`'s own strings table for `localization` (e.g. "zh-Hant"),
     /// bypassing the current process locale. `String(localized:bundle:locale:)`'s `locale:`
     /// override isn't honored for a Swift package's resource bundle, so tests that need to check
@@ -198,12 +206,22 @@ public enum PreviewWebView {
     }
 
     /// Tells the page whether remote images are blocked, so it can offer to load them.
-    public nonisolated static func remoteImagesScript(blocked: Bool, message: String, buttonLabel: String, placeholderLabel: String) -> String {
+    ///
+    /// `insecureLabel` is for `http` images, which no setting loads; it defaults to the kit's own
+    /// localized wording, so a caller that has no opinion gets the right text.
+    public nonisolated static func remoteImagesScript(
+        blocked: Bool,
+        message: String,
+        buttonLabel: String,
+        placeholderLabel: String,
+        insecureLabel: String? = nil
+    ) -> String {
         let state: [String: Any] = [
             "blocked": blocked,
             "message": message,
             "buttonLabel": buttonLabel,
             "placeholderLabel": placeholderLabel,
+            "insecureLabel": insecureLabel ?? insecureImagePlaceholderLabel,
         ]
         let data = try! JSONSerialization.data(withJSONObject: state, options: [.sortedKeys])
         return "window.MarsDawn && MarsDawn.setRemoteImageState(\(String(decoding: data, as: UTF8.self)));"

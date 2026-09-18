@@ -167,7 +167,7 @@ img { max-width: 100%; }
   font-size: 0.85em;
 }
 .image-placeholder-label { overflow-wrap: anywhere; }
-.image-placeholder.remote { border-style: dotted; padding: 6px 10px; }
+.image-placeholder.remote, .image-placeholder.insecure { border-style: dotted; padding: 6px 10px; }
 
 /* Offer to load remote images, pinned above the document */
 .remote-images-bar {

@@ -367,6 +367,12 @@
     if (src.startsWith(assetScheme)) {
       img.replaceWith(placeholderFor(img));
       invalidateAnchors();
+    } else if (isInsecure(src)) {
+      // Not conditional on remoteState.blocked: the CSP's img-src only ever gains https, so an
+      // http image stays blocked with web images on, and that is the state the user saw a broken
+      // image glyph in.
+      img.replaceWith(insecurePlaceholderFor(img));
+      invalidateAnchors();
     } else if (remoteState.blocked && isRemote(src)) {
       img.replaceWith(remotePlaceholderFor(img));
       invalidateAnchors();
@@ -377,11 +383,26 @@
   //
   // The page's CSP blocks https images unless the app loaded it with remote images allowed.
   // Blocked images become quiet placeholders and a bar offers to load them all.
+  //
+  // http is not one of those: the CSP's img-src only ever gains https, so no setting loads an
+  // http image and the bar must not offer to. Those get a placeholder of their own that says why,
+  // and are not counted when deciding whether to show the bar.
 
-  let remoteState = { blocked: true, message: "", buttonLabel: "", placeholderLabel: "" };
+  let remoteState = {
+    blocked: true, message: "", buttonLabel: "", placeholderLabel: "",
+    insecureLabel: "Not loaded: unencrypted connection (http)",
+  };
 
   function isRemote(src) {
     return /^https?:/i.test(src);
+  }
+
+  function isInsecure(src) {
+    return /^http:/i.test(src);
+  }
+
+  function hostOf(src) {
+    try { return new URL(src).host; } catch (_) { return ""; }
   }
 
   function remotePlaceholderFor(img) {
@@ -389,17 +410,34 @@
     box.className = "image-placeholder remote";
     const label = document.createElement("span");
     label.className = "image-placeholder-label";
-    let host = "";
-    try { host = new URL(img.getAttribute("src")).host; } catch (_) {}
+    const host = hostOf(img.getAttribute("src"));
     label.textContent = `${remoteState.placeholderLabel}${host ? ": " + host : ""}`;
     if (img.getAttribute("alt")) label.title = img.getAttribute("alt");
     box.appendChild(label);
     return box;
   }
 
+  // The label already reads as a sentence, so the host and the alt text go in the tooltip rather
+  // than making a second colon in it. A printed page has no tooltip, and the label alone still
+  // says why the image isn't there.
+  function insecurePlaceholderFor(img) {
+    const box = document.createElement("span");
+    box.className = "image-placeholder insecure";
+    const label = document.createElement("span");
+    label.className = "image-placeholder-label";
+    label.textContent = remoteState.insecureLabel;
+    const detail = [hostOf(img.getAttribute("src")), img.getAttribute("alt")].filter(Boolean);
+    if (detail.length) label.title = detail.join(" - ");
+    box.appendChild(label);
+    return box;
+  }
+
+  // Only images a "Load Images" press could actually load.
   function hasRemoteImages() {
-    return [...content().querySelectorAll("img")].some((img) => isRemote(img.getAttribute("src") || ""))
-      || content().querySelector(".image-placeholder.remote") !== null;
+    return [...content().querySelectorAll("img")].some((img) => {
+      const src = img.getAttribute("src") || "";
+      return isRemote(src) && !isInsecure(src);
+    }) || content().querySelector(".image-placeholder.remote") !== null;
   }
 
   function refreshRemoteBar() {
@@ -437,6 +475,9 @@
   function retryImages() {
     retryCounter += 1;
     for (const box of content().querySelectorAll(".image-placeholder")) {
+      // Only the local placeholder records a source. A web one has nothing to retry, and reading
+      // through it used to throw here and stop every later local image from retrying at all.
+      if (!box.dataset.src) continue;
       const img = document.createElement("img");
       img.setAttribute("alt", box.dataset.alt);
       if (box.dataset.title) img.setAttribute("title", box.dataset.title);
