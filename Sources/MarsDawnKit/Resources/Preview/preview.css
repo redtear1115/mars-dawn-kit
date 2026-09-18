@@ -2,6 +2,16 @@
 
 :root {
   color-scheme: light dark;
+  /* The page declares its own colour scheme, so WebKit draws a scrollbar for that scheme rather
+     than for the theme: on a dark theme the track and the thumb both came out near-black, and a
+     reader with "Always show scroll bars" saw a black strip with nothing in it (mars-dawn#23).
+     Naming the two colours keeps the native scrollbar, overlay behaviour and all, and makes the
+     thumb visible. The thumb is the muted text colour lightened towards the page so it reads as
+     chrome rather than text, and it stays at least 3:1 against the track in every theme, light
+     and dark, which `ScrollbarContrastTests` holds to. `::-webkit-scrollbar` would do the
+     opposite: it replaces the native scrollbar with an always-visible one, for overlay users too. */
+  --scrollbar-thumb: color-mix(in srgb, var(--muted), var(--bg) 25%);
+  scrollbar-color: var(--scrollbar-thumb) var(--bg);
   --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
   --font-heading: var(--font-body);
   --heading-weight: 650;
