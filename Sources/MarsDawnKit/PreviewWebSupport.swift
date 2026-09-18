@@ -187,9 +187,11 @@ public enum PreviewWebView {
     /// bypassing the current process locale. `String(localized:bundle:locale:)`'s `locale:`
     /// override isn't honored for a Swift package's resource bundle, so tests that need to check
     /// a specific translation (rather than whatever locale the test process happens to run under)
-    /// go through the bundle's own `.lproj` folder directly instead.
+    /// go through the bundle's own `.lproj` folder directly instead. The folder's name is matched
+    /// without regard to case: SwiftPM in Xcode 26 writes `zh-hant.lproj`, Xcode 27 `zh-Hant.lproj`.
     static func moduleLocalizedString(_ key: String, localization: String) -> String? {
-        guard let path = Bundle.module.path(forResource: localization, ofType: "lproj"),
+        guard let name = Bundle.module.localizations.first(where: { $0.caseInsensitiveCompare(localization) == .orderedSame }),
+              let path = Bundle.module.path(forResource: name, ofType: "lproj"),
               let bundle = Bundle(path: path)
         else { return nil }
         return bundle.localizedString(forKey: key, value: nil, table: nil)

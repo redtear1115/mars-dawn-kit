@@ -37,9 +37,33 @@ jobs:
           sudo xcode-select -s "$app"
       - run: swift --version
       - run: swift build
-      - run: swift test
+      # Not in parallel: the hosted runners have 3 CPUs, and with every suite running at once the
+      # WebKit suites time out waiting for their pages and the timing-budget tests miss their
+      # budgets. Run alone they pass (checked on both runners in #22), and so does the whole
+      # suite run serially.
+      - run: swift test --no-parallel
       # Release builds inline more, so stack use per nesting level differs from debug.
-      - run: swift test -c release
+      - run: swift test -c release --no-parallel
+      # Two groups of tests don't run here, so the CLI covers their ground on the real system:
+      # the gate's tests, which macOS 15's Concurrency runtime kills (mars-dawn-kit#26), and the
+      # wall-clock budgets, which a shared 3-CPU runner can't measure (mars-dawn-kit#15). These
+      # exports drive the parsing worker, the nesting budget and the math extractor end to end.
+      - name: Export documents through the CLI
+        run: |
+          set -euo pipefail
+          work=$(mktemp -d)
+          printf '# Title\n\nInline $E=mc^2$ and a block:\n\n$$\n\\int_0^1 x\\,dx\n$$\n' > "$work/math.md"
+          printf -- '---\ntitle: Front matter\n---\n\n# Body\n\nText.\n' > "$work/front.md"
+          python3 -c "print('> ' * 250 + 'deep')" > "$work/deep.md"
+          for config in debug release; do
+            swift build -c $config --product marsdawn
+            cli="$(swift build -c $config --show-bin-path)/marsdawn"
+            for doc in math front deep; do
+              MARSDAWN_APP_PATH=/nonexistent "$cli" export "$work/$doc.md" -o "$work/$doc-$config.pdf" --json
+              head -c 5 "$work/$doc-$config.pdf" | grep -q '%PDF-'
+            done
+          done
+          echo "CLI exports fine in debug and release"
 
   ios:
     # The core library still supports iOS 17; make sure it keeps building for it.
