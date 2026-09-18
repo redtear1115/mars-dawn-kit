@@ -112,11 +112,6 @@ struct MarkdownParsingWorkerTests {
 }
 
 /// The two-slot gate: FIFO hand-off, cancellation of waiters, exactly-once resumption.
-// The gate's tests hand work between threads and resume continuations from threads of their own,
-// which macOS 15's Concurrency runtime turns into a fatal executor check (see
-// `runtimeAnswersExecutorQuestions`). The gate itself is the same code on both systems, and the
-// CLI export runs cover it on macOS 15.
-@Suite(.enabled(if: runtimeAnswersExecutorQuestions))
 struct WorkerGateTests {
     @Test func cancellingAWaiterReturnsNilPromptlyAndNeverRunsItsBody() async throws {
         let resumes = Counter<UInt64>()
@@ -328,9 +323,7 @@ struct WorkerGateTests {
 }
 
 /// Overhead of the guarded entry point (F16/F18). Soft bounds in debug builds.
-// Wall-clock budgets, so not on a shared runner: a 3-CPU CI machine failed largeDocuments at
-// 1.615s against a 1.5s budget with nothing wrong (mars-dawn-kit#15).
-@Suite(.serialized, .enabled(if: !onSharedRunner))
+@Suite(.serialized)
 struct MarkdownParsingTimingTests {
     #if DEBUG
     static let slack = 10.0
@@ -370,7 +363,7 @@ struct MarkdownParsingTimingTests {
         }
         let perCall = Self.seconds(elapsed) / Double(count)
         print("K1 timing: small document render \(String(format: "%.3f", perCall * 1000)) ms per call")
-        #expect(perCall < 0.005 * Self.slack)
+        expectWithinBudget(perCall, 0.005 * Self.slack)
     }
 
     @Test func largeDocuments() {
@@ -390,8 +383,8 @@ struct MarkdownParsingTimingTests {
         #expect(scan.nodes > ParseLimits.defaultMaxNodes)
         #expect(acceptedResult?.fallback == nil)
         #expect(refusedResult?.fallback == .tooComplex)
-        #expect(Self.seconds(acceptedTime) < 1.5 * Self.slack)
-        #expect(Self.seconds(refusedTime) < 1.0 * Self.slack)
+        expectWithinBudget(Self.seconds(acceptedTime), 1.5 * Self.slack)
+        expectWithinBudget(Self.seconds(refusedTime), 1.0 * Self.slack)
     }
 
     @Test func deepestAcceptedDocumentWithAFiveMegabytePayload() {
@@ -412,7 +405,7 @@ struct MarkdownParsingTimingTests {
         #expect(result?.fallback == nil)
         #expect(result?.html.hasSuffix(String(repeating: "</blockquote>\n", count: 3)) == true)
         // About 1 s in release, nearly all of it the payload itself: nesting must not add much.
-        #expect(Self.seconds(deepTime) < 1.5 * Self.slack)
+        expectWithinBudget(Self.seconds(deepTime), 1.5 * Self.slack)
         #expect(Self.seconds(deepTime) < 1.5 * Self.seconds(shallowTime) + 0.25)
     }
 }

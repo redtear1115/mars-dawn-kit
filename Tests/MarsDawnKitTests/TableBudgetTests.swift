@@ -64,7 +64,7 @@ struct TableBudgetTests {
         #expect(result.fallback == .tooComplex)
         #expect(result.html == MarkdownRenderer.sourceFallbackHTML(source))
         // The source bound refuses them before cmark runs.
-        #expect(seconds < 0.1 * Self.slack)
+        expectWithinBudget(seconds, 0.1 * Self.slack)
         // Soft: the whole test process, other suites included. Unguarded, 28 tables took 6.5 GB.
         #expect(peak < 2_000)
     }
@@ -81,7 +81,7 @@ struct TableBudgetTests {
         print("K1 tables: padded table of 384,000 cells rendered in \(seconds) s, peak \(peak) MB")
         #expect(result.fallback == nil)
         #expect(result.html.components(separatedBy: "<tr").count - 1 == 3_002)
-        #expect(seconds < 1.0 * Self.slack)
+        expectWithinBudget(seconds, 1.0 * Self.slack)
         #expect(peak < 2_000)
     }
 
@@ -102,7 +102,7 @@ struct TableBudgetTests {
         #expect(mathResult.fallback == nil)
         #expect(mathResult.html.contains("$x$"))
         #expect(mathResult.html.components(separatedBy: "<tr").count - 1 == 3_002)
-        #expect(mathSeconds < 2.0 * Self.slack)
+        expectWithinBudget(mathSeconds, 2.0 * Self.slack)
         #expect(peak < 2_000)
     }
 
@@ -113,14 +113,14 @@ struct TableBudgetTests {
         #expect(result.fallback == nil)
         #expect(result.html.components(separatedBy: "<tr").count - 1 == 10_001)
         #expect(result.html.contains("<td>r9999c9</td>"))
-        #expect(seconds < 1.0 * Self.slack)
+        expectWithinBudget(seconds, 1.0 * Self.slack)
     }
 
     @Test func rowsOfEmptyCellsFallBack() {
         let source = "a|b\n-|-\n" + String(repeating: "|", count: 65_000) + "\n"
         let (result, seconds, _) = Self.timedRender(source)
         #expect(result.fallback == .tooComplex)
-        #expect(seconds < 0.1 * Self.slack)
+        expectWithinBudget(seconds, 0.1 * Self.slack)
 
         // The same pipes in a paragraph that a delimiter row tries to turn into a header.
         let header = String(repeating: String(repeating: "|", count: 65_000) + "\n-|-\n\n", count: 10)
@@ -131,7 +131,7 @@ struct TableBudgetTests {
         let source = Self.markerTable(rows: 2_000, columns: 64)
         let (result, seconds, _) = Self.timedRender(source)
         #expect(result.fallback == .tooComplex)
-        #expect(seconds < 0.1 * Self.slack)
+        expectWithinBudget(seconds, 0.1 * Self.slack)
     }
 
     @Test func rowSpanMarkersJustUnderTheLimitRenderInTime() {
@@ -144,7 +144,7 @@ struct TableBudgetTests {
         let (result, seconds, _) = Self.timedRender(source)
         print("K1 tables: \(rows) rows of 64 row-span markers rendered in \(seconds) s")
         #expect(result.fallback == nil)
-        #expect(seconds < 1.0 * Self.slack)
+        expectWithinBudget(seconds, 1.0 * Self.slack)
         #expect(MarkdownRenderer.renderResult(Self.markerTable(rows: rows + 1, columns: 64)).fallback == .tooComplex)
     }
 
@@ -183,7 +183,7 @@ struct TableBudgetTests {
         let source = String(repeating: paragraph, count: 50_000)   // 2.6 MB, over a million nodes
         let (result, seconds, _) = Self.timedRender(source)
         #expect(result.fallback == .tooComplex)
-        #expect(seconds < 1.0 * Self.slack)
+        expectWithinBudget(seconds, 1.0 * Self.slack)
     }
 
     private static func outcome(_ source: String, maxNodes: Int) -> String {
@@ -262,7 +262,7 @@ struct TableBudgetTests {
         let source = String(repeating: Self.filledTable(rows: 1_000, columns: 10), count: 5)   // about 500 KB
         let clock = ContinuousClock()
         let elapsed = clock.measure { _ = TableCostBound.measure(source) }
-        #expect(Self.seconds(elapsed) < 0.05 * Self.slack)
+        expectWithinBudget(Self.seconds(elapsed), 0.05 * Self.slack)
     }
 }
 

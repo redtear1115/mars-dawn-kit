@@ -629,8 +629,7 @@ struct MathExtractorTests {
     /// pre-scans and the worker's own cost charged to the extractor, and two separate
     /// guarded parses would charge it one worker too few, which on this input is larger
     /// than the work being measured.
-    // Wall-clock, so not on a shared runner (mars-dawn-kit#15).
-    @Test(.enabled(if: !onSharedRunner)) func nestedListsScaleLinearly() {
+    @Test func nestedListsScaleLinearly() {
         @Sendable func line(_ depth: Int) -> String { String(repeating: "- ", count: depth) + "$x$" }
         @Sendable func seconds(_ body: String, _ work: (String) -> Void) -> Double {
             var best = Double.infinity
@@ -674,7 +673,7 @@ struct MathExtractorTests {
         // (mars-dawn-kit#15).
         let ownSmall = max(results[0].extract - results[0].parse, 0.002)
         let ownLarge = max(results[1].extract - results[1].parse, 0)
-        #expect(ownLarge < ownSmall * 4 * 3 + 0.05, "\(ownSmall)s → \(ownLarge)s")
+        expectWithinBudget(ownLarge, ownSmall * 4 * 3 + 0.05, "\(ownSmall)s → \(ownLarge)s")
     }
 
     // MARK: swift-markdown

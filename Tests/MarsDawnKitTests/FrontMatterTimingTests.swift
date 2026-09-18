@@ -52,8 +52,8 @@ struct FrontMatterTimingTests {
         // 8x the input: linear is about 8x the time, quadratic about 64x. Very small times are
         // mostly noise, so they pass on an absolute floor instead.
         let first = times[0], last = times[times.count - 1]
-        #expect(last < max(24 * first, 0.02 * Self.slack), "\(times)")
-        #expect(last < 0.25 * Self.slack, "\(times)")
+        expectWithinBudget(last, max(24 * first, 0.02 * Self.slack), "\(times)")
+        expectWithinBudget(last, 0.25 * Self.slack, "\(times)")
     }
 
     @Test func splitResultsForTheSlowShapes() throws {
