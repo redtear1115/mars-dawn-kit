@@ -37,6 +37,15 @@ jobs:
           sudo xcode-select -s "$app"
       - run: swift --version
       - run: swift build
+      # TEMPORARY diagnostics for PR #22; removed before merge.
+      - name: "Diagnostics: runner and resource bundle"
+        run: |
+          sysctl -n hw.ncpu hw.memsize
+          swift build --build-tests
+          find .build -path '*MarsDawnKit_MarsDawnKit.bundle*' -not -path '*/Preview/*' | head -40
+          find .build -path '*MarsDawnKit_MarsDawnKit.bundle*' -name 'Localizable.strings' | while read -r f; do echo "== $f"; plutil -p "$f" | head -8; done
+      - name: "Diagnostics: failing WebKit suites alone"
+        run: swift test --skip-build --filter 'PreviewMathPageTests|PreviewDOMFilterTests|ContentRuleBehaviorTests|ExportImageLabelTests' 2>&1 | grep -E '✘|✔ Suite|Test run with' || true
       - run: swift test
       # Release builds inline more, so stack use per nesting level differs from debug.
       - run: swift test -c release

@@ -19,9 +19,10 @@ struct TableBudgetTests {
     /// The measured repro: a 128-column header, a `$x$` row and 4,200 one-cell rows, which
     /// cmark pads to 128 cells each (up to its 524,288 padded cells per table).
     static func maxedTables(_ count: Int, columns: Int = 128, rows: Int = 4_200) -> String {
-        let table = Array(repeating: "a", count: columns).joined(separator: "|") + "\n"
-            + Array(repeating: "-", count: columns).joined(separator: "|") + "\n"
-            + "$x$\n" + String(repeating: "b\n", count: rows)
+        // In steps: Xcode 26's type checker gives up on the single expression.
+        let header: String = Array(repeating: "a", count: columns).joined(separator: "|") + "\n"
+        let delimiter: String = Array(repeating: "-", count: columns).joined(separator: "|") + "\n"
+        let table = header + delimiter + "$x$\n" + String(repeating: "b\n", count: rows)
         return Array(repeating: table, count: count).joined(separator: "\n")
     }
 
