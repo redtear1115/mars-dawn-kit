@@ -9,8 +9,8 @@ brew tap redtear1115/tap
 brew install marsdawn
 ```
 
-There is no cask. Homebrew Cask does not accept an app whose full version ships only through the
-Mac App Store.
+There is no cask. The app ships only through the Mac App Store and has no direct download, so there
+is nothing a cask could install.
 
 ## 1. Bump the version in the source
 
@@ -57,11 +57,24 @@ shasum -a 256 "marsdawn-$VERSION.tar.gz"
 
 In a branch of the tap, edit `Formula/marsdawn.rb`:
 
-- `url` — the tag archive from step 3;
-- `sha256` — the checksum from step 3;
-- `version` — the same number, which is what `test do` compares `marsdawn --version` against.
+- `url`: the tag archive from step 3. Homebrew takes the formula's version from this URL, which is
+  what `test do` compares `marsdawn --version` against.
+- `sha256`: the checksum from step 3.
 
-## 5. Build, test and audit it locally
+Leave the install layout alone unless you mean to change it. The binary and its resource bundles
+(`*.bundle`: preview page, KaTeX, Mermaid) go into `libexec`, and `bin` gets a `write_exec_script`
+wrapper, not a symlink. SwiftPM looks for the bundles beside the path the binary was started from,
+and some Swift versions (6.3.3, on the GitHub runner) don't follow a symlink to the real binary,
+so a symlinked install crashes on start. Completions are generated from `libexec/"marsdawn"`,
+because the wrapper only becomes executable once the install finishes:
+
+```ruby
+libexec.install ".build/release/marsdawn", *Dir[".build/release/*.bundle"]
+bin.write_exec_script libexec/"marsdawn"
+generate_completions_from_executable(libexec/"marsdawn", "--generate-completion-script")
+```
+
+## 5. Build, test, audit, and export for real
 
 ```sh
 brew install --build-from-source redtear1115/tap/marsdawn
@@ -69,34 +82,41 @@ brew test marsdawn
 brew audit --strict --online redtear1115/tap/marsdawn
 ```
 
-`brew test` has to pass on a machine with **no MarsDawn.app installed**: `marsdawn export` renders
-on its own, and only `marsdawn open` needs the app. If the app is installed on your machine, force
-the same situation before trusting a green run:
+**`brew test` does not export a PDF.** Its sandbox denies the Mach lookups WebKit needs to start
+its helper processes, so the formula's test covers only `--version` and the JSON error contract
+(exits 2, 3 and 4). See [homebrew-tap#2](https://github.com/redtear1115/homebrew-tap/issues/2).
+Export has to be checked outside the sandbox, with the app out of the picture:
 
 ```sh
-MARSDAWN_APP_PATH=/nonexistent marsdawn export doc.md -o out.pdf --json   # exit 0, writes a PDF
+MARSDAWN_APP_PATH=/nonexistent marsdawn export doc.md -o out.pdf --json   # exit 0, "ok": true
 MARSDAWN_APP_PATH=/nonexistent marsdawn open doc.md                       # exit 3
 ```
 
-Shell completions come from ArgumentParser, so the formula can install them without any extra
-work in the tool:
-
-```ruby
-generate_completions_from_executable(bin/"marsdawn", "--generate-completion-script")
-```
-
-ArgumentParser takes the shell name as the argument after the flag
-(`marsdawn --generate-completion-script zsh`), which is the form that helper uses by default.
-Check the three generated files once, the first time the formula installs them.
+Use a document with math, a Mermaid diagram, code and a web image, and look at the PDF. The tap's
+CI does the same on a macOS runner for every pull request (step 6).
 
 ## 6. Open the tap pull request
 
-Push the branch and open the PR against the tap. Merging it is the owner's call, as is cutting
-the tag in step 2.
+Push the branch and open the PR against the tap. Its CI (`install-check.yml`) installs the
+formula from source on a macOS runner, runs `brew test` and `brew audit`, and exports a real PDF.
+The PR needs that run green and an independent verification before it merges. Merging it is the
+owner's call, as is cutting the tag in step 2.
 
-## 7. Afterwards
+## 7. Check the weekly install run
 
-- Update the website's `/cli/` install section and `llms.txt`, in en and zh-Hant, once the tap
-  works.
-- The tap README explains the split in one paragraph: the app ships through the Mac App Store,
-  and Homebrew carries the CLI only.
+The same workflow also runs weekly, so a runner-image change can't break installs unnoticed. But
+GitHub turns off scheduled workflows in a public repository after 60 days without activity, and a
+tap that only changes at release time can easily go that long. A release is when someone is
+looking, so check it now:
+
+```sh
+gh workflow list --all --repo redtear1115/homebrew-tap               # "disabled_inactivity" means it stopped
+gh workflow enable install-check.yml --repo redtear1115/homebrew-tap  # turns it back on
+gh workflow run install-check.yml --repo redtear1115/homebrew-tap     # runs it now against main
+```
+
+## 8. Afterwards
+
+- Update the website's `/cli/` install section and `llms.txt`, in en and zh-Hant, if anything
+  about installing changed.
+- If the release changes what the tool does, update the tap README's description of the commands.
