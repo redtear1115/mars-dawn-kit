@@ -43,7 +43,8 @@ jobs:
         run: |
           swift build --build-tests > /dev/null
           H="$(xcode-select -p)/Toolchains/XcodeDefault.xctoolchain/usr/libexec/swift/pm/swiftpm-testing-helper"
-          B=$(find .build -path '*PackageTests.xctest/Contents/MacOS/*' -type f | head -1)
+          B="$(swift build --show-bin-path)/MarsDawnKitPackageTests.xctest/Contents/MacOS/MarsDawnKitPackageTests"
+          ls -l "$B"
           echo "helper=$H bundle=$B"
           for t in nestedCallsRunInlineEvenWithEverySlotTaken aSlotHandedToAnAsyncCallerNeverWaitsForItsExecutor; do
             echo "=== $t"
