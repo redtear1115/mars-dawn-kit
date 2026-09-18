@@ -38,49 +38,38 @@ jobs:
       - run: swift --version
       - run: swift build
       # TEMPORARY diagnostics for PR #22; removed before merge.
-      - name: "Diagnostics: zh-Hant matching in the built bundle"
+      - name: "Diagnostics: which String operation traps (plain program, no Swift Testing)"
         continue-on-error: true
         run: |
-          set -euo pipefail
-          b=$(find .build -type d -name 'MarsDawnKit_MarsDawnKit.bundle' | head -1); echo "$b"; find "$b" -name '*.lproj'
-          cat > /tmp/m.swift <<'SWIFT'
+          cat > /tmp/ops.swift <<'SWIFT'
           import Foundation
-          let b = Bundle(path: CommandLine.arguments[1])!
-          for prefs in [["zh-Hant"], ["zh-Hant-TW"], ["zh-TW"]] {
-              let match = Bundle.preferredLocalizations(from: b.localizations, forPreferences: prefs)
-              let file = match.first.flatMap { b.path(forResource: "Localizable", ofType: "strings", inDirectory: nil, forLocalization: $0) }
-              print(prefs, "->", match, file.flatMap { NSDictionary(contentsOfFile: $0)?["Image not available"] as? String } ?? "NO STRING")
+          setvbuf(stdout, nil, _IONBF, 0)
+          let lines = ["été: x", "\u{200D}a: x", "a\u{0600}: x", "a\u{0600}:x", "a:\u{0301} x", "a: \u{0301}v", "a: v \u{0301}", "\u{0301}a: x", "ab\u{200D}c: x"]
+          for (n, line) in lines.enumerated() {
+              let value: (line: String, key: String?, value: String?) = (line, nil, nil)
+              print(n, "scalars", line.unicodeScalars.map { String($0.value, radix: 16) })
+              print(n, "count", line.count)
+              print(n, "==", line == String(line.reversed().reversed()))
+              print(n, "hash", line.hashValue != 0 || true)
+              print(n, "description", String(describing: line).count)
+              print(n, "debugDescription", line.debugDescription)
+              print(n, "reflecting tuple", String(reflecting: value))
+              print(n, "json", String(decoding: try! JSONEncoder().encode(line), as: UTF8.self))
           }
+          print("all done")
           SWIFT
-          swift /tmp/m.swift "$b"
-      - name: "Diagnostics: CLI export of trap-suspect front matter and deep nesting"
+          swiftc -Onone /tmp/ops.swift -o /tmp/ops && /tmp/ops; echo "exit=$?"
+      - name: "Diagnostics: FrontMatterTests alone"
         continue-on-error: true
         run: |
-          set -uo pipefail
-          d=$(mktemp -d)
-          printf -- '---\na\xd8\x80: x\n\xe2\x80\x8da: x\na: \xcc\x81v\na: v \xcc\x81\n\xc3\xa9t\xc3\xa9: x\nab\xe2\x80\x8dc: x\n---\n# Body\n' > "$d/fm.md"
-          od -c "$d/fm.md" | head -5
-          SWIFT_BACKTRACE=enable=yes,interactive=no swift run marsdawn export "$d/fm.md" --json; echo "exit=$?"
-          python3 -c "print('> ' * 250 + 'deep')" > "$d/deep.md"
-          SWIFT_BACKTRACE=enable=yes,interactive=no swift run marsdawn export "$d/deep.md" --json; echo "exit=$?"
-      - name: "Diagnostics: FrontMatterTests alone, with backtraces"
-        continue-on-error: true
-        env:
-          SWIFT_BACKTRACE: enable=yes,interactive=no,symbolicate=full
-        run: swift test --skip-build --no-parallel --filter 'FrontMatterTests' 2>&1 | tail -150
+          swift build --build-tests
+          swift test --skip-build --no-parallel --filter 'FrontMatterTests' 2>&1 | grep -E 'keyValueRule|signal|Test run with|✘' | tail -60
       - name: "Diagnostics: crash reports so far"
         if: always()
         continue-on-error: true
         run: |
           sleep 20
           find ~/Library/Logs/DiagnosticReports /Library/Logs/DiagnosticReports -name '*.ips' -mmin -30 2>/dev/null | while read -r f; do echo "== $f"; head -c 12000 "$f"; echo; done
-      - name: "Diagnostics: full run, not parallel"
-        run: time swift test --no-parallel
-      - name: "Diagnostics: crash reports"
-        if: failure()
-        run: |
-          ls -t ~/Library/Logs/DiagnosticReports/ | head
-          for f in $(ls -t ~/Library/Logs/DiagnosticReports/*.ips 2>/dev/null | head -2); do echo "== $f"; head -c 8000 "$f"; echo; done
       # Release builds inline more, so stack use per nesting level differs from debug.
       - run: swift test -c release
 
