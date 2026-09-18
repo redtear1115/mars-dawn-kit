@@ -410,10 +410,6 @@ private func skipRemoteScanWhitespace(_ bytes: [UInt8], from start: Int) -> Int 
     return index
 }
 
-private func asciiLowercased(_ byte: UInt8) -> UInt8 {
-    (0x41...0x5A).contains(byte) ? byte + 0x20 : byte
-}
-
 /// Whether `bytes` holds the lowercase `literal` at `start`, ASCII case ignored. A start outside
 /// the input is no match rather than an error.
 private func matchesLiteral(_ bytes: [UInt8], at start: Int, _ literal: [UInt8]) -> Bool {
