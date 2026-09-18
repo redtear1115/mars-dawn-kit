@@ -112,6 +112,11 @@ struct MarkdownParsingWorkerTests {
 }
 
 /// The two-slot gate: FIFO hand-off, cancellation of waiters, exactly-once resumption.
+// The gate's tests hand work between threads and resume continuations from threads of their own,
+// which macOS 15's Concurrency runtime turns into a fatal executor check (see
+// `runtimeAnswersExecutorQuestions`). The gate itself is the same code on both systems, and the
+// CLI export runs cover it on macOS 15.
+@Suite(.enabled(if: runtimeAnswersExecutorQuestions))
 struct WorkerGateTests {
     @Test func cancellingAWaiterReturnsNilPromptlyAndNeverRunsItsBody() async throws {
         let resumes = Counter<UInt64>()
@@ -323,7 +328,9 @@ struct WorkerGateTests {
 }
 
 /// Overhead of the guarded entry point (F16/F18). Soft bounds in debug builds.
-@Suite(.serialized)
+// Wall-clock budgets, so not on a shared runner: a 3-CPU CI machine failed largeDocuments at
+// 1.615s against a 1.5s budget with nothing wrong (mars-dawn-kit#15).
+@Suite(.serialized, .enabled(if: !onSharedRunner))
 struct MarkdownParsingTimingTests {
     #if DEBUG
     static let slack = 10.0

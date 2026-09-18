@@ -166,3 +166,16 @@ func eventually(timeout: Duration = .seconds(10), _ condition: () -> Bool) async
     }
     return condition()
 }
+
+/// macOS 26 or later, where the Concurrency runtime answers "which executor am I on?" instead of
+/// trapping. On macOS 15 that question goes through `dispatch_assert_queue`, which kills the
+/// process (EXC_BREAKPOINT in `_dispatch_assert_queue_fail`) when the answer is no. Tests that
+/// resume a continuation from a thread of their own hit it; the product code they cover is
+/// exercised on macOS 15 by the CLI export runs (mars-dawn-kit#26).
+let runtimeAnswersExecutorQuestions = ProcessInfo.processInfo.isOperatingSystemAtLeast(
+    OperatingSystemVersion(majorVersion: 26, minorVersion: 0, patchVersion: 0)
+)
+
+/// True on a shared CI runner, where wall-clock budgets measure the machine's other work as much
+/// as ours (mars-dawn-kit#15).
+let onSharedRunner = ProcessInfo.processInfo.environment["CI"] != nil

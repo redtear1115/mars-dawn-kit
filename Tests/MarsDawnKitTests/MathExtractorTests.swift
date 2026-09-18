@@ -629,7 +629,8 @@ struct MathExtractorTests {
     /// pre-scans and the worker's own cost charged to the extractor, and two separate
     /// guarded parses would charge it one worker too few, which on this input is larger
     /// than the work being measured.
-    @Test func nestedListsScaleLinearly() {
+    // Wall-clock, so not on a shared runner (mars-dawn-kit#15).
+    @Test(.enabled(if: !onSharedRunner)) func nestedListsScaleLinearly() {
         @Sendable func line(_ depth: Int) -> String { String(repeating: "- ", count: depth) + "$x$" }
         @Sendable func seconds(_ body: String, _ work: (String) -> Void) -> Double {
             var best = Double.infinity
