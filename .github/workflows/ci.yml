@@ -38,18 +38,42 @@ jobs:
       - run: swift --version
       - run: swift build
       # TEMPORARY diagnostics for PR #22; removed before merge.
-      - name: "Diagnostics: the CLI's zh-Hant labels"
+      - name: "Diagnostics: zh-Hant matching in the built bundle"
         continue-on-error: true
         run: |
           set -euo pipefail
-          sysctl -n hw.ncpu hw.memsize
-          find .build -path '*MarsDawnKit_MarsDawnKit.bundle*' -name '*.lproj'
-          d=$(mktemp -d); printf '# L10N\n\n![x](missing.png)\n' > "$d/doc.md"
-          defaults write marsdawn AppleLanguages '(zh-Hant)'
-          swift run marsdawn export "$d/doc.md" --json
-          defaults delete marsdawn AppleLanguages
-          printf 'import PDFKit\nlet d = PDFDocument(url: URL(fileURLWithPath: CommandLine.arguments[1]))!\nprint((0..<d.pageCount).map { d.page(at: $0)?.string ?? "" }.joined())\n' > "$d/x.swift"
-          swift "$d/x.swift" "$d/doc.pdf"
+          b=$(find .build -type d -name 'MarsDawnKit_MarsDawnKit.bundle' | head -1); echo "$b"; find "$b" -name '*.lproj'
+          cat > /tmp/m.swift <<'SWIFT'
+          import Foundation
+          let b = Bundle(path: CommandLine.arguments[1])!
+          for prefs in [["zh-Hant"], ["zh-Hant-TW"], ["zh-TW"]] {
+              let match = Bundle.preferredLocalizations(from: b.localizations, forPreferences: prefs)
+              let file = match.first.flatMap { b.path(forResource: "Localizable", ofType: "strings", inDirectory: nil, forLocalization: $0) }
+              print(prefs, "->", match, file.flatMap { NSDictionary(contentsOfFile: $0)?["Image not available"] as? String } ?? "NO STRING")
+          }
+          SWIFT
+          swift /tmp/m.swift "$b"
+      - name: "Diagnostics: CLI export of trap-suspect front matter and deep nesting"
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          d=$(mktemp -d)
+          printf -- '---\na\xd8\x80: x\n\xe2\x80\x8da: x\na: \xcc\x81v\na: v \xcc\x81\n\xc3\xa9t\xc3\xa9: x\nab\xe2\x80\x8dc: x\n---\n# Body\n' > "$d/fm.md"
+          od -c "$d/fm.md" | head -5
+          SWIFT_BACKTRACE=enable=yes,interactive=no swift run marsdawn export "$d/fm.md" --json; echo "exit=$?"
+          python3 -c "print('> ' * 250 + 'deep')" > "$d/deep.md"
+          SWIFT_BACKTRACE=enable=yes,interactive=no swift run marsdawn export "$d/deep.md" --json; echo "exit=$?"
+      - name: "Diagnostics: FrontMatterTests alone, with backtraces"
+        continue-on-error: true
+        env:
+          SWIFT_BACKTRACE: enable=yes,interactive=no,symbolicate=full
+        run: swift test --skip-build --no-parallel --filter 'FrontMatterTests' 2>&1 | tail -150
+      - name: "Diagnostics: crash reports so far"
+        if: always()
+        continue-on-error: true
+        run: |
+          sleep 20
+          find ~/Library/Logs/DiagnosticReports /Library/Logs/DiagnosticReports -name '*.ips' -mmin -30 2>/dev/null | while read -r f; do echo "== $f"; head -c 12000 "$f"; echo; done
       - name: "Diagnostics: full run, not parallel"
         run: time swift test --no-parallel
       - name: "Diagnostics: crash reports"
