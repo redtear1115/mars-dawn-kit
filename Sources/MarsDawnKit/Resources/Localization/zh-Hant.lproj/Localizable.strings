@@ -11,3 +11,4 @@
 /* Image placeholder labels for exported/printed pages (PreviewWebSupport.swift) */
 "Web image" = "網路圖片";
 "Image not available" = "無法顯示圖片";
+"Not loaded: unencrypted connection (http)" = "未載入：連線未加密（http）";

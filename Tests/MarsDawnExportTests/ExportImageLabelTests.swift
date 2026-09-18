@@ -31,9 +31,22 @@ struct ExportImageLabelTests {
         #expect(!text.contains("Not Found"))
     }
 
+    /// An http image is not a blocked web image waiting on a setting: the page's CSP never admits
+    /// http, so the printed page says that instead of naming a host the reader could have loaded
+    /// (mars-dawn#26). Holds whatever the export's own remote-image policy is.
+    @Test(arguments: [false, true])
+    func insecureImageGetsItsOwnLabelWhicheverPolicyTheExportUses(allowRemoteImages: Bool) async throws {
+        let markdown = "# Doc\n\n![A cat](http://example.com/cat.png)\n"
+        let text = try await exportedText(markdown: markdown, baseDirectory: nil, allowRemoteImages: allowRemoteImages)
+        #expect(text.contains("Not loaded: unencrypted connection (http)"))
+        #expect(!text.contains("Web image"))
+    }
+
     @Test func labelsAreLocalizedIntoTraditionalChinese() {
         #expect(PreviewWebView.moduleLocalizedString("Web image", localization: "zh-Hant") == "網路圖片")
         #expect(PreviewWebView.moduleLocalizedString("Image not available", localization: "zh-Hant") == "無法顯示圖片")
+        #expect(PreviewWebView.moduleLocalizedString("Not loaded: unencrypted connection (http)", localization: "zh-Hant")
+            == "未載入：連線未加密（http）")
     }
 
     /// Two exports of identical content differ in `/CreationDate`, `/ModDate` and the `/ID`
