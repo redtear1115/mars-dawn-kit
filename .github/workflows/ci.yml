@@ -45,11 +45,11 @@ jobs:
           swift test list --skip-build 2>/dev/null | sed -E 's#/.*##' | sort -u > /tmp/suites
           wc -l < /tmp/suites
           while read -r suite; do
-            swift test --skip-build --no-parallel --filter "^${suite//./\\.}/" > /tmp/out.txt 2>&1
-            status=$?
+            status=0
+            swift test --skip-build --no-parallel --filter "^${suite//./\\.}/" > /tmp/out.txt 2>&1 || status=$?
             result=$(grep -E 'Test run with|signal code|Executed' /tmp/out.txt | tr '\n' ' ')
             echo "SUITE $suite exit=$status $result"
-            if grep -q 'signal code' /tmp/out.txt; then grep -E '◇ Test|✔|✘' /tmp/out.txt | tail -25; fi
+            if grep -q 'signal code' /tmp/out.txt; then grep -E '◇ Test|✔|✘' /tmp/out.txt | tail -25 || true; fi
           done < /tmp/suites
       - name: "Diagnostics: crash reports so far"
         if: always()
