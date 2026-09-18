@@ -26,15 +26,24 @@ Two things that have caught people out when writing tests here:
 
 ```sh
 swift run marsdawn open notes.md
+swift run marsdawn open notes.md:120
 swift run marsdawn export notes.md -o notes.pdf --theme classic --paper a4
 ```
 
-- `open <files…>` opens files in the MarsDawn app.
+- `open <files…> [--line N] [--json]` opens files in the MarsDawn app.
+  - A file argument can name a line: `notes.md:120` lands on line 120, and a column after it (`notes.md:120:8`) is accepted and ignored. An argument that names a file which exists is always the whole filename, so a file called `weird:12` still opens as itself.
+  - `--line N` says the same thing for a single file, and is the way to ask for a line on a path that itself ends in a colon and digits. With more than one file it is a usage error.
+  - Lines run from 1 to 999999999. Anything else is a usage error, and nothing is sent.
+  - The line travels inside the same open-documents Apple Event that carries the files, so it arrives whether MarsDawn is already running or not. There is no URL scheme.
+  - `--json` prints `ok`, `app` and `opened`: one object per file, `{"path": …}`, carrying `"line"` when one was asked for.
 - `export <file> [-o out.pdf] [--theme dawn|classic|modern|vivid] [--paper a4|letter] [--allow-remote-images] [--force] [--json]` renders a PDF without opening a window.
   - The theme defaults to `$MARSDAWN_THEME`, then `dawn`.
   - Existing files are only overwritten with `--force`.
   - `--json` prints `ok`, `output`, `pages` and `diagramErrors`.
-- Exit codes: 2 input not found, 3 MarsDawn not installed, 4 output exists, 5 export failed, 64 usage error.
+  - It renders on its own: the MarsDawn app does not have to be installed. Only `open` needs the app.
+- `--version` prints the release number and nothing else, so a package manager can compare it against its own. Bumping it is part of cutting a release; see [RELEASING.md](RELEASING.md).
+- `--generate-completion-script bash|zsh|fish` writes a shell completion script to stdout.
+- Exit codes: 2 input not found, 3 MarsDawn not installed (`open` only), 4 output exists, 5 export failed, 64 usage error.
 - `MARSDAWN_APP_PATH` overrides where the tool looks for the MarsDawn app. It exists for testing.
 
 ## Use as a package
