@@ -81,13 +81,25 @@ struct ScopedFileReaderTests {
         #expect(mkfifo(fifo, 0o600) == 0)
         let reader = try Reader(root: root)
         let result = FailureBox()
+        let elapsed = ElapsedBox()
+        let started = DispatchSemaphore(value: 0)
         let done = DispatchSemaphore(value: 0)
-        DispatchQueue.global().async {
-            result.set(failure { try read(reader, ["pipe.png"]) })
+        // A thread of its own, and a clock started inside it. A pooled queue can leave the work
+        // item unscheduled for seconds when the whole suite runs at once, and timing the wait
+        // from out here would measure that scheduling delay rather than the open (which is what
+        // O_NONBLOCK is here to keep short).
+        let thread = Thread {
+            started.signal()
+            let begin = DispatchTime.now()
+            let outcome = failure { try read(reader, ["pipe.png"]) }
+            elapsed.set(DispatchTime.now().uptimeNanoseconds - begin.uptimeNanoseconds)
+            result.set(outcome)
             done.signal()
         }
-        if done.wait(timeout: .now() + 1) == .timedOut {
-            Issue.record("Opening a FIFO blocked for more than 1 s")
+        thread.start()
+        _ = started.wait(timeout: .now() + 30)
+        if done.wait(timeout: .now() + 30) == .timedOut {
+            Issue.record("Opening a FIFO never returned")
             // Release the blocked open so the thread can finish.
             let writer = Darwin.open(fifo, O_WRONLY | O_NONBLOCK)
             if writer >= 0 { close(writer) }
@@ -95,6 +107,8 @@ struct ScopedFileReaderTests {
             return
         }
         #expect(result.value == .notRegular)
+        // The open itself, not the time to get a thread onto a core.
+        #expect(elapsed.value < 1_000_000_000, "Opening a FIFO blocked for \(Double(elapsed.value) / 1e9) s")
     }
 
     @Test func refusesAFolder() throws {
@@ -290,6 +304,14 @@ struct ScopedFileReaderTests {
         #expect(tmpSpelling.hasPrefix("/tmp/"))
         #expect(try reader.readFile(atPath: tmpSpelling + "/a.png", maxSize: 100) == Data("image".utf8))
     }
+}
+
+/// Nanoseconds the timed call took, written on the worker thread and read on the test's.
+private final class ElapsedBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: UInt64 = 0
+    var value: UInt64 { lock.withLock { stored } }
+    func set(_ value: UInt64) { lock.withLock { stored = value } }
 }
 
 private final class FailureBox: @unchecked Sendable {
