@@ -22,15 +22,18 @@ enum JoinerScalars {
 
     static func range(_ values: ClosedRange<UInt32>) -> [UInt32] { Array(values) }
 
-    static let prependSeeds: [UInt32] =
-        range(0x0600...0x0605) + [0x06DD, 0x070F] + range(0x0890...0x0891) + [0x08E2, 0x0D4E, 0x110BD, 0x110CD]
-        + range(0x111C2...0x111C3) + [0x1193F, 0x11941, 0x11A3A] + range(0x11A84...0x11A89) + [0x11D46, 0x11F02]
+    // Lists of parts, not one long `+` chain: Xcode 26's type checker gives up on the chain.
+    static let prependSeeds: [UInt32] = ([
+        range(0x0600...0x0605), [0x06DD, 0x070F], range(0x0890...0x0891), [0x08E2, 0x0D4E, 0x110BD, 0x110CD],
+        range(0x111C2...0x111C3), [0x1193F, 0x11941, 0x11A3A], range(0x11A84...0x11A89), [0x11D46, 0x11F02],
+    ] as [[UInt32]]).flatMap { $0 }
 
-    static let extendSeeds: [UInt32] =
-        [0x0301, 0x0300, 0x036F, 0x0591, 0x064B, 0x093C, 0x20DD, 0x20E3, 0x0488]  // Mn and Me samples
-        + [0x0903, 0x093E, 0x0BBF]  // Mc samples
-        + [0x200D, 0x200C, 0xFF9E, 0xFF9F] + range(0xFE00...0xFE0F) + [0xE0100]
-        + range(0xE0020...0xE007F) + range(0x1F3FB...0x1F3FF)
+    static let extendSeeds: [UInt32] = ([
+        [0x0301, 0x0300, 0x036F, 0x0591, 0x064B, 0x093C, 0x20DD, 0x20E3, 0x0488],  // Mn and Me samples
+        [0x0903, 0x093E, 0x0BBF],  // Mc samples
+        [0x200D, 0x200C, 0xFF9E, 0xFF9F], range(0xFE00...0xFE0F), [0xE0100],
+        range(0xE0020...0xE007F), range(0x1F3FB...0x1F3FF),
+    ] as [[UInt32]]).flatMap { $0 }
 
     static func scalar(_ value: UInt32) -> Unicode.Scalar { Unicode.Scalar(value)! }
 
@@ -45,7 +48,15 @@ struct JoinerScalarSetTests {
     @Test func prependSeedsJoinTheFollowingCharacter() {
         let before = Set(JoinerScalars.before)
         let notJoining = JoinerScalars.prependSeeds.filter { "\(JoinerScalars.scalar($0))<".count != 1 }
-        #expect(notJoining == [0x11A3A], "this runtime's Prepend data changed: \(notJoining.map { String($0, radix: 16) })")
+        // The grapheme data ships with the OS's Swift runtime. macOS 26's no longer joins
+        // U+11A3A (ZANABAZAR SQUARE CLUSTER-INITIAL LETTER RA); macOS 15's still does.
+        let expected: [UInt32]
+        if #available(macOS 26, iOS 26, *) {
+            expected = [0x11A3A]
+        } else {
+            expected = []
+        }
+        #expect(notJoining == expected, "this runtime's Prepend data changed: \(notJoining.map { String($0, radix: 16) })")
         for value in JoinerScalars.prependSeeds where !notJoining.contains(value) {
             #expect(before.contains(JoinerScalars.scalar(value)), "U+\(String(value, radix: 16, uppercase: true))")
         }

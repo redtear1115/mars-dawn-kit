@@ -105,6 +105,7 @@ struct StackMarginTests {
 
     /// The workload also survives a worker only a quarter the size, run in a child process
     /// so that an overflow fails the test instead of killing the run.
+    #if compiler(>=6.3)
     @Test(arguments: NestingShape.allCases)
     func aQuarterSizedWorkerSurvivesTheDeepestAcceptedInput(_ shape: NestingShape) async {
         let source = Self.measurementDocument(shape)
@@ -116,4 +117,20 @@ struct StackMarginTests {
             precondition(ran)
         }
     }
+    #else
+    /// Swift 6.2's exit tests can't capture values (capture lists came in 6.3), so one child
+    /// process runs every shape in turn; a failure doesn't say which shape, only that one did.
+    @Test func aQuarterSizedWorkerSurvivesTheDeepestAcceptedInput() async {
+        await #expect(processExitsWith: .success) {
+            for shape in NestingShape.allCases {
+                let source = StackMarginTests.measurementDocument(shape)
+                let ran = MarkdownParsing.withDocument("", options: .default, gate: WorkerGate(slots: 1), stackSize: MarkdownParsing.workerStackSize / 4) { _ in
+                    StackMarginTests.everything(source)
+                    return true
+                }
+                precondition(ran, "shape \(shape)")
+            }
+        }
+    }
+    #endif
 }

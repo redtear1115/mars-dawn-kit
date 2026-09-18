@@ -644,7 +644,7 @@ struct MathExtractorTests {
         final class Results: @unchecked Sendable { var values: [(extract: Double, parse: Double)] = [] }
         let box = Results()
         let done = DispatchSemaphore(value: 0)
-        let thread = Thread {
+        let thread = Thread { @Sendable in
             for copies in [10, 40] {
                 let body = Array(repeating: line(500), count: copies).joined(separator: "\n\n")
                 let parse = seconds(body) { source in
@@ -664,13 +664,16 @@ struct MathExtractorTests {
         let results = box.values
         #expect(results.count == 2)
         guard results.count == 2 else { return }
-        // Two guarded parses plus linear work: the part beyond parsing is small and grows
-        // linearly. A soft check with a generous bound (F18): it is wall-clock time on a
-        // machine running the rest of the suite beside it.
+        // Two guarded parses plus linear work: what the extractor adds beyond parsing grows
+        // linearly with the input (F18), which is the property that catches a quadratic
+        // regression. The bound is relative to what this machine just measured, because these
+        // are wall-clock figures from a machine that may be running anything else. A fixed cap
+        // of 0.1s failed on a 3-CPU CI runner at 0.1018s, and a cap of "less than one parse"
+        // failed in release at 0.0353s against 0.0341s, both with nothing wrong
+        // (mars-dawn-kit#15).
         let ownSmall = max(results[0].extract - results[0].parse, 0.002)
         let ownLarge = max(results[1].extract - results[1].parse, 0)
-        #expect(ownLarge < 0.1, "own work \(ownLarge)s for 40 × depth 500")
-        #expect(ownLarge < ownSmall * 4 * 3 + 0.05, "\(ownSmall)s → \(ownLarge)s")
+        expectWithinBudget(ownLarge, ownSmall * 4 * 3 + 0.05, "\(ownSmall)s → \(ownLarge)s")
     }
 
     // MARK: swift-markdown
