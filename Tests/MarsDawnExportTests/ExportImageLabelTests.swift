@@ -36,12 +36,12 @@ struct ExportImageLabelTests {
         #expect(PreviewWebView.moduleLocalizedString("Image not available", localization: "zh-Hant") == "無法顯示圖片")
     }
 
-    /// AppKit's PDF producer embeds a couple of things that vary run to run even for identical
-    /// content — a random `/ID` trailer entry, and (intermittently, under load) a differently
-    /// tagged embedded font subset — so raw file bytes aren't a stable equality check. The page
-    /// count and extracted text are: they are exactly what a reader of the PDF sees, and they
-    /// must stay identical, proving the new label scripts in `prepare` don't perturb a page that
-    /// has no images to label.
+    /// Two exports of identical content differ in `/CreationDate`, `/ModDate` and the `/ID`
+    /// derived from them, which have one-second resolution, so raw file bytes match or don't
+    /// depending on timing and aren't a stable equality check (see the README). The page count
+    /// and extracted text are: they are exactly what a reader of the PDF sees, and they must
+    /// stay identical, proving the new label scripts in `prepare` don't perturb a page that has
+    /// no images to label.
     @Test func exportOfADocumentWithNoImagesIsUnchangedAcrossRuns() async throws {
         let markdown = "# Doc\n\nJust text, no images at all.\n"
         let first = try await exportedPDF(markdown: markdown)
