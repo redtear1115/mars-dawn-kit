@@ -149,3 +149,15 @@ public final class DocumentAssetSchemeHandler: NSObject, WKURLSchemeHandler {
         task.didFinish()
     }
 }
+
+extension MarkdownRenderer.Options {
+    /// The options for rendering into the preview page: image sources map to
+    /// `DocumentAssetSchemeHandler` URLs. The app preview, Quick Look and PDF export all build
+    /// their options here, so what export prints can't drift from what the preview shows
+    /// (redtear1115/mars-dawn#2, #22).
+    public static func preview(hasBaseDirectory: Bool) -> Self {
+        Self { source in
+            DocumentAssetSchemeHandler.previewURL(forImageSource: source, hasBaseDirectory: hasBaseDirectory) ?? source
+        }
+    }
+}

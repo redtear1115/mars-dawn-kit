@@ -75,6 +75,8 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
 
     /// Mermaid diagrams that failed to render in the prepared page, as their error messages.
     public private(set) var diagramErrors: [String] = []
+    /// The HTML `prepare` put into the page, for the PDF corpus's preview parity check.
+    private(set) var renderedHTML: String?
 
     /// Loads the page and renders `markdown` into it, waiting for diagrams, images and fonts.
     public func prepare(markdown: String, theme: PreviewTheme) async throws {
@@ -115,10 +117,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
             blockedLabel: PreviewWebView.unloadableImagePlaceholderLabel
         ))
 
-        let hasBaseDirectory = assets.baseDirectory != nil
-        let options = MarkdownRenderer.Options { source in
-            DocumentAssetSchemeHandler.previewURL(forImageSource: source, hasBaseDirectory: hasBaseDirectory) ?? source
-        }
+        let options = MarkdownRenderer.Options.preview(hasBaseDirectory: assets.baseDirectory != nil)
         // One deadline covers rendering, updating the page and waiting for its content.
         let deadline = ContinuousClock.now + Self.contentTimeout
         let rendered = try await withExportDeadline(deadline, timeoutError: ExportError.contentTimedOut) {
@@ -127,6 +126,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
             return await MarkdownRenderer.renderResult(markdown, options: options)
         }
         guard let html = rendered?.html else { throw CancellationError() }
+        renderedHTML = html
         let updateScript = PreviewWebView.updateScript(html: html)
         try await withExportDeadline(deadline, timeoutError: ExportError.contentTimedOut) { @MainActor [webView] in
             let pushSignpost = Self.signposter.beginInterval("push", id: Self.signposter.makeSignpostID())
@@ -243,6 +243,9 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         ).completed
     }
 
+    /// What tests get to look at: the exporter that is about to print, after `prepare`.
+    typealias Inspection = (DocumentExporter) async throws -> Void
+
     /// Like `run`, also reporting diagrams that failed to render.
     public static func runReportingDiagrams(
         markdown: String,
@@ -253,12 +256,31 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         window: NSWindow?,
         configure: (NSPrintInfo, NSPrintOperation) -> Void = { _, _ in }
     ) async throws -> (completed: Bool, diagramErrors: [String]) {
+        try await runReportingDiagrams(
+            markdown: markdown, theme: theme, baseDirectory: baseDirectory, allowRemoteImages: allowRemoteImages,
+            printInfo: printInfo, window: window, inspect: nil, configure: configure
+        )
+    }
+
+    /// `inspect` runs on the same exporter between `prepare` and printing, so the PDF corpus
+    /// checks the page that is actually printed, through the real export path.
+    static func runReportingDiagrams(
+        markdown: String,
+        theme: PreviewTheme,
+        baseDirectory: URL?,
+        allowRemoteImages: Bool,
+        printInfo: NSPrintInfo,
+        window: NSWindow?,
+        inspect: Inspection?,
+        configure: (NSPrintInfo, NSPrintOperation) -> Void = { _, _ in }
+    ) async throws -> (completed: Bool, diagramErrors: [String]) {
         // Lay out at the printable width, so measured block heights match the printed pages.
         let printableWidth = printInfo.paperSize.width - 2 * pageMargins.width
         let exporter = DocumentExporter(baseDirectory: baseDirectory, allowRemoteImages: allowRemoteImages, width: printableWidth)
         active.insert(exporter)
         defer { active.remove(exporter) }
         try await exporter.prepare(markdown: markdown, theme: theme)
+        try await inspect?(exporter)
         let operation = exporter.printOperation(printInfo: printInfo)
         configure(operation.printInfo, operation)
         let host = window ?? exporter.hiddenWindow()
@@ -302,12 +324,28 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         allowRemoteImages: Bool,
         paper: Paper = .a4
     ) async throws -> PDFResult {
+        try await exportPDF(
+            markdown: markdown, to: url, theme: theme, baseDirectory: baseDirectory,
+            allowRemoteImages: allowRemoteImages, paper: paper, inspect: nil
+        )
+    }
+
+    /// `exportPDF` with the corpus's inspection hook; see `runReportingDiagrams(…inspect:…)`.
+    static func exportPDF(
+        markdown: String,
+        to url: URL,
+        theme: PreviewTheme,
+        baseDirectory: URL?,
+        allowRemoteImages: Bool,
+        paper: Paper = .a4,
+        inspect: Inspection?
+    ) async throws -> PDFResult {
         let printInfo = NSPrintInfo()
         printInfo.paperSize = paper.size
         printInfo.orientation = .portrait
         let result = try await runReportingDiagrams(
             markdown: markdown, theme: theme, baseDirectory: baseDirectory,
-            allowRemoteImages: allowRemoteImages, printInfo: printInfo, window: nil
+            allowRemoteImages: allowRemoteImages, printInfo: printInfo, window: nil, inspect: inspect
         ) { info, operation in
             info.jobDisposition = .save
             info.dictionary()[NSPrintInfo.AttributeKey.jobSavingURL] = url
