@@ -126,6 +126,9 @@ struct MermaidCorpusTests {
         var measured: [String: Int] = [:]
         for name in Self.fixtureNames {
             let (markdown, expectation) = try Self.load(name)
+            // Empty the page first: while editing, the preview keeps a diagram's previous SVG on
+            // screen until the new one renders, and that would carry one fixture into the next.
+            _ = try await webView.evaluateJavaScript(PreviewWebView.updateScript(html: "", lineCount: 1))
             _ = try await webView.evaluateJavaScript(
                 PreviewWebView.updateScript(html: MarkdownRenderer.render(markdown), lineCount: 40)
             )
