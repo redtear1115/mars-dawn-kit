@@ -340,7 +340,15 @@ public enum HTMLDocumentText {
                     guard let end = content[(index + 1)...].firstIndex(of: quote) else { return nil }
                     return Array(content[(index + 1)..<end])
                 }
-                let end = content[index...].firstIndex(where: { isSpace($0) || $0 == 0x3B }) ?? content.count
+                // Both sides of the `??` come from the same slice. They have to: `firstIndex`
+                // on a slice answers in the *parent's* index space, and Swift 6.1's type checker
+                // will not unify `ArraySlice<UInt8>.Index?` with an `Int` taken from somewhere
+                // else -- which is why this line built here on Xcode 27 and failed CI on 26.
+                // `tail.endIndex` and `content.count` are the same number for an array, so this
+                // is a compatibility fix and not a behaviour change; `ScopedFileReader` already
+                // writes the same search this way.
+                let tail = content[index...]
+                let end = tail.firstIndex(where: { isSpace($0) || $0 == 0x3B }) ?? tail.endIndex
                 return Array(content[index..<end])
             }
         }

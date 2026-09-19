@@ -361,7 +361,11 @@ struct HTMLDocumentSchemeHandlerTests {
 
     private func writeMedia(_ tree: Tree, name: String, size: Int) throws -> Data {
         var bytes = Data(count: size)
-        bytes.withUnsafeMutableBytes { buffer in
+        // Spelled out because `Data.withUnsafeMutableBytes` still carries its deprecated
+        // `UnsafeMutablePointer<UInt8>` overload alongside the raw-buffer one, and Swift 6.1
+        // won't pick between them from the body alone. 6.2 will, which is why this built here
+        // and failed CI.
+        bytes.withUnsafeMutableBytes { (buffer: UnsafeMutableRawBufferPointer) in
             for index in stride(from: 0, to: size, by: 4096) { buffer[index] = UInt8(truncatingIfNeeded: index / 4096) }
         }
         try bytes.write(to: tree.url("site/pages/\(name)"))
