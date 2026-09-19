@@ -99,6 +99,41 @@ struct ExportParentImageTests {
         #expect(injected == 0, "nothing from a path became markup")
     }
 
+    private func labels(_ markdown: String, project: URL) async throws -> [String] {
+        let exporter = DocumentExporter(baseDirectory: project, allowRemoteImages: false)
+        try await exporter.prepare(markdown: markdown, theme: .dawn)
+        return try await exporter.webView.evaluateJavaScript(
+            #"[...document.querySelectorAll(".image-placeholder .image-placeholder-label")].map((l) => l.textContent)"#
+        ) as? [String] ?? []
+    }
+
+    /// A `../` path too long to carry whole still carries its start, so the label never falls back
+    /// to the resolved absolute path, which names the user's folders and lands in a PDF (#70).
+    @Test func aVeryLongParentPathIsLabelledAsWrittenNotResolved() async throws {
+        let (root, project) = try makeTree()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let long = "../" + String(repeating: "a", count: 5000) + ".png"
+        #expect(long.utf8.count > DocumentAssetSchemeHandler.maxWrittenSourceLength, "precondition: longer than the fragment cap")
+        let shown = try await labels("![long](\(long))\n\n![short](../shared/missing.png)\n", project: project)
+        #expect(shown.count == 2, "positive fixture: both placeholders are there (\(shown.count))")
+        let label = PreviewWebView.unloadableImagePlaceholderLabel
+        #expect(shown.first?.hasPrefix("\(label): ../aaaa") == true, "\(shown.first?.prefix(80) ?? "none")")
+        #expect(shown.allSatisfy { !$0.contains(root.path) && !$0.contains("granted/") }, "no resolved folder names")
+    }
+
+    /// Bidi controls in a path are document text that would reorder the label around them; they
+    /// never reach it (#70).
+    @Test func bidiControlsDoNotReachALabel() async throws {
+        let (root, project) = try makeTree()
+        defer { try? FileManager.default.removeItem(at: root) }
+        // ../evil<RLO>gnp.exe and ../x<LRI>y<PDI>.png, percent-encoded as a document could write them.
+        let shown = try await labels("![a](../evil%E2%80%AEgnp.exe)\n\n![b](../x%E2%81%A6y%E2%81%A9.png)\n", project: project)
+        #expect(shown.count == 2, "positive fixture: both placeholders are there")
+        let bidi = CharacterSet(charactersIn: "\u{202A}\u{202B}\u{202C}\u{202D}\u{202E}\u{2066}\u{2067}\u{2068}\u{2069}")
+        #expect(shown.allSatisfy { $0.unicodeScalars.allSatisfy { !bidi.contains($0) } }, "\(shown.map { Array($0.unicodeScalars).map { String($0.value, radix: 16) }.suffix(12) })")
+        #expect(shown.first?.contains("evil") == true && shown.first?.contains("exe") == true, "the rest of the path is still shown")
+    }
+
     /// A 16×16 PNG.
     static func png() throws -> Data {
         let rep = try #require(NSBitmapImageRep(
