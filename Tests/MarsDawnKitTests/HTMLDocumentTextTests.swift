@@ -105,110 +105,79 @@ struct HTMLDocumentTagTests {
     }
 }
 
-/// `referencesRemoteContent`, which feeds the remote-content banner.
+/// The two narrow scanners that replaced it (A4-3). Both are **copy only, never controls**: the
+/// CSP, the rule list and the page sandbox decide what a document may do, and none of them asks
+/// these. They over-report rather than under-report, exactly as the scanner they replace did.
 @Suite(.timeLimit(.minutes(1)))
-struct HTMLRemoteScanTests {
-    @Test func scannerFindsRemoteReferences() {
+struct HTMLScriptScanTests {
+    @Test func scriptElementsAndInlineHandlersCount() {
         for html in [
-            "<img src=http://x/a.png>", "<img SRC='https://x/a.png'>", "<img srcset=\"a.png 1x, https://x/b.png 2x\">",
-            "<a href=//x/>", "<video poster=\"https://x/p.png\">", "<object data=https://x/o>", "<body background=http://x/b.png>",
-            "<form action=https://x/f>", "<a ping=\"https://x/p\" href=a.html>", "<link imagesrcset=\"https://x/a.png 1x\">",
-            "<svg><use xlink:href=\"https://x/s.svg#a\"/></svg>", "<img src=\" https://x/a.png\">",
-            "<div style=\"background:url(https://x/a.png)\">", "<style>p{background:url( 'http://x/a.png' )}</style>",
-            "<style>@import 'https://x/s.css';</style>", "<style>@import url(//x/s.css);</style>",
-            "<style>p{background-image:image-set(\"a.png\" 1x, \"https://x/b.png\" 2x)}</style>",
-            "<script src=wss://x/s></script>", "<img src=\\\\x\\a.png>",
+            "<script>x()</script>",
+            "<SCRIPT src=a.js></SCRIPT>",
+            "<script\n  type=module>",
+            "<script/>",
+            "<button onclick=\"go()\">",
+            "<div ONLOAD='x'>",
+            "<img src=a.png onerror = \"x\">",
+            // Over-reports rather than under-reports, and this is what that costs: prose
+            // containing `on…=` reads as an event handler, because the scan doesn't track
+            // whether it is inside a tag. The price is a bar offered for a document that
+            // can't run anything; the document still can't run anything.
+            "<p>the word onward= appears</p>",
         ] {
-            #expect(referencesRemoteContent(html), "\(html)")
+            #expect(mightRunScript(html), "\(html)")
         }
     }
 
-    @Test func scannerIgnoresLocalReferences() {
+    @Test func ordinaryMarkupDoesNot() {
         for html in [
-            "<img src=a.png>", "<img src=\"img/https.png\">", "<a href=#top>", "<a href=mailto:x@y>",
-            "<img data-src=https://x/a.png>", "<p>see https://x/ for more</p>", "<img src=data:image/png;base64,AA>",
-            "<style>p{background:url(img/a.png)}</style>", "<img srcset=\"a.png 1x, b.png 2x\">", "<img alt='http://x'>",
+            "<p>text</p>",
+            "<img src=a.png alt=one>",
+            "<scriptfoo>",
+            "<a href=on.html>on</a>",
+            "<div data-on=x>",
         ] {
-            #expect(!referencesRemoteContent(html), "\(html)")
+            #expect(!mightRunScript(html), "\(html)")
         }
     }
 
-    /// The signals the scan looks for, pinned: CSS `url(`, `image-set(` and `@import` in their
-    /// spellings, and the boundary an attribute name needs.
-    @Test func scannerPinsEachSignal() {
+    @Test func remoteScriptSourcesAreSeen() {
         for html in [
-            // url(, with whitespace and at most one quote around the URL, in any case.
-            "<style>p{background:URL( \"HTTPS://x/a.png\" )}</style>",
-            "<style>p{background:url(\n\t//x/a.png)}</style>",
-            "<style>p{background:url('ws://x/s')}</style>",
-            "<div style=\"background:url(https://x/a.png)\">",
-            // @import, bare or through url(, and its whitespace.
-            "<style>@IMPORT URL( \"http://x/s.css\" );</style>",
-            "<style>@import\n\t'//x/s.css';</style>",
-            "<style>@import wss://x/s;</style>",
-            // image-set(, through a quote or a nested url( before the next ; { }.
-            "<style>p{background:image-set( 'a.png' 1x , 'http://x/b.png' 2x)}</style>",
-            "<style>p{background:image-set(url(https://x/a.png) 1x)}</style>",
-            // An attribute name is whole, and its value may hold the URL after a space or comma.
-            "<img srcset=\"a.png 1x,https://x/b.png 2x\">",
-            "<a ping=\"a.html b.html https://x/p\">",
-            "<img\n src\n =\n https://x/a.png>",
-            "<use xlink:href='https://x/s.svg#a'/>",
+            "<script src=https://cdn.example/x.js></script>",
+            "<script SRC = 'http://cdn.example/x.js'></script>",
+            "<script defer src=\"//cdn.example/x.js\"></script>",
+            "<p>text</p><script src=https://cdn.example/x.js>",
         ] {
-            #expect(referencesRemoteContent(html), "\(html)")
-        }
-        for html in [
-            "<style>@import 'a.css';</style>",
-            "<style>@importhttps://x/s.css;</style>",
-            "<style>p{background:url(a.png)}</style>",
-            "<style>p{background:image-set(\"a.png\" 1x, \"b.png\" 2x)}</style>",
-            // A URL attribute name must not be part of a longer one.
-            "<img data-href=https://x/a.png>",
-            "<img xsrc=https://x/a.png>",
-            "<img imagesrc=https://x/a.png>",
-            // A remote URL in an attribute that isn't a URL attribute.
-            "<img src=\"a.png\" alt=\"1, https://x/a.png\">",
-            "<p title='https://x/'>text</p>",
-        ] {
-            #expect(!referencesRemoteContent(html), "\(html)")
+            #expect(asksForRemoteScript(html), "\(html)")
         }
     }
 
-    /// D1: the patterns this scan replaced put two `\s*` runs around an optional quote, which made
-    /// these shapes quadratic. In a debug build `<img src="` plus spaces took 0.04 s at 1k, 0.79 s
-    /// at 4k and 12.9 s at 16k, and a 16 MB document — the handler's cap, which H2 prepares for
-    /// every file opened — never finished. The same four shapes now take about 0.02 s together, so
-    /// this bound fails on a return to quadratic behaviour long before the suite's time limit.
-    @Test func scannerStaysLinearOnCraftedInput() {
-        var elapsed = Duration.zero
-        for count in [1_000, 4_000, 16_000, 64_000] {
-            let spaces = String(repeating: " ", count: count)
-            for html in [
-                "<img src=\"\(spaces)\">",
-                "<style>p{background:url(\(spaces))}</style>",
-                "<style>@import \(spaces)'a.css';</style>",
-                "<style>p{background:image-set(\(spaces))}</style>",
-            ] {
-                let start = ContinuousClock.now
-                let found = referencesRemoteContent(html)
-                elapsed += ContinuousClock.now - start
-                #expect(!found)
-            }
+    @Test func localAndInlineScriptsAreNotRemote() {
+        for html in [
+            "<script>x()</script>",
+            "<script src=app.js></script>",
+            "<script src=./lib/app.js></script>",
+            "<script src=/abs/app.js></script>",
+            "<img src=https://cdn.example/a.png>",
+            "<p>https://cdn.example/x.js</p>",
+        ] {
+            #expect(!asksForRemoteScript(html), "\(html)")
         }
-        #expect(elapsed < .seconds(1), "took \(elapsed)")
     }
 
-    /// A 1 MB document of ordinary markup, which is the shape the banner really scans.
-    @Test func scannerReadsARealisticDocumentQuickly() {
+    /// The property the retired scanner was rewritten to get: linear in the document's size. The
+    /// regexes it replaced were quadratic, and a 16 MB document — the handler's cap — never
+    /// finished. Both new scanners are forward passes and must stay that way.
+    @Test func bothScannersReadAMegabyteQuickly() {
         let document = String(
             repeating: "<p class=\"lead\">text <a href=\"notes.html\">link</a> <img src=\"img/a.png\" alt=\"a, b\"></p>\n",
             count: 14_000
         )
         #expect(document.utf8.count > 1 << 20)
         let start = ContinuousClock.now
-        let found = referencesRemoteContent(document)
+        #expect(!mightRunScript(document))
+        #expect(!asksForRemoteScript(document))
         let elapsed = ContinuousClock.now - start
-        #expect(!found)
         #expect(elapsed < .seconds(2), "took \(elapsed)")
     }
 }
@@ -313,9 +282,10 @@ struct HTMLDocumentDecodingTests {
         let prepared = try #require(await Text.prepare(Data(bytes)))
         #expect(prepared.encoding == "utf-16le")
         #expect(String(decoding: prepared.html, as: UTF8.self) == "<x-md-link rel=preconnect href=https://x><img src=https://x/a.png><p>é</p>")
-        #expect(prepared.referencesRemoteContent)
-        let local = try #require(await Text.prepare(Data("<img src=a.png>".utf8)))
-        #expect(!local.referencesRemoteContent)
+        #expect(!prepared.mightRunScript)
+        let script = try #require(await Text.prepare(Data("<script src=https://cdn.example/x.js></script>".utf8)))
+        #expect(script.mightRunScript)
+        #expect(script.asksForRemoteScript)
         #expect(await Text.prepare(Data(count: (16 << 20) + 1)) == nil)
     }
 }

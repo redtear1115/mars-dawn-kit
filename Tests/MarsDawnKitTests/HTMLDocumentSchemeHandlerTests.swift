@@ -89,7 +89,7 @@ struct HTMLDocumentSchemeHandlerTests {
     }
 
     private func begin(_ handler: Handler, _ tree: Tree, remote: Bool = false, document: String = "<p>page</p>") throws -> URL {
-        try handler.beginLoad(document: Data(document.utf8), documentURL: tree.document, scopeRoot: tree.root, allowsRemoteContent: remote)
+        try handler.beginLoad(document: Data(document.utf8), documentURL: tree.document, scopeRoot: tree.root, policy: remote ? .running : .blocked)
     }
 
     // MARK: Headers
@@ -109,7 +109,7 @@ struct HTMLDocumentSchemeHandlerTests {
     }
 
     static let expectedBlockedCSP = "default-src 'none'; img-src marsdawn-html: data:; style-src marsdawn-html: 'unsafe-inline'; font-src marsdawn-html: data:; media-src marsdawn-html:; script-src 'none'; object-src 'none'; frame-src 'none'; child-src 'none'; worker-src 'none'; connect-src 'none'; manifest-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'"
-    static let expectedRemoteCSP = "default-src 'none'; img-src marsdawn-html: data: https:; style-src marsdawn-html: 'unsafe-inline' https:; font-src marsdawn-html: data: https:; media-src marsdawn-html: https:; script-src 'none'; object-src 'none'; frame-src 'none'; child-src 'none'; worker-src 'none'; connect-src 'none'; manifest-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'"
+    static let expectedRunningCSP = "default-src 'none'; img-src marsdawn-html: data: https:; style-src marsdawn-html: 'unsafe-inline' https:; font-src marsdawn-html: data: https:; media-src marsdawn-html: https:; script-src 'unsafe-inline'; object-src 'none'; frame-src 'none'; child-src 'none'; worker-src 'none'; connect-src https:; manifest-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'"
 
     @Test func gateTestUsesTheProductionBlockedPolicy() {
         #expect(HTMLCSPHeaderGateTests.gateCSP == Handler.blockedCSP.replacingOccurrences(of: "marsdawn-html:", with: "h1-gate:"))
@@ -127,7 +127,12 @@ struct HTMLDocumentSchemeHandlerTests {
         #expect(main.body == Data("<p>page</p>".utf8))
         #expect(main.header("Content-Type") == "text/html; charset=utf-8")
         // No `upgrade-insecure-requests`: an http reference is blocked, not sent over TLS.
-        #expect(main.header("Content-Security-Policy") == (remote ? Self.expectedRemoteCSP : Self.expectedBlockedCSP))
+        // Every page carries a sandbox now (A4-3, D-2): the static one with no capability at
+        // all, the running one with scripts and nothing else.
+        let expected = remote
+            ? Self.expectedRunningCSP + "; sandbox allow-scripts"
+            : Self.expectedBlockedCSP + "; sandbox"
+        #expect(main.header("Content-Security-Policy") == expected)
         #expect(!(main.header("Content-Security-Policy") ?? "").contains("upgrade-insecure-requests"))
         expectCommonHeaders(main, "page")
 
@@ -288,21 +293,21 @@ struct HTMLDocumentSchemeHandlerTests {
         defer { try? FileManager.default.removeItem(at: tree.root) }
         let handler = Handler()
         #expect(throws: Handler.LoadError.outsideScope) {
-            try handler.beginLoad(document: Data(), documentURL: tree.document, scopeRoot: tree.url("site/shared"), allowsRemoteContent: false)
+            try handler.beginLoad(document: Data(), documentURL: tree.document, scopeRoot: tree.url("site/shared"), policy: .blocked)
         }
         #expect(throws: Handler.LoadError.outsideScope) {
-            try handler.beginLoad(document: Data(), documentURL: tree.root, scopeRoot: tree.root, allowsRemoteContent: false)
+            try handler.beginLoad(document: Data(), documentURL: tree.root, scopeRoot: tree.root, policy: .blocked)
         }
         #expect(throws: Handler.LoadError.outsideScope) {
-            try handler.beginLoad(document: Data(), documentURL: URL(string: "https://example.com/doc.html")!, scopeRoot: tree.root, allowsRemoteContent: false)
+            try handler.beginLoad(document: Data(), documentURL: URL(string: "https://example.com/doc.html")!, scopeRoot: tree.root, policy: .blocked)
         }
         #expect(throws: Handler.LoadError.tooLarge) {
-            try handler.beginLoad(document: Data(count: 16 << 20 + 1), documentURL: tree.document, scopeRoot: tree.root, allowsRemoteContent: false)
+            try handler.beginLoad(document: Data(count: 16 << 20 + 1), documentURL: tree.document, scopeRoot: tree.root, policy: .blocked)
         }
         #expect(throws: Handler.LoadError.scopeUnavailable) {
-            try handler.beginLoad(document: Data(), documentURL: tree.document, scopeRoot: tree.url("missing"), allowsRemoteContent: false)
+            try handler.beginLoad(document: Data(), documentURL: tree.document, scopeRoot: tree.url("missing"), policy: .blocked)
         }
-        _ = try handler.beginLoad(document: Data(count: 16 << 20), documentURL: tree.document, scopeRoot: tree.root, allowsRemoteContent: false)
+        _ = try handler.beginLoad(document: Data(count: 16 << 20), documentURL: tree.document, scopeRoot: tree.root, policy: .blocked)
     }
 
     @Test func aFailedLoadInvalidatesThePreviousOne() async throws {
@@ -310,7 +315,7 @@ struct HTMLDocumentSchemeHandlerTests {
         defer { try? FileManager.default.removeItem(at: tree.root) }
         let handler = Handler()
         let page = try begin(handler, tree)
-        _ = try? handler.beginLoad(document: Data(), documentURL: tree.document, scopeRoot: tree.url("site/shared"), allowsRemoteContent: false)
+        _ = try? handler.beginLoad(document: Data(), documentURL: tree.document, scopeRoot: tree.url("site/shared"), policy: .blocked)
         let task = try await request(handler, page, "/%2F/%2F/img/a.png")
         #expect(task.error != nil)
     }

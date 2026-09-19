@@ -109,7 +109,7 @@ struct SecureOnlyRuleBehaviorTests {
         /// The control: no list at all, so both references load.
         case none
         case previewImagesAllowed
-        case htmlRemoteAllowed
+        case htmlRunning
     }
 
     private func imageRequests(_ rules: Rules) async throws -> (plain: RecordingServer, secure: RecordingServer)? {
@@ -125,8 +125,8 @@ struct SecureOnlyRuleBehaviorTests {
         case .none: break
         case .previewImagesAllowed:
             configuration.userContentController.add(try await PreviewContentRules.ruleList(allowRemoteImages: true))
-        case .htmlRemoteAllowed:
-            configuration.userContentController.add(try await HTMLContentRules.ruleList(allowsRemoteContent: true))
+        case .htmlRunning:
+            configuration.userContentController.add(try await HTMLContentRules.ruleList(for: .running))
         }
         let webView = WKWebView(frame: NSRect(x: 0, y: 0, width: 200, height: 200), configuration: configuration)
         let navigation = TestNavigationDelegate()

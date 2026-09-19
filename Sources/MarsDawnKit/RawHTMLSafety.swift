@@ -262,123 +262,100 @@ private func endOfKeptStylesheetLink(_ input: [UInt8], from start: Int) -> Int? 
 /// protocol-relative URLs) in URL attributes or CSS. For the remote-content banner only; the
 /// CSP and the content rule lists are the controls.
 ///
-/// One forward pass over the UTF-8 bytes with a bounded lookahead at each one, so the scan is
-/// linear in the document's size. It replaces regular expressions that were quadratic: two `\s*`
-/// runs around an optional quote made `<img src="` plus 16k spaces take 12.9 s in a debug build,
-/// and a 16 MB document — the handler's cap — never finished.
+/// Whether the document might run something: a `<script` element, or an inline event-handler
+/// attribute (`onclick=`, `onload=`, …).
 ///
-/// The signals are the ones those patterns looked for:
-/// - one of `remoteURLAttributeNames`, whole (never part of a longer `[\w-]` word), then `=`,
-///   then a value that is a remote URL at its start or after whitespace or a comma (`srcset`);
-/// - `url(` or `@import`, then whitespace, at most one quote and whitespace, then a remote URL;
-/// - `image-set(`, then a `"`, `'` or `(` before the next `;`, `{` or `}`, then whitespace and a
-///   remote URL.
+/// **For the affordance and the copy only. Never a control.** The CSP, the content rule list and
+/// the page sandbox decide what a document may do, and none of them consults this. A false
+/// negative costs a reader the offer to run a document, which then stays static — no security
+/// consequence. A false positive shows a bar that needn't have been there.
 ///
-/// Quoting isn't tracked between the two halves, exactly as two independent patterns didn't:
-/// CSS inside an attribute value counts, and an attribute inside `<style>` counts. The one
-/// deliberate difference from those patterns: a word byte here is ASCII, so `日src=http://x`
-/// is a reference, where `\w` read the letter before it as part of a longer word. The scan
-/// reports more, never less, and it only decides whether the banner appears.
-func referencesRemoteContent(_ html: String) -> Bool {
+/// Like `referencesRemoteContent` before it, this over-reports rather than under-reports: it
+/// doesn't track quoting or comments, so `<script` inside a comment or a string counts.
+func mightRunScript(_ html: String) -> Bool {
     let bytes = Array(html.utf8)
-    let count = bytes.count
-    let doubleQuote = UInt8(ascii: "\""), singleQuote = UInt8(ascii: "'")
-    let greaterThan = UInt8(ascii: ">"), comma = UInt8(ascii: ",")
-
-    // A quoted attribute value needs a closing quote to be one; there is none past these.
-    let lastDoubleQuote = bytes.lastIndex(of: doubleQuote)
-    let lastSingleQuote = bytes.lastIndex(of: singleQuote)
-
     var index = 0
-    /// The attribute value being read: where it starts, and the quote that ends it (nil: unquoted).
-    var valueStart: Int?
-    var valueQuote: UInt8?
-    /// Inside `image-set(`, where a quote or `(` can introduce a URL, until the next `;`, `{` or `}`.
-    var inImageSet = false
-
-    while index < count {
-        let byte = bytes[index]
-
-        // CSS signals. The pattern this replaced scanned the whole document for them, attribute
-        // values included, so they are read here whether or not a value is open.
-        switch byte {
-        case UInt8(ascii: "("):
-            let openedImageSet = inImageSet
-            if matchesLiteral(bytes, at: index - urlLiteral.count, urlLiteral) {
-                if isRemoteURL(bytes, at: index + 1, afterOptionalQuote: true) { return true }
-            } else if matchesLiteral(bytes, at: index - imageSetLiteral.count, imageSetLiteral) {
-                inImageSet = true
-            }
-            // A `(` inside an `image-set(` introduces a URL too, the one that opens a nested
-            // `image-set(` or a `url(` included.
-            if openedImageSet, isRemoteURL(bytes, at: index + 1, afterOptionalQuote: false) { return true }
-        case UInt8(ascii: "@"):
-            if isRemoteImport(bytes, at: index) { return true }
-        case UInt8(ascii: ";"), UInt8(ascii: "{"), UInt8(ascii: "}"):
-            inImageSet = false
-        case doubleQuote, singleQuote:
-            if inImageSet, isRemoteURL(bytes, at: index + 1, afterOptionalQuote: false) { return true }
-        default:
-            break
+    while index < bytes.count {
+        if bytes[index] == UInt8(ascii: "<"), htmlTagName(scriptTagName, matches: bytes, at: index + 1) {
+            return true
         }
-
-        if let start = valueStart {
-            if let quote = valueQuote {
-                if byte == quote {
-                    valueStart = nil
-                    valueQuote = nil
-                    index += 1
-                    continue
-                }
-            } else if isRemoteScanWhitespace(byte) || byte == doubleQuote || byte == singleQuote || byte == greaterThan {
-                // An unquoted value ends here; the byte itself is read again outside the value.
-                valueStart = nil
-                continue
-            }
-            let previous = index == start ? nil : bytes[index - 1]
-            if previous == nil || isRemoteScanWhitespace(previous!) || previous == comma,
-               isRemoteURLStart(bytes, at: index) {
-                return true
-            }
-            index += 1
-            continue
+        // An event-handler attribute: `on` + letters + `=`, not part of a longer word.
+        if asciiLowercased(bytes[index]) == UInt8(ascii: "o"), isEventHandlerAttribute(bytes, at: index) {
+            return true
         }
-
-        guard isRemoteScanWordByte(byte), index == 0 || !isRemoteScanWordByte(bytes[index - 1]) else {
-            index += 1
-            continue
-        }
-        var wordEnd = index
-        while wordEnd < count, isRemoteScanWordByte(bytes[wordEnd]) { wordEnd += 1 }
-        let isAttributeName = isRemoteURLAttributeName(bytes, from: index, to: wordEnd)
-        index = wordEnd
-        guard isAttributeName else { continue }
-
-        // `\s*=\s*`, then a quoted or unquoted value. Whitespace and `=` carry no signal, so
-        // moving past them can't skip one.
-        var cursor = skipRemoteScanWhitespace(bytes, from: wordEnd)
-        guard cursor < count, bytes[cursor] == UInt8(ascii: "=") else {
-            index = cursor
-            continue
-        }
-        cursor = skipRemoteScanWhitespace(bytes, from: cursor + 1)
-        index = cursor
-        guard cursor < count else { continue }
-        let opener = bytes[cursor]
-        if opener == doubleQuote || opener == singleQuote {
-            // Unterminated, so not a value: the byte is read again as ordinary text.
-            guard let closing = opener == doubleQuote ? lastDoubleQuote : lastSingleQuote, closing > cursor else { continue }
-            valueQuote = opener
-            valueStart = cursor + 1
-            index = cursor + 1
-        } else if opener != greaterThan {
-            // Unquoted: `[^\s"'>]+`, at least one byte.
-            valueQuote = nil
-            valueStart = cursor
-        }
+        index += 1
     }
     return false
 }
+
+/// Whether the document asks for code from the web: a `<script` element whose `src` is a remote
+/// URL. **Copy only, never a control** — the CSP refuses remote script whatever this says. It is
+/// what lets the bar explain a refusal instead of leaving a page silently half-working (D-1c).
+///
+/// Its blind spot is stated rather than discovered: script added at run time that fetches further
+/// script is refused by the CSP and produces no line here, because nothing scanned it. The
+/// refusal still happens; only the explanation is missing.
+func asksForRemoteScript(_ html: String) -> Bool {
+    let bytes = Array(html.utf8)
+    var index = 0
+    while index < bytes.count {
+        guard bytes[index] == UInt8(ascii: "<"), htmlTagName(scriptTagName, matches: bytes, at: index + 1) else {
+            index += 1
+            continue
+        }
+        // Inside this tag, up to the closing `>`: an `src` attribute with a remote value.
+        var cursor = index + 1 + scriptTagName.count
+        while cursor < bytes.count, bytes[cursor] != UInt8(ascii: ">") {
+            if asciiLowercased(bytes[cursor]) == UInt8(ascii: "s"),
+               isSourceAttribute(bytes, at: cursor),
+               let value = attributeValueStart(bytes, after: cursor + srcAttributeName.count),
+               isRemoteURL(bytes, at: value, afterOptionalQuote: true) {
+                return true
+            }
+            cursor += 1
+        }
+        index = cursor
+    }
+    return false
+}
+
+private let scriptTagName = Array("script".utf8)
+private let srcAttributeName = Array("src".utf8)
+private let eventHandlerPrefix = Array("on".utf8)
+
+/// `on` + at least one ASCII letter + `=`, with a non-word byte before it so `button-onclick=`
+/// isn't one.
+private func isEventHandlerAttribute(_ bytes: [UInt8], at start: Int) -> Bool {
+    guard matchesLiteral(bytes, at: start, eventHandlerPrefix) else { return false }
+    if start > 0, isRemoteScanWordByte(bytes[start - 1]) { return false }
+    var index = start + eventHandlerPrefix.count
+    var letters = 0
+    while index < bytes.count, asciiLowercased(bytes[index]) >= UInt8(ascii: "a"),
+          asciiLowercased(bytes[index]) <= UInt8(ascii: "z") {
+        letters += 1
+        index += 1
+    }
+    guard letters > 0 else { return false }
+    index = skipRemoteScanWhitespace(bytes, from: index)
+    return index < bytes.count && bytes[index] == UInt8(ascii: "=")
+}
+
+/// A whole `src` attribute name, not the tail of a longer one.
+private func isSourceAttribute(_ bytes: [UInt8], at start: Int) -> Bool {
+    guard matchesLiteral(bytes, at: start, srcAttributeName) else { return false }
+    if start > 0, isRemoteScanWordByte(bytes[start - 1]) { return false }
+    let after = skipRemoteScanWhitespace(bytes, from: start + srcAttributeName.count)
+    return after < bytes.count && bytes[after] == UInt8(ascii: "=")
+}
+
+/// The first byte of an attribute's value, given the position just past its name.
+private func attributeValueStart(_ bytes: [UInt8], after nameEnd: Int) -> Int? {
+    var index = skipRemoteScanWhitespace(bytes, from: nameEnd)
+    guard index < bytes.count, bytes[index] == UInt8(ascii: "=") else { return nil }
+    index = skipRemoteScanWhitespace(bytes, from: index + 1)
+    return index < bytes.count ? index : nil
+}
+
 
 /// The attributes whose value is a URL (or a list of them).
 private let remoteURLAttributeNames: [[UInt8]] = [
