@@ -110,12 +110,44 @@ struct FrontMatterSplitTests {
         #expect(split.bodyLineOffset == 4)
     }
 
-    /// A byte order mark is not skipped: callers strip it first (Swift's UTF-8 decoding of a
-    /// file keeps it). With it, line 1 isn't exactly `---`.
-    @Test func leadingByteOrderMarkPreventsDetection() throws {
-        let text = "\u{FEFF}---\na: b\n---\nBody\n"
+    /// A single leading byte order mark is skipped (#27): a file a Windows editor saved with
+    /// one has the same front matter as without it. Everything the split reports is the same
+    /// as for the unmarked text, except `range`, which is against the string as given: it
+    /// starts after the mark, which stays in the text and is not part of the block.
+    @Test(arguments: ["\n", "\r\n"])
+    func aLeadingByteOrderMarkIsSkipped(newline: String) throws {
+        let plain = ["---", "title: Notes", "---", "# Body", ""].joined(separator: newline)
+        let marked = "\u{FEFF}" + plain
+        let expected = try #require(FrontMatter.split(plain).frontMatter)
+        let split = FrontMatter.split(marked)
+        let frontMatter = try #require(split.frontMatter, "the marked text has front matter")
+        #expect(frontMatter.lineRange == expected.lineRange)
+        #expect(frontMatter.rawText == expected.rawText)
+        #expect(frontMatter.lines == expected.lines)
+        #expect(frontMatter.pairs?.map(\.key) == ["title"])
+        #expect(split.bodyLineOffset == FrontMatter.split(plain).bodyLineOffset)
+        #expect(split.body == FrontMatter.split(plain).body)
+        #expect(marked[..<frontMatter.range.lowerBound] == "\u{FEFF}")
+        #expect(marked[frontMatter.range] == plain[plain.startIndex..<plain.range(of: "# Body")!.lowerBound])
+        #expect(frontMatter.range.upperBound == split.body.startIndex)
+    }
+
+    /// Only one mark, and only at the very start: a second mark, or a mark on a later line,
+    /// is text like any other.
+    @Test(arguments: [
+        "\u{FEFF}\u{FEFF}---\na: b\n---\nBody\n",
+        "---\na: b\n\u{FEFF}---\nBody\n",
+        " \u{FEFF}---\na: b\n---\nBody\n",
+    ])
+    func onlyOneLeadingByteOrderMarkIsSkipped(text: String) {
         expectNoFrontMatter(text)
-        #expect(FrontMatter.split(String(text.dropFirst())).frontMatter != nil)
+    }
+
+    /// The renderer takes the marked document's front matter off the page, as it does the
+    /// unmarked one's, instead of rendering `title: Notes` as body text.
+    @Test func aMarkedDocumentRendersLikeTheUnmarkedOne() {
+        let plain = "---\ntitle: Notes\n---\n\n# Heading\n\nBody.\n"
+        #expect(MarkdownRenderer.render("\u{FEFF}" + plain) == MarkdownRenderer.render(plain))
     }
 
     @Test func laterDelimitersStayThematicBreaks() {
@@ -493,6 +525,8 @@ struct FrontMatterFallbackTests {
 struct NoFrontMatterGoldenTests {
     /// SHA-256 of each `RenderGoldenCorpus.documents` entry's HTML, recorded on
     /// k1-nesting-hardening (fa99d18) before front matter support was added.
+    /// The entry for `"\u{FEFF}---\ntitle: x\n---\nBody\n"` was removed with that document (#27):
+    /// a single leading byte order mark is now skipped, so it has front matter.
     static let k1Digests = [
         "cf98d15423aaffb634dde01aae28658a9a9f4aced29495fb4988bfb6da26e916",
         "5c92caa0edc56c3ab2a4262261b79f91fb7e6e033d7ec19d9706ecad63c0e2fc",
@@ -512,7 +546,6 @@ struct NoFrontMatterGoldenTests {
         "05d4694175b7eade9bce1b9252ea1da763a382246593be8e5277af402c5fc90c",
         "05d4694175b7eade9bce1b9252ea1da763a382246593be8e5277af402c5fc90c",
         "48fd9269683f432ec1c63befb671ab02a75513cbeb3a608fb190a6f1a9b90a97",
-        "dee593f59340e39cba9ab131fcda0f82f572042f71af64e1a26ff948286f959b",
         "88745db2f18d2f6624c141c5a7516bd4cd8bcc91cc76ca329073ab7518b4c74c",
         "28a0a13423b426a764a6e3965b3071fb97433bbeb499744c847b2c66ae64e659",
         "03dfd008bb5b073b98e60809fe12dd621628200400735249339d9a8c82a56a4e",

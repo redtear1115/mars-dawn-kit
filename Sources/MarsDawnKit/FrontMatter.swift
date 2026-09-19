@@ -5,7 +5,9 @@ import Foundation
 ///
 /// Detection is deliberately narrow:
 /// - Line 1 must be exactly `---`: no leading or trailing spaces, nothing else on the line.
-///   A leading byte order mark (U+FEFF) is not skipped, so strip it before calling `split`.
+///   A single leading byte order mark (U+FEFF) is skipped: it is how some editors start a
+///   UTF-8 file, not part of the delimiter. It stays in the text and in line 1; the block's
+///   `range` starts after it.
 /// - The block closes at the next line that is exactly `---` or `...`.
 /// - If no such line follows, the document has no front matter at all.
 /// - Lines end with LF, CRLF or a lone CR, as in CommonMark, so line numbers agree with the
@@ -57,9 +59,13 @@ public struct FrontMatter: Sendable {
         let noFrontMatter = (frontMatter: FrontMatter?.none, body: text[...], bodyLineOffset: 0)
         let utf8 = text.utf8
         var lines = LineScanner(utf8)
-        guard let opening = lines.next(), utf8[opening.content].elementsEqual("---".utf8) else {
-            return noFrontMatter
+        guard let opening = lines.next() else { return noFrontMatter }
+        // One leading byte order mark (EF BB BF) comes before the delimiter, not in it (#27).
+        var delimiter = opening.content
+        if utf8[delimiter].starts(with: [0xEF, 0xBB, 0xBF]) {
+            delimiter = utf8.index(delimiter.lowerBound, offsetBy: 3)..<delimiter.upperBound
         }
+        guard utf8[delimiter].elementsEqual("---".utf8) else { return noFrontMatter }
 
         var inner: [Range<String.Index>] = []
         while let line = lines.next() {
@@ -76,7 +82,7 @@ public struct FrontMatter: Sendable {
                 let innerLines = inner.map { String(decoding: utf8[$0], as: UTF8.self) }
                 let frontMatter = FrontMatter(
                     lineRange: 1...closingLine,
-                    range: text.startIndex..<line.end,
+                    range: delimiter.lowerBound..<line.end,
                     rawText: String(decoding: utf8[opening.end..<line.content.lowerBound], as: UTF8.self),
                     lines: innerLines,
                     parsedPairs: parsePairs(innerLines)
