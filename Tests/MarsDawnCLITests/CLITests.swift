@@ -124,6 +124,22 @@ private final class Sandbox {
 struct OpenCommandTests {
     private let files = try! Sandbox(["a.md", "weird:12"])
 
+    /// `--background` is accepted, alone and with the other options (#59).
+    @Test func backgroundIsAnOption() throws {
+        let a = files.path("a.md")
+        _ = try MarsDawnCommand.Open.parse([a, "--background"])
+        _ = try MarsDawnCommand.Open.parse(["--background", "--line", "3", a])
+        #expect(exitCode { _ = try MarsDawnCommand.parseAsRoot(["open", "--background", a]) } == nil)
+    }
+
+    /// The app comes to the front by default, as before, and stays behind with `--background`:
+    /// the files and the folder are opened with the same configuration.
+    @Test func backgroundOpensWithoutActivating() throws {
+        let a = files.path("a.md")
+        #expect(try MarsDawnCommand.Open.parse([a]).openConfiguration().activates == true)
+        #expect(try MarsDawnCommand.Open.parse([a, "--background"]).openConfiguration().activates == false)
+    }
+
     private func targets(_ arguments: [String]) throws -> [(path: String, line: Int?)] {
         try MarsDawnCommand.Open.parse(arguments).resolvedTargets().map { ($0.url.path, $0.line) }
     }
