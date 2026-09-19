@@ -245,10 +245,22 @@ final class RecordingServer: @unchecked Sendable {
     }
 }
 
+/// Whether an in-memory TLS identity can be built here, which needs macOS 26.
+///
+/// Ungated on purpose, and separate from `TestTLSIdentity` for the same reason: `.enabled(if:)`
+/// is evaluated before a test runs and on every system, so the question "can this run here?"
+/// cannot itself be gated behind the answer.
+enum TestTLS {
+    static var isAvailable: Bool {
+        if #available(macOS 26, *) { true } else { false }
+    }
+}
+
 /// A throwaway self-signed identity for 127.0.0.1, made with /usr/bin/openssl and imported
 /// into memory only (never into a keychain). The key exists only for this test process.
 @available(macOS 26, *) // kSecImportToMemoryOnly; the app's minimum is macOS 26.
 enum TestTLSIdentity {
+
     struct Material {
         let identity: SecIdentity
         let certificate: SecCertificate

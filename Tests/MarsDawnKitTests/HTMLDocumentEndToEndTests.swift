@@ -260,11 +260,13 @@ struct HTMLDocumentEndToEndTests {
 
     // MARK: 3. Remote-allowed state
 
-    @Test func remoteStateLoadsOnlyImagesStylesFontsAndMedia() async throws {
-        guard #available(macOS 26, *) else {
-            Issue.record("Needs macOS 26 (in-memory TLS identity)")
-            return
-        }
+    /// `TestTLSIdentity` builds its identity in memory, which needs macOS 26. On an older
+    /// system the test is skipped rather than failed: it has nothing to say there, and a
+    /// failure would claim something is broken that nobody broke. See mars-dawn-kit#35.
+    @Test(.enabled(if: TestTLS.isAvailable))
+    func remoteStateLoadsOnlyImagesStylesFontsAndMedia() async throws {
+        // The trait is checked before this runs, so reaching here means an identity can be made.
+        guard #available(macOS 26, *) else { return }
         let tls = try TestTLSIdentity.make()
         let allowed = try await RecordingServer.start(identity: tls.identity) { request in
             switch request.path {

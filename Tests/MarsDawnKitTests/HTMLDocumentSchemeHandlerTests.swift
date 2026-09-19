@@ -540,7 +540,11 @@ struct HTMLDocumentSchemeHandlerTests {
         try stoppedFile.write(to: tree.url("site/pages/img/a.png"))
         try nextFile.write(to: tree.url("site/shared/logo.png"))
 
-        for attempt in 1...5 {
+        // The allocator only sometimes hands the next task the address just freed, so this asks
+        // repeatedly. Five tries was enough on macOS 26 and never succeeded on 15, where CI ran
+        // it (mars-dawn-kit#35). Raising the budget weakens nothing -- every assertion below is
+        // unchanged, and a miss costs one handler and one started read, no waiting.
+        for attempt in 1...50 {
             let handler = Handler()
             let page = try begin(handler, tree)
             func task(_ path: String) -> FakeSchemeTask {
@@ -558,7 +562,7 @@ struct HTMLDocumentSchemeHandlerTests {
             let stoppedIdentity = startAndStop()
             let next = task("/%2F/shared/logo.png")
             guard ObjectIdentifier(next) == stoppedIdentity else {
-                if attempt == 5 { Issue.record("the allocator never reused the stopped task's address") }
+                if attempt == 50 { Issue.record("the allocator never reused the stopped task's address") }
                 continue
             }
             handler.webView(webView, start: next)
