@@ -10,12 +10,17 @@ The rendering core of [MarsDawn](https://marsdawn.southern-light.dev), a Markdow
 
 ## Build and test
 
-Requires Xcode 26 (the package uses swift-tools 6.2).
+Requires Xcode 26 or later (the package uses swift-tools 6.2).
 
 ```sh
 swift build
 swift test
 ```
+
+On a machine with only a few cores, add `--no-parallel`. CI runs `swift test --no-parallel` and
+`swift test -c release --no-parallel` (`.github/workflows/ci.yml`), because on its 3-CPU runners the
+WebKit suites time out waiting for their pages when every suite runs at once, and the timing-budget
+tests miss their budgets.
 
 Two things that have caught people out when writing tests here:
 
@@ -23,6 +28,9 @@ Two things that have caught people out when writing tests here:
 - **Resolve symlinks on both sides when comparing file URLs.** `FileManager.temporaryDirectory` hands back `/var/folders/…` while enumeration reports `/private/var/folders/…`, so a test that compares a hand-built URL against one the file system produced passes under the signed, sandboxed test host (whose temporary directory is inside the app container) and fails with `CODE_SIGNING_ALLOWED=NO`. `resolvingSymlinksInPath()` maps both back to `/var/…`, so it has to be applied to both sides; resolving only one still fails.
 
 ## Command line
+
+Install it with Homebrew: `brew tap redtear1115/tap && brew install marsdawn`.
+Using a coding agent? Add the skill: https://marsdawn.southern-light.dev/cli/skill/
 
 ```sh
 swift run marsdawn open notes.md
