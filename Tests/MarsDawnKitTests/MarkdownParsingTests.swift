@@ -112,11 +112,12 @@ struct MarkdownParsingWorkerTests {
 }
 
 /// The two-slot gate: FIFO hand-off, cancellation of waiters, exactly-once resumption.
-// Disabled on macOS 15, where the runtime kills the process when a test asks which executor it
-// is on. Marking the poll helper's closure @Sendable wasn't enough: blockingAndAsyncWaitersShareOneQueue
-// still traps, so something else in it asks the same question. The gate is the same code on both
-// systems and the CLI export step covers it there (mars-dawn-kit#26).
-@Suite(.enabled(if: runtimeAnswersExecutorQuestions))
+// Runs on every system. One test, blockingAndAsyncWaitersShareOneQueue, is skipped on macOS 15,
+// where the Concurrency runtime kills the process when it asks which executor it is on
+// (mars-dawn-kit#26): the other five passed there in CI run 35372733038, and that test was the
+// one the process died in. Its skip names the reason, so the log says why rather than just
+// "skipped".
+@Suite
 struct WorkerGateTests {
     @Test func cancellingAWaiterReturnsNilPromptlyAndNeverRunsItsBody() async throws {
         let resumes = Counter<UInt64>()
@@ -289,7 +290,14 @@ struct WorkerGateTests {
         #expect(resumes.values.values.allSatisfy { $0 == 1 }, "a waiter was resumed twice")
     }
 
-    @Test func blockingAndAsyncWaitersShareOneQueue() async {
+    /// Skipped on macOS 15 only (mars-dawn-kit#26). Blocking callers here resume a continuation
+    /// from a thread of their own inside a detached task; on macOS 15 something on that path asks
+    /// the runtime which executor it is on, and the answer kills the process. The same product
+    /// path, a blocking caller and async callers sharing one gate, runs there in
+    /// blockingCallersFillingTheTaskPoolDontStallAsyncCallers and in the CLI export step.
+    @Test(.enabled(if: runtimeAnswersExecutorQuestions,
+                   "macOS 15's Concurrency runtime kills this test's process (mars-dawn-kit#26); it runs on macOS 26"))
+    func blockingAndAsyncWaitersShareOneQueue() async {
         let gate = WorkerGate(slots: 2)
         let latch = Latch(waiters: 8)
         let running = Counter<Int>()

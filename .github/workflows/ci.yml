@@ -49,7 +49,7 @@ jobs:
       # Release builds inline more, so stack use per nesting level differs from debug.
       - run: swift test -c release --no-parallel
       # Two groups of tests don't run here, so the CLI covers their ground on the real system:
-      # the gate's tests, which macOS 15's Concurrency runtime kills (mars-dawn-kit#26), and the
+      # one of the gate's tests, which macOS 15's Concurrency runtime kills (mars-dawn-kit#26), and the
       # wall-clock budgets, which a shared 3-CPU runner can't measure (mars-dawn-kit#15). These
       # exports drive the parsing worker, the nesting budget and the math extractor end to end.
       - name: Export documents through the CLI
