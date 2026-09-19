@@ -8,6 +8,41 @@ struct MarkdownRendererTests {
         #expect(html.contains(#"<h2 id="hello-world-1" data-line="3">Hello World</h2>"#))
     }
 
+    /// The `id`s of every heading in `html`, in order.
+    private func headingIDs(_ html: String) -> [String] {
+        html.matches(of: /<h[1-6] id="([^"]*)"/).map { String($0.output.1) }
+    }
+
+    /// A heading with no character that survives slugging (`# $$`, `# !!!`) gets an `id`
+    /// anyway (#14): Pandoc's `section`, numbered like any other repeated slug. An empty `id` is
+    /// an anchor nothing can link to.
+    @Test func aHeadingWithNothingToSlugGetsSection() {
+        let html = MarkdownRenderer.render("# $$\n\n## !!!\n\n# Hello\n\n### …\n")
+        #expect(headingIDs(html) == ["section", "section-1", "hello", "section-2"])
+        #expect(!html.contains(#"id="""#))
+    }
+
+    /// The fallback numbers count only headings that fell back, so editing a named heading
+    /// elsewhere doesn't move them.
+    @Test func sectionIDsDontMoveWhenANamedHeadingChanges() {
+        let before = headingIDs(MarkdownRenderer.render("# $$\n\n# Intro\n\n# !!!\n"))
+        let after = headingIDs(MarkdownRenderer.render("# $$\n\n# Introduction, rewritten\n\n# !!!\n"))
+        #expect(before == ["section", "intro", "section-1"])
+        #expect(after == ["section", "introduction-rewritten", "section-1"])
+    }
+
+    /// Every `id` is unique, even where a numbered slug meets a heading that already has that
+    /// name: `Section 1` slugs to `section-1`, which a second fallback would also produce, and
+    /// `a-1` is what a second `a` becomes.
+    @Test func headingIDsStayUniqueWhenNumberedSlugsCollide() {
+        let fallback = headingIDs(MarkdownRenderer.render("# $$\n\n# Section 1\n\n# !!!\n"))
+        #expect(Set(fallback).count == fallback.count, "\(fallback)")
+        #expect(fallback.allSatisfy { !$0.isEmpty })
+        let named = headingIDs(MarkdownRenderer.render("# a\n\n# a-1\n\n# a\n"))
+        #expect(Set(named).count == named.count, "\(named)")
+        #expect(named.prefix(2) == ["a", "a-1"], "the first of each keeps its plain slug")
+    }
+
     @Test func mermaidBlocksAreMarkedForTheDiagramRenderer() {
         let html = MarkdownRenderer.render("```mermaid\ngraph TD\n  A-->B\n```\n")
         #expect(html.contains(#"<div class="mermaid-block" data-line="1">"#))

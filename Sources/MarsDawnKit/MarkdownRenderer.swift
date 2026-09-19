@@ -224,6 +224,8 @@ private struct HTMLVisitor: MarkupVisitor {
     /// The math taken out of the body before it was parsed.
     let math: MathExtractor.Extraction
     private var usedSlugs: [String: Int] = [:]
+    /// Every heading `id` given out so far in this render.
+    private var usedIDs: Set<String> = []
     private var tightListStack: [Bool] = []
 
     init(options: MarkdownRenderer.Options, lineOffset: Int, math: MathExtractor.Extraction) {
@@ -465,11 +467,23 @@ private struct HTMLVisitor: MarkupVisitor {
         }
     }
 
+    /// The heading's `id`: its slug, numbered from `-1` when the slug repeats. A heading with
+    /// nothing to slug (`# $$`, `# !!!`) is `section`, as in Pandoc, rather than an empty `id`
+    /// nothing can link to (#14). A numbered `id` that another heading already has as its own
+    /// (`a-1` after `# a-1`, `section-1` after `# Section 1`) moves on to the next number, so no
+    /// two headings share one.
     private mutating func uniqueSlug(for text: String) -> String {
-        let base = slugify(text)
-        let count = usedSlugs[base, default: 0]
+        let slug = slugify(text)
+        let base = slug.isEmpty ? "section" : slug
+        var count = usedSlugs[base, default: 0]
+        var id = count == 0 ? base : "\(base)-\(count)"
+        while usedIDs.contains(id) {
+            count += 1
+            id = "\(base)-\(count)"
+        }
         usedSlugs[base] = count + 1
-        return count == 0 ? base : "\(base)-\(count)"
+        usedIDs.insert(id)
+        return id
     }
 }
 
