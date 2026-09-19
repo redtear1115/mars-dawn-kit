@@ -108,10 +108,6 @@ struct HTMLDocumentEndToEndTests {
 
     // MARK: 1. Serving
 
-    // Debug-only in full, not for what it asserts but for what it waits for: the waits
-    // below are on the handler's debug-only log, and a test that runs without its
-    // waits is worse than one that doesn't run.
-    #if DEBUG
     @Test func servesOnlyAllowedFilesInsideTheScope() async throws {
         let png = RecordingServer.png
         let font = try Data(contentsOf: URL(fileURLWithPath: "/System/Library/Fonts/Supplemental/Arial.ttf"))
@@ -144,21 +140,12 @@ struct HTMLDocumentEndToEndTests {
         ]
         try await waitUntil(timeout: .seconds(5)) { harness.served() == expected }
         try await Task.sleep(for: .milliseconds(300))
-        // The handler records this only in a debug build, so these assertions compile away
-        // in release rather than failing there. What they observe is bookkeeping; the
-        // behaviour behind it is asserted alongside and still runs in both configurations.
-        #if DEBUG
         #expect(harness.served() == expected)
-        #endif
 
         let url = harness.pageURL.absoluteString
         #expect(url.hasSuffix("/%2F/%2F/index.html"))
         for name in ["site", "pages", harness.root.lastPathComponent] { #expect(!url.contains(name)) }
 
-        // The handler records this only in a debug build, so these assertions compile away
-        // in release rather than failing there. What they observe is bookkeeping; the
-        // behaviour behind it is asserted alongside and still runs in both configurations.
-        #if DEBUG
         let log = harness.handler.requestLog
         #expect(log.filter { $0.outcome == .page }.count == 1)
         // The page's own URL, requested again, is refused: it is served once per token.
@@ -171,10 +158,12 @@ struct HTMLDocumentEndToEndTests {
         // `..` above the root collapses at the token host: the request stays inside the scope.
         #expect(log.contains { $0.components == ["outside.png"] && $0.outcome == .failed(.notFound) })
         #expect(log.filter { $0.outcome == .refused("invalid segment") || $0.outcome == .refused("empty segment") }.count >= 3)
+        // `readLog` is the one record the handler still keeps only in a debug build, so this
+        // assertion compiles away in release. Everything around it runs in both.
+        #if DEBUG
         #expect(!harness.handler.readLog.contains { $0.last == "x.js" || $0.last == "index.html" })
         #endif
     }
-    #endif
 
     // MARK: 2. Blocked state
 
