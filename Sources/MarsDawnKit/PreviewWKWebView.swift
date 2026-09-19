@@ -100,9 +100,20 @@ open class PreviewWKWebView: WKWebView {
         return super.loadFileURL(url, allowingReadAccessTo: readAccessURL)
     }
 
-    override open func load(_ data: Data, mimeType: String, characterEncodingName: String, baseURL: URL) -> WKNavigation? {
+    /// `baseURL` is optional although WebKit's header marks it nonnull: `loadHTMLString(_:baseURL:)`
+    /// forwards a nil base here, and a non-optional parameter trapped bridging it (#41).
+    override open func load(_ data: Data, mimeType: String, characterEncodingName: String, baseURL: URL?) -> WKNavigation? {
         guard rulesAttached("load(data)") else { return nil }
-        return super.load(data, mimeType: mimeType, characterEncodingName: characterEncodingName, baseURL: baseURL)
+        if let baseURL {
+            return super.load(data, mimeType: mimeType, characterEncodingName: characterEncodingName, baseURL: baseURL)
+        }
+        // Swift can't hand nil to super's nonnull parameter, so this calls WKWebView's own
+        // implementation with it, as `loadHTMLString(_:baseURL: nil)` itself does.
+        typealias Implementation = @convention(c) (AnyObject, Selector, NSData, NSString, NSString, NSURL?) -> WKNavigation?
+        let selector = #selector(WKWebView.load(_:mimeType:characterEncodingName:baseURL:))
+        guard let method = class_getInstanceMethod(WKWebView.self, selector) else { return nil }
+        let original = unsafeBitCast(method_getImplementation(method), to: Implementation.self)
+        return original(self, selector, data as NSData, mimeType as NSString, characterEncodingName as NSString, nil)
     }
 
     override open func loadFileRequest(_ request: URLRequest, allowingReadAccessTo readAccessURL: URL) -> WKNavigation {

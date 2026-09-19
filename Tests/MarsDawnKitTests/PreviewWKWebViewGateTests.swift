@@ -148,6 +148,27 @@ struct PreviewWKWebViewGateTests {
         try await expectNoNavigation(webView, recorder)
     }
 
+    /// With rules attached, `loadHTMLString(_:baseURL: nil)` loads (#41). WebKit forwards it to the
+    /// data load with a nil base; an override that declared that base non-optional trapped in the
+    /// URL bridge, crashing the process -- the app's HTML viewer hit it unloading a page. The page
+    /// really finishing, and showing the string, is what shows the call went through.
+    @Test func loadHTMLStringWithANilBaseLoadsWithRules() async throws {
+        let (webView, recorder) = makeWebView()
+        webView.applyContentRuleList(try await PreviewContentRules.ruleList(allowRemoteImages: false))
+        #expect(webView.loadHTMLString("<p id=\"page\">nil base</p>", baseURL: nil) != nil)
+        try await waitForFinishes(1, recorder, webView)
+        let text = try await webView.evaluateJavaScript("document.getElementById('page').textContent") as? String
+        #expect(text == "nil base")
+    }
+
+    /// The data load keeps its gate for a nil base: refused without rules.
+    @Test func loadDataWithANilBaseRefusesWithoutRules() async throws {
+        let (webView, recorder) = makeWebView()
+        let navigation = webView.load(Data("<p>data</p>".utf8), mimeType: "text/html", characterEncodingName: "utf-8", baseURL: nil)
+        #expect(navigation == nil)
+        try await expectNoNavigation(webView, recorder)
+    }
+
     @Test func loadFileURLRefusesWithoutRules() async throws {
         let file = try Self.temporaryPage()
         defer { try? FileManager.default.removeItem(at: file) }
