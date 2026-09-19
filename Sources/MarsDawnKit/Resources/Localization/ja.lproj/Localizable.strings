@@ -1,0 +1,14 @@
+/* Preview theme names and summaries (PreviewTheme.swift). Translated, as zh-Hant does. */
+"Dawn" = "夜明け";
+"Warm Martian sunrise" = "暖かな火星の日の出";
+"Classic" = "クラシック";
+"Elegant serif on paper" = "紙に映える上品なセリフ体";
+"Modern" = "モダン";
+"Clean and familiar" = "すっきりとなじみやすい";
+"Vivid" = "ビビッド";
+"Playful, bright and rounded" = "遊び心があって明るく、丸みのある";
+
+/* Image placeholder labels for exported/printed pages and the preview. */
+"Web image" = "Web イメージ";
+"Image not available" = "イメージを表示できません";
+"Not loaded: unencrypted connection (http)" = "読み込まれていません：暗号化されていない接続（http）";
