@@ -1,4 +1,5 @@
 import Foundation
+import os
 import WebKit
 
 /// Serves the bundled preview page (HTML, CSS, mermaid.js, highlight.js, KaTeX and its
@@ -70,10 +71,24 @@ public final class PreviewSchemeHandler: NSObject, WKURLSchemeHandler {
         return Data(text.utf8)
     }
 
-    private let rootURL: URL
+    private static let log = Logger(subsystem: "dev.southern-light.marsdawn", category: "PreviewScheme")
 
-    override public init() {
-        rootURL = Bundle.module.url(forResource: "Preview", withExtension: nil)!.standardizedFileURL
+    /// The bundled Preview folder, or nil if the bundle doesn't have it.
+    private let rootURL: URL?
+
+    override public convenience init() {
+        self.init(rootURL: Bundle.module.url(forResource: "Preview", withExtension: nil))
+    }
+
+    /// With no Preview folder (a damaged install, or a bundle lookup an OS update changed), the
+    /// handler serves nothing and every page load fails, so the app shows its preview failure
+    /// and keeps working instead of trapping when the first preview is built (#6 in the app).
+    init(rootURL: URL?) {
+        self.rootURL = rootURL?.standardizedFileURL
+        super.init()
+        if rootURL == nil {
+            Self.log.fault("PREVIEW-RESOURCE-MISSING: the bundled Preview folder wasn't found; previews won't load")
+        }
     }
 
     public func webView(_ webView: WKWebView, start urlSchemeTask: any WKURLSchemeTask) {
@@ -114,6 +129,7 @@ public final class PreviewSchemeHandler: NSObject, WKURLSchemeHandler {
 
     /// Maps a request path to a file inside the bundled Preview folder, rejecting traversal.
     private func resolve(_ url: URL) -> URL? {
+        guard let rootURL else { return nil }
         let relative = url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         guard !relative.isEmpty else { return nil }
         let candidate = rootURL.appendingPathComponent(relative).standardizedFileURL
