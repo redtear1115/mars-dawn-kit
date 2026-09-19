@@ -33,7 +33,7 @@ struct MarkdownRendererTests {
 
     /// A heading with a real slug is never displaced by one without, before it or after it: an
     /// existing `#section` or `#section-1` link still lands on the heading it named (found by
-    /// the verifier on #48).
+    /// the verifier on #48, round 1).
     @Test func aNamedHeadingKeepsItsSlugWhateverFallsBack() {
         #expect(headingIDs(MarkdownRenderer.render("# $$\n\n# section\n\n# section-1\n"))
             == ["section-2", "section", "section-1"])
@@ -41,17 +41,68 @@ struct MarkdownRendererTests {
         #expect(headingIDs(MarkdownRenderer.render("# Section\n\n# $$\n\n# !!!\n")) == ["section", "section-1", "section-2"])
     }
 
-    /// Every `id` is unique. Where main gave two headings the same `id`, the heading whose own
-    /// slug it is keeps it and the repeat moves on to the next free number: `# a`, `# a`,
-    /// `# a-1` was `a`, `a-1`, `a-1` and is `a`, `a-2`, `a-1`. A later repeat of the same slug
-    /// moves up by one with it: `# a-1`, `# a`, `# a`, `# a` was `a-1`, `a`, `a-1`, `a-2` and is
-    /// `a-1`, `a`, `a-2`, `a-3`.
+    /// A repeat of a real `Section` keeps the number it had, even with empty-slug headings in
+    /// between taking `section-N` (found by the verifier on #48, round 2): main gave the second
+    /// "Section" `section-1`, and a link to it still lands there.
+    @Test func aRepeatedRealSectionKeepsItsNumberAroundFallbacks() {
+        #expect(headingIDs(MarkdownRenderer.render("# Section\n\n# $$\n\n# Section\n"))
+            == ["section", "section-2", "section-1"])
+        #expect(headingIDs(MarkdownRenderer.render("# !!!\n\n# a-1\n\n# !!!\n\n# Section\n\n# a\n\n# Section\n"))
+            == ["section-2", "a-1", "section-3", "section", "a", "section-1"])
+    }
+
+    /// Every `id` is unique. Where main gave two headings one `id`, the heading whose own slug
+    /// it is keeps it and the other repeat takes its slug's next free number: `# a`, `# a`,
+    /// `# a-1` was `a`, `a-1`, `a-1` and is `a`, `a-2`, `a-1`. Every `id` main gave only once
+    /// stays: `# a-1`, `# a`, `# a`, `# a` was `a-1`, `a`, `a-1`, `a-2` and is `a-1`, `a`, `a-3`,
+    /// `a-2` (only the third, whose `a-1` was shared, moves).
     @Test func headingIDsStayUniqueWhenNumberedSlugsCollide() {
         #expect(headingIDs(MarkdownRenderer.render("# a\n\n# a\n\n# a-1\n")) == ["a", "a-2", "a-1"])
-        #expect(headingIDs(MarkdownRenderer.render("# a-1\n\n# a\n\n# a\n\n# a\n")) == ["a-1", "a", "a-2", "a-3"])
+        #expect(headingIDs(MarkdownRenderer.render("# a-1\n\n# a\n\n# a\n\n# a\n")) == ["a-1", "a", "a-3", "a-2"])
         #expect(headingIDs(MarkdownRenderer.render("# a\n\n# a-1\n\n# a\n")) == ["a", "a-1", "a-2"])
-        let fallback = headingIDs(MarkdownRenderer.render("# $$\n\n# Section 1\n\n# !!!\n"))
-        #expect(fallback == ["section", "section-1", "section-2"])
+        #expect(headingIDs(MarkdownRenderer.render("# $$\n\n# Section 1\n\n# !!!\n")) == ["section", "section-1", "section-2"])
+    }
+
+    /// The rule as properties, over 3,000 seeded random heading-only documents built the way
+    /// the verifier's checker on #48 builds them. `main` is main's numbering, re-derived here:
+    /// each slug numbered by occurrence, unchecked.
+    /// - no `id` is empty and no two are the same;
+    /// - a heading with a real slug whose `id` on main was unique has that `id`;
+    /// - where main's `id` was shared, the heading whose own slug it is has it.
+    @Test func headingIDsKeepEveryIDMainGaveOnlyOnce() {
+        let texts: [(text: String, slug: String)] = [
+            ("a", "a"), ("a-1", "a-1"), ("a-2", "a-2"), ("a-1-1", "a-1-1"), ("A!", "a"), ("section", "section"),
+            ("Section 1", "section-1"), ("section-1", "section-1"), ("$$", ""), ("!!!", ""), ("b", "b"), ("*a*", "a"),
+        ]
+        let wraps: [(String) -> String] = [
+            { "# \($0)" }, { "## \($0)" }, { "> # \($0)" }, { "- # \($0)" }, { "\($0)\n===" }, { "> > ### \($0)" },
+        ]
+        var generator = RendererDigestTests.SplitMix64(state: 48)
+        var violations: [String] = []
+        for _ in 0..<3000 {
+            let picks = (0..<Int.random(in: 1...8, using: &generator)).map { _ in
+                (texts.randomElement(using: &generator)!, wraps.randomElement(using: &generator)!)
+            }
+            let markdown = picks.map { $0.1($0.0.text) }.joined(separator: "\n\n") + "\n"
+            let ids = headingIDs(MarkdownRenderer.render(markdown))
+            let slugs = picks.map(\.0.slug)
+            guard ids.count == slugs.count else { violations.append("count: \(markdown.debugDescription)"); continue }
+            var seen: [String: Int] = [:]
+            let main = slugs.map { slug -> String in
+                let count = seen[slug, default: 0]
+                seen[slug] = count + 1
+                return count == 0 ? slug : "\(slug)-\(count)"
+            }
+            if ids.contains("") || Set(ids).count != ids.count { violations.append("unique: \(ids)") }
+            for (index, slug) in slugs.enumerated() where !slug.isEmpty {
+                let mainCount = main.filter { $0 == main[index] }.count
+                if mainCount == 1, ids[index] != main[index] { violations.append("kept: \(main) → \(ids)") }
+                if mainCount > 1, main[index] == slug, slugs.firstIndex(of: slug) == index, ids[index] != slug {
+                    violations.append("owner: \(main) → \(ids)")
+                }
+            }
+        }
+        #expect(violations.isEmpty, "\(violations.count) violations, e.g. \(violations.prefix(3))")
     }
 
     @Test func mermaidBlocksAreMarkedForTheDiagramRenderer() {

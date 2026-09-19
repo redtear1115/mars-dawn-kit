@@ -100,7 +100,7 @@ struct RendererDigestTests {
     /// value before was c9b2044a…2b772f. Every render of this corpus was dumped on 8a42c9a and
     /// with the fix and diffed: 220 of the 7,996 renders changed, every one only in a heading
     /// `id`, and every changed `id` had been empty. The new output has no empty `id`.
-    /// Re-checked for the two-pass rule (a named heading keeps its slug): the dump is
+    /// Re-checked for the two- and three-pass rules (#48 rounds 2 and 3): each dump is
     /// byte-identical to the first rule's, so the value stands.
     @Test func ordinaryOutputMatchesTheDigestBeforeFrontMatter() {
         #expect(Self.digest(documents: 4000, strings: 20000)
