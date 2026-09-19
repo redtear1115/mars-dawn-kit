@@ -67,6 +67,59 @@ struct DocumentAssetTests {
         #expect(Handler.fileURL(for: URL(string: "marsdawn-asset://doc/a.png")!, baseDirectory: nil, scopeRoot: nil) == nil)
     }
 
+    // MARK: `..` sources (mars-dawn#8)
+
+    /// A `..` source maps to the absolute path it names; WebKit would remove the dot segments
+    /// from a `doc/../…` URL before the handler saw it. Everything else maps as the old overload.
+    @Test func aParentRelativeSourceMapsToTheAbsolutePathItNames() {
+        let base = URL(fileURLWithPath: "/root/doc", isDirectory: true)
+        func url(_ source: String) -> String? { Handler.previewURL(forImageSource: source, baseDirectory: base) }
+        // Resolved, with the path as the document has it (decoded, as placeholders show it) in the fragment.
+        #expect(url("../shared/logo.png") == "marsdawn-asset://abs/root/shared/logo.png#../shared/logo.png")
+        #expect(url("img/../b.png") == "marsdawn-asset://abs/root/doc/b.png#img/../b.png")
+        #expect(url("%2e%2e/x.png") == "marsdawn-asset://abs/root/x.png#../x.png")
+        #expect(url("..%2fx.png") == "marsdawn-asset://abs/root/x.png#../x.png")
+        #expect(url("../my folder/a b.png?v=1#f") == "marsdawn-asset://abs/root/my%20folder/a%20b.png#../my%20folder/a%20b.png")
+        #expect(url("../%3Cscript%3E.png") == "marsdawn-asset://abs/root/%3Cscript%3E.png#../%3Cscript%3E.png")
+        // Too long to carry: resolved, without the fragment.
+        let long = "../" + String(repeating: "a", count: 5000) + ".png"
+        #expect(url(long) == "marsdawn-asset://abs/root/" + String(repeating: "a", count: 5000) + ".png")
+        for source in ["img/a.png", "/abs/x.png", "https://example.com/a.png", "data:image/png;base64,AA", "#x",
+                       "a..b/c.png", "%252e%252e/x.png", "..\\x.png", "../../../../x.png", ""] {
+            #expect(url(source) == Handler.previewURL(forImageSource: source, hasBaseDirectory: true), "\(source)")
+        }
+        #expect(Handler.previewURL(forImageSource: "../x.png", baseDirectory: nil) == nil)
+    }
+
+    /// The scope rule is unchanged, and every way a `..` source might try to leave the scope is
+    /// refused. Each URL goes through `standardized` first, as WebKit removes dot segments.
+    @Test func parentRelativeSourcesStayInsideTheScope() throws {
+        let (root, project) = try makeTree()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let granted = root.appendingPathComponent("granted")
+        func served(_ source: String, scope: URL?) -> String? {
+            guard let mapped = Handler.previewURL(forImageSource: source, baseDirectory: project),
+                  let url = URL(string: mapped)?.standardized else { return nil }
+            return Handler.fileURL(for: url, baseDirectory: project, scopeRoot: scope)?.path
+        }
+        let logo = granted.appendingPathComponent("shared/logo.svg").path
+        // Inside the granted parent: served. Without the grant (scope = the document's folder): not.
+        #expect(served("../shared/logo.svg", scope: granted) == logo)
+        #expect(served("..%2fshared/logo.svg", scope: granted) == logo)
+        #expect(served("../shared/logo.svg", scope: nil) == nil)
+        // Escaping the granted parent, however it's spelled: never served.
+        #expect(served("../../outside/other.png", scope: granted) == nil)
+        #expect(served("..%2f..%2foutside/other.png", scope: granted) == nil)
+        #expect(served("%2e%2e/%2e%2e/outside/other.png", scope: granted) == nil)
+        #expect(served("%252e%252e/%252e%252e/outside/other.png", scope: granted) == nil)
+        #expect(served("..\\..\\outside\\other.png", scope: granted) == nil)
+        // Through a symbolic link inside the scope that points out of it: never followed.
+        #expect(served("../project/img/escape.png", scope: granted) == nil)
+        #expect(served("img/../img/escape.png", scope: granted) == nil)
+        // The twin: a plain image through a `..` round trip inside the document's folder.
+        #expect(served("img/../img/a b.png", scope: nil) == project.appendingPathComponent("img/a b.png").path)
+    }
+
     @Test func readsRegularFilesWithinTheSizeLimit() throws {
         let (root, project) = try makeTree()
         defer { try? FileManager.default.removeItem(at: root) }

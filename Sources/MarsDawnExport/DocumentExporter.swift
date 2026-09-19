@@ -62,8 +62,12 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
     ///   - baseDirectory: Folder that relative image paths resolve against (the document's folder).
     ///   - allowRemoteImages: Whether web images load; otherwise the page's CSP blocks them.
     ///   - width: Layout width before printing reflows the page.
-    init(baseDirectory: URL?, allowRemoteImages: Bool, width: CGFloat = 700) {
+    ///   - scopeRoot: The folder images may be read from, which must contain `baseDirectory`: a
+    ///     folder the user granted, so `../` images above the document load as they do in the
+    ///     app's preview. Nil, the default, is the document's own folder, as before.
+    init(baseDirectory: URL?, allowRemoteImages: Bool, width: CGFloat = 700, scopeRoot: URL? = nil) {
         assets.baseDirectory = baseDirectory
+        assets.scopeRoot = scopeRoot
         self.allowRemoteImages = allowRemoteImages
         let configuration = PreviewWebView.makeConfiguration(assets: assets)
         configuration.preferences.shouldPrintBackgrounds = true
@@ -117,9 +121,9 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
             blockedLabel: PreviewWebView.unloadableImagePlaceholderLabel
         ))
 
-        let hasBaseDirectory = assets.baseDirectory != nil
+        let baseDirectory = assets.baseDirectory
         let options = MarkdownRenderer.Options { source in
-            DocumentAssetSchemeHandler.previewURL(forImageSource: source, hasBaseDirectory: hasBaseDirectory) ?? source
+            DocumentAssetSchemeHandler.previewURL(forImageSource: source, baseDirectory: baseDirectory) ?? source
         }
         // One deadline covers rendering, updating the page and waiting for its content.
         let deadline = ContinuousClock.now + Self.contentTimeout
@@ -235,13 +239,14 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         theme: PreviewTheme,
         baseDirectory: URL?,
         allowRemoteImages: Bool,
+        scopeRoot: URL? = nil,
         printInfo: NSPrintInfo,
         window: NSWindow?,
         configure: (NSPrintInfo, NSPrintOperation) -> Void = { _, _ in }
     ) async throws -> Bool {
         try await runReportingDiagrams(
             markdown: markdown, theme: theme, baseDirectory: baseDirectory, allowRemoteImages: allowRemoteImages,
-            printInfo: printInfo, window: window, configure: configure
+            scopeRoot: scopeRoot, printInfo: printInfo, window: window, configure: configure
         ).completed
     }
 
@@ -251,13 +256,16 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         theme: PreviewTheme,
         baseDirectory: URL?,
         allowRemoteImages: Bool,
+        scopeRoot: URL? = nil,
         printInfo: NSPrintInfo,
         window: NSWindow?,
         configure: (NSPrintInfo, NSPrintOperation) -> Void = { _, _ in }
     ) async throws -> (completed: Bool, diagramErrors: [String]) {
         // Lay out at the printable width, so measured block heights match the printed pages.
         let printableWidth = printInfo.paperSize.width - 2 * pageMargins.width
-        let exporter = DocumentExporter(baseDirectory: baseDirectory, allowRemoteImages: allowRemoteImages, width: printableWidth)
+        let exporter = DocumentExporter(
+            baseDirectory: baseDirectory, allowRemoteImages: allowRemoteImages, width: printableWidth, scopeRoot: scopeRoot
+        )
         active.insert(exporter)
         defer { active.remove(exporter) }
         try await exporter.prepare(markdown: markdown, theme: theme)
@@ -302,14 +310,15 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         theme: PreviewTheme,
         baseDirectory: URL?,
         allowRemoteImages: Bool,
-        paper: Paper = .a4
+        paper: Paper = .a4,
+        scopeRoot: URL? = nil
     ) async throws -> PDFResult {
         let printInfo = NSPrintInfo()
         printInfo.paperSize = paper.size
         printInfo.orientation = .portrait
         let result = try await runReportingDiagrams(
             markdown: markdown, theme: theme, baseDirectory: baseDirectory,
-            allowRemoteImages: allowRemoteImages, printInfo: printInfo, window: nil
+            allowRemoteImages: allowRemoteImages, scopeRoot: scopeRoot, printInfo: printInfo, window: nil
         ) { info, operation in
             info.jobDisposition = .save
             info.dictionary()[NSPrintInfo.AttributeKey.jobSavingURL] = url

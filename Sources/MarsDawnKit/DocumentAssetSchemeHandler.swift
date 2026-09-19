@@ -27,8 +27,83 @@ public final class DocumentAssetSchemeHandler: NSObject, WKURLSchemeHandler {
 
     // MARK: Mapping image sources
 
+    /// The preview URL for an image source as written in the document in `baseDirectory`, or nil
+    /// to leave it untouched. Prefer this to `previewURL(forImageSource:hasBaseDirectory:)`.
+    ///
+    /// A relative source with a `..` segment (`../shared/logo.png`, `%2e%2e/x.png`) is resolved
+    /// here, lexically against `baseDirectory` and never through a symbolic link, and mapped as
+    /// the absolute path it names (mars-dawn#8). As a relative `doc/../…` URL it could never load:
+    /// WebKit removes dot segments before this handler sees the URL, so the request named a
+    /// different file. The scope rule is unchanged: `fileURL(for:baseDirectory:scopeRoot:)` still
+    /// serves the file only inside `scopeRoot`. Every other source, and a path that climbs above
+    /// `/`, maps exactly as `previewURL(forImageSource:hasBaseDirectory:)` maps it.
+    ///
+    /// Such a URL carries the path as the document has it (`../shared/logo.png`, decoded as
+    /// every placeholder decodes it) in its fragment, percent-encoded, which the handler never
+    /// reads (`URL.path` excludes it). The page's placeholder for an image that can't load shows
+    /// it, so the reader sees the path in the document, not the absolute path it resolved to. A
+    /// path longer than `maxWrittenSourceLength` bytes goes without one, and the placeholder
+    /// shows the resolved path.
+    public nonisolated static func previewURL(forImageSource source: String, baseDirectory: URL?) -> String? {
+        if let baseDirectory, let absolute = parentRelativePath(source, in: baseDirectory) {
+            guard let url = previewURL(forImageSource: absolute, hasBaseDirectory: true) else { return nil }
+            let written = writtenPath(source)
+            guard written.utf8.count <= maxWrittenSourceLength,
+                  let fragment = written.addingPercentEncoding(withAllowedCharacters: writtenSourceAllowed) else { return url }
+            return url + "#" + fragment
+        }
+        return previewURL(forImageSource: source, hasBaseDirectory: baseDirectory != nil)
+    }
+
+    /// A source's path as `previewURL` reads it: trimmed, up to `?` or `#`, percent-decoded once.
+    nonisolated static func writtenPath(_ source: String) -> String {
+        let trimmed = source.trimmingCharacters(in: .whitespacesAndNewlines)
+        let scalars = trimmed.unicodeScalars
+        var path = trimmed
+        if let cut = scalars.firstIndex(where: { $0 == "?" || $0 == "#" }) {
+            path = String(scalars[..<cut])
+        }
+        return path.removingPercentEncoding ?? path
+    }
+
+    /// The longest path, in UTF-8 bytes, carried as written in a `..` URL's fragment.
+    nonisolated static let maxWrittenSourceLength = 4096
+    /// Unreserved characters and `/`: everything else in the written source is percent-encoded,
+    /// so the fragment decodes back to exactly what the document has.
+    private nonisolated static let writtenSourceAllowed = CharacterSet(charactersIn:
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~/")
+
+    /// The absolute path a relative source with a `..` segment names, read as `previewURL` reads a
+    /// source: trimmed, no scheme, up to `?` or `#`, percent-decoded once. Resolved lexically. Nil
+    /// when the source has no `..` segment, or climbs above `/`.
+    nonisolated static func parentRelativePath(_ source: String, in baseDirectory: URL) -> String? {
+        let scalars = source.trimmingCharacters(in: .whitespacesAndNewlines).unicodeScalars
+        guard let first = scalars.first, first != "#", first != "/" else { return nil }
+        if let colon = scalars.firstIndex(of: ":"),
+           !scalars[..<colon].contains(where: { $0 == "/" || $0 == "?" || $0 == "#" }) {
+            return nil  // has a scheme
+        }
+        let path = writtenPath(source)
+        let segments = path.split(separator: "/", omittingEmptySubsequences: false)
+        guard segments.contains("..") else { return nil }
+        var resolved = baseDirectory.standardizedFileURL.path.split(separator: "/").map(String.init)
+        for segment in segments {
+            switch segment {
+            case "", ".": continue
+            case "..":
+                guard !resolved.isEmpty else { return nil }
+                resolved.removeLast()
+            default:
+                resolved.append(String(segment))
+            }
+        }
+        return "/" + resolved.joined(separator: "/")
+    }
+
     /// The preview URL for an image source as written in Markdown, or nil to leave it untouched.
-    /// Relative paths need a saved document (`hasBaseDirectory`) to resolve.
+    /// Relative paths need a saved document (`hasBaseDirectory`) to resolve. A source with a `..`
+    /// segment maps to a URL that never loads (see `previewURL(forImageSource:baseDirectory:)`,
+    /// which handles it); kept for callers that have no folder to resolve against.
     public nonisolated static func previewURL(forImageSource source: String, hasBaseDirectory: Bool) -> String? {
         let trimmed = source.trimmingCharacters(in: .whitespacesAndNewlines)
         // Scalars, not Characters, so a combining mark can't hide a ':', '?' or '#' (and so this
