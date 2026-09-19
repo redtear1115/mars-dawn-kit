@@ -45,6 +45,49 @@ struct BlankPageTests {
         try await expectNoBlankPageAtTheBoundary(body: Self.paragraphs + "\n\n> > > - first item\n> > >\n> > > - last item\n", paper: .a4)
     }
 
+    /// The other half of "no blank page": nothing else moves. The rule that drops the trailing
+    /// margin must touch only the last line of the document. A rule that zeroed every last
+    /// child's margin (`.markdown-body :last-child`) passed every test above, yet changed every
+    /// page (found by the verifier on #49): paragraphs and list items lost their spacing. Here,
+    /// mid-document, the gap between two loose-list items must match the gap between two
+    /// paragraphs (one line plus the 1em margin each; measured equal, 31.2 pt), and that gap
+    /// must stay well over the height of a line (measured 2.2 times; with the over-broad rule
+    /// both gaps shrink, to 1.4 times). Ratios, so fonts don't move them.
+    @Test func midDocumentSpacingIsUntouched() async throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("marsdawn-spacing-\(UUID().uuidString).pdf")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let markdown = """
+        # Spacing
+
+        Paragraph Alpha.
+
+        Paragraph Bravo.
+
+        - Item Charlie
+
+        - Item Delta
+
+        - Item Echo
+
+        Closing paragraph after the list, so the list is not the end of the document.
+        """
+        _ = try await DocumentExporter.exportPDF(
+            markdown: markdown, to: url, theme: .dawn, baseDirectory: nil, allowRemoteImages: false
+        )
+        let document = try #require(PDFDocument(url: url))
+        let page = try #require(document.page(at: 0))
+        func top(_ text: String) throws -> CGFloat {
+            let selection = try #require(document.findString(text, withOptions: []).first, "\(text) is on the page")
+            return selection.bounds(for: page).maxY
+        }
+        let paragraphGap = try top("Paragraph Alpha") - top("Paragraph Bravo")
+        let itemGap = try top("Item Charlie") - top("Item Delta")
+        let lineHeight = try #require(document.findString("Paragraph Alpha", withOptions: []).first).bounds(for: page).height
+        #expect(abs(itemGap - paragraphGap) <= paragraphGap * 0.05,
+                "loose-list items are spaced like paragraphs: \(itemGap) vs \(paragraphGap)")
+        #expect(paragraphGap >= lineHeight * 1.8, "paragraphs keep their margin: \(paragraphGap) for a \(lineHeight) line")
+    }
+
     // MARK: -
 
     private func expectNoBlankPageAtTheBoundary(body: String, paper: DocumentExporter.Paper) async throws {
