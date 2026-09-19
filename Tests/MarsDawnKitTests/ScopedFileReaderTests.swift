@@ -88,7 +88,7 @@ struct ScopedFileReaderTests {
         // item unscheduled for seconds when the whole suite runs at once, and timing the wait
         // from out here would measure that scheduling delay rather than the open (which is what
         // O_NONBLOCK is here to keep short).
-        let thread = Thread { @Sendable in
+        startThread {
             started.signal()
             let begin = DispatchTime.now()
             let outcome = failure { try read(reader, ["pipe.png"]) }
@@ -96,7 +96,6 @@ struct ScopedFileReaderTests {
             result.set(outcome)
             done.signal()
         }
-        thread.start()
         _ = started.wait(timeout: .now() + 30)
         if done.wait(timeout: .now() + 30) == .timedOut {
             Issue.record("Opening a FIFO never returned")
@@ -304,6 +303,14 @@ struct ScopedFileReaderTests {
         #expect(tmpSpelling.hasPrefix("/tmp/"))
         #expect(try reader.readFile(atPath: tmpSpelling + "/a.png", maxSize: 100) == Data("image".utf8))
     }
+}
+
+/// Runs `work` on a thread of its own. At file scope on purpose (mars-dawn-kit#26): the same
+/// `Thread { }` written inside a test method was compiled `@MainActor`-isolated, so the thread
+/// opened by asking whether it was on the main actor, and macOS 15's Concurrency runtime traps on
+/// that question (in `dispatch_assert_queue`) where macOS 26's answers no.
+private func startThread(_ work: @escaping @Sendable () -> Void) {
+    Thread { @Sendable in work() }.start()
 }
 
 /// Nanoseconds the timed call took, written on the worker thread and read on the test's.

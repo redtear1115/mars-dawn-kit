@@ -5,6 +5,12 @@ import Foundation
 import Testing
 @testable import MarsDawnKit
 
+private func topLevelOnThread(_ body: @escaping @Sendable () -> Void) {
+    let done = DispatchSemaphore(value: 0)
+    Thread { @Sendable in body(); done.signal() }.start()
+    #expect(done.wait(timeout: .now() + 30) == .success)
+}
+
 struct Experiment26Tests {
     private func plainHelper() -> Int { 42 }
 
@@ -26,6 +32,8 @@ struct Experiment26Tests {
     }
 
     @Test func x1EmptyThread() { onThread {} }
+
+    @Test func x5EmptyThreadFromATopLevelHelper() { topLevelOnThread {} }
 
     @Test func x2ThreadReadsTheClock() { onThread { _ = DispatchTime.now() } }
 
