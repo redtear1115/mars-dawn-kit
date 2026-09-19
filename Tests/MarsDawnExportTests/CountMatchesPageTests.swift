@@ -30,6 +30,10 @@ struct CountMatchesPageTests {
         // Entities in raw HTML: shown decoded; &nbsp; is a space.
         "<div>Tom &amp; Jerry &copy; 2026&nbsp;words</div>\n",
         "<div>caf&#233; &#x4E2D;&#25991;</div>\n",
+        // Named entities beyond the common few (#69): each is one character, letter or not.
+        "<div>caf&eacute; words</div>\n",
+        "<div>na&iuml;ve &Aring;ngstr&ouml;m &frac12; cup</div>\n",
+        "<div>thin&ThinSpace;space and a&notin;b set</div>\n",
         // A collapsed <details> shows its summary only; an open one shows its body too.
         "<details><summary>Title here</summary>Body words hidden</details>\n",
         "<details open><summary>Title</summary>Body shown</details>\n",
