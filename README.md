@@ -33,6 +33,7 @@ swift run marsdawn export notes.md -o notes.pdf --theme classic --paper a4
 ```
 
 - `open <paths…> [--line N] [--folder DIR] [--json]` opens files in the MarsDawn app, and folders in its sidebar.
+  - **It needs the MarsDawn app, which is not publicly available yet.** It is headed for the Mac App Store; until it is there, `open` exits with code 3 on any Mac that does not already have the app, and everything below describes what it will do once you have it. `export` needs no app and works today.
   - A file argument can name a line: `notes.md:120` lands on line 120, and a column after it (`notes.md:120:8`) is accepted and ignored. An argument that names a file which exists is always the whole filename, so a file called `weird:12` still opens as itself.
   - `--line N` says the same thing for a single file, and is the way to ask for a line on a path that itself ends in a colon and digits. With more than one file it is a usage error.
   - Lines run from 1 to 999999999. Anything else is a usage error, and nothing is sent.

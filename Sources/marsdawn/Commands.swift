@@ -12,7 +12,7 @@ struct MarsDawnCommand: AsyncParsableCommand {
         abstract: "Open Markdown documents in MarsDawn or export them to PDF.",
         discussion: """
         export renders on its own and needs nothing else installed. open hands the files to the \
-        MarsDawn app, so it needs MarsDawn from the Mac App Store.
+        MarsDawn app, so it needs the app, which is not publicly available yet.
         Pass --json for machine-readable results. Exit codes: 0 success, \(CLIFailure.Code.inputNotFound.rawValue) input not found, \
         \(CLIFailure.Code.appNotInstalled.rawValue) MarsDawn not installed (open only), \(CLIFailure.Code.outputExists.rawValue) output exists \
         (use --force), \(CLIFailure.Code.exportFailed.rawValue) export failed, 64 usage error.
@@ -67,7 +67,7 @@ struct CLIFailure: Error, CustomStringConvertible {
     var description: String { message }
 
     static func appNotInstalled() -> CLIFailure {
-        CLIFailure(code: .appNotInstalled, message: "MarsDawn is not installed. Get it from the Mac App Store, then try again.")
+        CLIFailure(code: .appNotInstalled, message: "MarsDawn is not installed. open needs the app, which is not publicly available yet; export works without it.")
     }
 }
 
@@ -140,7 +140,7 @@ struct OpenTarget: Equatable {
 extension MarsDawnCommand {
     struct Open: AsyncParsableCommand {
         static let configuration = CommandConfiguration(
-            abstract: "Open Markdown files in MarsDawn for review.",
+            abstract: "Open Markdown files in MarsDawn for review. Needs the MarsDawn app, which is not publicly available yet.",
             discussion: """
             A folder argument opens in the window's sidebar instead of as a document, so \
             `marsdawn open .` shows the current directory; --folder does the same alongside files. \
