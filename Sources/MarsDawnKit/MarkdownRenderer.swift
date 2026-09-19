@@ -223,7 +223,9 @@ private struct HTMLVisitor: MarkupVisitor {
     let lineOffset: Int
     /// The math taken out of the body before it was parsed.
     let math: MathExtractor.Extraction
-    private var usedSlugs: [String: Int] = [:]
+    /// Every heading's `id`, in document order, worked out before any heading is written.
+    private var headingIDs: [String] = []
+    private var headingIndex = 0
     private var tightListStack: [Bool] = []
 
     init(options: MarkdownRenderer.Options, lineOffset: Int, math: MathExtractor.Extraction) {
@@ -252,7 +254,23 @@ private struct HTMLVisitor: MarkupVisitor {
     // MARK: Blocks
 
     mutating func visitDocument(_ document: Document) -> String {
-        visitChildren(document)
+        headingIDs = MarkdownRenderer.headingIDs(forSlugs: headingSlugs(document))
+        return visitChildren(document)
+    }
+
+    /// Every heading's own slug, in the order `visit` meets them. Headings are blocks, so
+    /// inline nodes are never descended into.
+    private func headingSlugs(_ document: Document) -> [String] {
+        var slugs: [String] = []
+        var stack: [any Markup] = Array(document.children).reversed()
+        while let node = stack.popLast() {
+            if let heading = node as? Heading {
+                slugs.append(slugify(slugSource(heading.plainText)))
+                continue
+            }
+            stack.append(contentsOf: node.children.filter { !($0 is InlineMarkup) }.reversed())
+        }
+        return slugs
     }
 
     mutating func visitParagraph(_ paragraph: Paragraph) -> String {
@@ -265,7 +283,8 @@ private struct HTMLVisitor: MarkupVisitor {
 
     mutating func visitHeading(_ heading: Heading) -> String {
         let level = min(max(heading.level, 1), 6)
-        let id = uniqueSlug(for: slugSource(heading.plainText))
+        let id = headingIndex < headingIDs.count ? headingIDs[headingIndex] : "section-\(headingIndex)"
+        headingIndex += 1
         return "<h\(level) id=\"\(escapeAttribute(id))\"\(lineAttribute(heading))>\(visitChildren(heading))</h\(level)>\n"
     }
 
@@ -464,12 +483,71 @@ private struct HTMLVisitor: MarkupVisitor {
             }
         }
     }
+}
 
-    private mutating func uniqueSlug(for text: String) -> String {
-        let base = slugify(text)
-        let count = usedSlugs[base, default: 0]
-        usedSlugs[base] = count + 1
-        return count == 0 ? base : "\(base)-\(count)"
+extension MarkdownRenderer {
+    /// Heading `id`s for headings whose own slugs are `slugs`, in document order (#14).
+    ///
+    /// Before this, a repeated slug was numbered `base-1`, `base-2`, … with no check, so a
+    /// heading with nothing to slug got `""` (then `-1`, …) and a numbered repeat could equal
+    /// another heading's own slug. The rule keeps every `id` a link can already point at:
+    /// **a heading with a real slug gets the `id` it had before, unless that `id` was shared.**
+    /// Three passes:
+    /// 1. A real-slug heading whose previous `id` was unique keeps it.
+    /// 2. Where one previous `id` was shared, the heading whose own slug it is keeps it, and
+    ///    every other repeat takes the next number of its own slug, in document order, that no
+    ///    heading has as its slug and nobody has been given.
+    /// 3. Only then does a heading with nothing to slug (`# $$`, `# !!!`) take the next free
+    ///    `section`, `section-1`, …, as in Pandoc, rather than an empty `id`.
+    /// No two headings share an `id`, and none is empty.
+    static func headingIDs(forSlugs slugs: [String]) -> [String] {
+        // What each heading was given before: its slug, numbered by occurrence, unchecked.
+        var occurrences: [String: Int] = [:]
+        let previous = slugs.map { slug -> String in
+            let count = occurrences[slug, default: 0]
+            occurrences[slug] = count + 1
+            return count == 0 ? slug : "\(slug)-\(count)"
+        }
+        var previousCount: [String: Int] = [:]
+        for id in previous { previousCount[id, default: 0] += 1 }
+        let owned = Set(slugs.filter { !$0.isEmpty })
+        var owner: [String: Int] = [:]
+        for (index, slug) in slugs.enumerated() where !slug.isEmpty && owner[slug] == nil { owner[slug] = index }
+
+        var ids = [String?](repeating: nil, count: slugs.count)
+        var used = Set<String>()
+        var nextNumber: [String: Int] = [:]
+        func give(_ index: Int, _ id: String) {
+            ids[index] = id
+            used.insert(id)
+        }
+        /// `base` (when `start` is 0) or `base-N`, the first that nobody has been given and
+        /// that no heading has as its own slug.
+        func nextFree(_ base: String, from start: Int) -> String {
+            var count = nextNumber[base, default: start]
+            var id = count == 0 ? base : "\(base)-\(count)"
+            while used.contains(id) || owned.contains(id) {
+                count += 1
+                id = "\(base)-\(count)"
+            }
+            nextNumber[base] = count + 1
+            return id
+        }
+
+        // 1. Unique before: kept.
+        for index in slugs.indices where !slugs[index].isEmpty && previousCount[previous[index]] == 1 {
+            give(index, previous[index])
+        }
+        // 2. Shared before: the owner of that slug keeps it; other repeats take their next number.
+        for index in slugs.indices where !slugs[index].isEmpty && ids[index] == nil {
+            let slug = slugs[index]
+            give(index, owner[slug] == index && !used.contains(slug) ? slug : nextFree(slug, from: 1))
+        }
+        // 3. Nothing to slug: the next free `section…`.
+        for index in slugs.indices where slugs[index].isEmpty {
+            give(index, nextFree("section", from: 0))
+        }
+        return ids.map { $0! }
     }
 }
 

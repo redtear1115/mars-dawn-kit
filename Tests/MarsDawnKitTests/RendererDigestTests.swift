@@ -95,9 +95,16 @@ struct RendererDigestTests {
     /// Taken on kit main 851b564, the commit before F1, with this same corpus and skip rule.
     /// The 0.2.0 value it replaces was e9ee39be…3b7ef, over a corpus that still rendered
     /// front-matter documents as ordinary Markdown.
+    ///
+    /// Retaken for #14 (headings with nothing to slug get `section`, not an empty `id`). The
+    /// value before was c9b2044a…2b772f. Every render of this corpus was dumped on 8a42c9a and
+    /// with the fix and diffed: 220 of the 7,996 renders changed, every one only in a heading
+    /// `id`, and every changed `id` had been empty. The new output has no empty `id`.
+    /// Re-checked for the two- and three-pass rules (#48 rounds 2 and 3): each dump is
+    /// byte-identical to the first rule's, so the value stands.
     @Test func ordinaryOutputMatchesTheDigestBeforeFrontMatter() {
         #expect(Self.digest(documents: 4000, strings: 20000)
-            == "c9b2044a45aa8042472808a684309c331600fa4fa979d791ffac41268b2b772f")
+            == "02ad803eda6815ec96d16e58b1c1143d96d07b5a4bb8223673cff88e9f6ecdd0")
     }
 
     /// The skip has to be exercising something, or the digest above would prove nothing about
