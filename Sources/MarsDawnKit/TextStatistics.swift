@@ -223,31 +223,53 @@ private struct ReadableTextVisitor: MarkupWalker {
     }
 }
 
-/// The text a page shows for raw HTML (#19), read the way the escapers read untrusted input: on
-/// bytes, in one forward pass, so no input makes it more than linear.
+/// The text a page shows for raw HTML (#19, #57), read the way the escapers read untrusted input:
+/// on bytes, in one forward pass, so no input makes it more than linear. Checked against what the
+/// preview page's `innerText` shows (`CountMatchesPageTests`).
 ///
 /// - A tag is `<` followed by a letter, `/` and a letter, `!` or `?`, up to the `>` that ends
-///   it (one inside a quoted attribute value, `title="a>b"`, doesn't). It
-///   shows nothing; a block-level tag (`p`, `div`, `li`, `br`, …) separates words as the page
-///   lays them out, an inline one (`b`, `span`, …) doesn't. A tag with no `>` swallows the rest,
-///   as it would in the page.
+///   it (one inside a quoted attribute value, `title="a>b"`, doesn't). It shows nothing; a
+///   block-level tag (`p`, `div`, `li`, `br`, …) separates words as the page lays them out, an
+///   inline one (`b`, `span`, …) doesn't. A tag with no `>` swallows the rest, as in the page.
 /// - Any other `<` is shown as itself.
 /// - A comment, `<!--` to `-->`, shows nothing.
-/// - The content of `script`, `style` and `template` is never shown, up to the matching
-///   close tag, even when that is in a later piece of HTML.
-/// - Nothing is evaluated, and entities are left as written.
+/// - Never shown, up to the element's end, even when that is in a later piece of HTML:
+///   `script`, `style` and `noscript` (the preview runs scripts) up to their first close tag;
+///   `template`, `select` and any element with the `hidden` attribute up to their matching close
+///   tag, counting the same element nested inside; and a `<details>` without `open`, after its
+///   `</summary>`.
+/// - Entities are decoded as the page decodes them: numeric ones, and the common named ones;
+///   `&nbsp;` is a space. An unknown one is shown as written.
+/// - `<textarea>` text is counted: the reader sees it in the box, although `innerText` leaves
+///   form controls out.
+/// - Nothing is evaluated.
 struct VisibleHTMLText {
-    private static let hiddenElements: Set<[UInt8]> = ["script", "style", "template"].map { Array($0.utf8) }.reduce(into: []) { $0.insert($1) }
-    private static let blockElements: Set<[UInt8]> = [
+    private static func names(_ list: [String]) -> Set<[UInt8]> { Set(list.map { Array($0.utf8) }) }
+    /// Their content is text up to the first close tag: nothing inside nests.
+    private static let rawTextHidden = names(["script", "style", "noscript"])
+    /// Hidden with everything inside, up to the matching close tag.
+    private static let nestingHidden = names(["template", "select"])
+    /// No content and no close tag: a `hidden` attribute on one hides nothing else.
+    private static let voidElements = names(["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"])
+    private static let blockElements = names([
         "address", "article", "aside", "blockquote", "br", "dd", "details", "div", "dl", "dt", "figcaption",
         "figure", "footer", "h1", "h2", "h3", "h4", "h5", "h6", "header", "hr", "li", "main", "nav", "ol",
         "p", "pre", "section", "summary", "table", "td", "th", "tr", "ul",
-    ].map { Array($0.utf8) }.reduce(into: []) { $0.insert($1) }
+    ])
+    private static let namedEntities: [String: String] = [
+        "amp": "&", "lt": "<", "gt": ">", "quot": "\"", "apos": "'", "nbsp": " ", "copy": "©", "reg": "®",
+        "trade": "™", "hellip": "…", "mdash": "—", "ndash": "–", "lsquo": "‘", "rsquo": "’", "ldquo": "“",
+        "rdquo": "”", "bull": "•", "middot": "·", "times": "×", "divide": "÷", "deg": "°", "plusmn": "±",
+        "para": "¶", "sect": "§", "euro": "€", "pound": "£", "yen": "¥", "cent": "¢", "laquo": "«",
+        "raquo": "»", "iexcl": "¡", "iquest": "¿", "shy": "", "ensp": " ", "emsp": " ", "thinsp": " ",
+    ]
 
-    /// The hidden element the text is inside, lowercased, or nil.
-    private var hiddenElement: [UInt8]?
+    /// The hidden element the text is inside, lowercased: whether it nests, and how deep.
+    private var hidden: (name: [UInt8], nests: Bool, depth: Int)?
+    /// For each `<details>` the text is inside, whether it is collapsed.
+    private var details: [Bool] = []
 
-    var isHiding: Bool { hiddenElement != nil }
+    var isHiding: Bool { hidden != nil }
 
     mutating func visibleText(of html: String) -> String {
         let b = Array(html.utf8)
@@ -256,26 +278,47 @@ struct VisibleHTMLText {
         out.reserveCapacity(n)
         var i = 0
         func isLetter(_ byte: UInt8) -> Bool { (0x41...0x5A).contains(byte) || (0x61...0x7A).contains(byte) }
+        func isNameByte(_ byte: UInt8) -> Bool { isLetter(byte) || (0x30...0x39).contains(byte) || byte == UInt8(ascii: "-") }
         func lower(_ byte: UInt8) -> UInt8 { (0x41...0x5A).contains(byte) ? byte + 0x20 : byte }
+        /// Whether `b[at...]` is `<name` or `</name` (per `closing`) followed by a non-name byte.
+        func tagNamed(_ name: [UInt8], at j: Int, closing: Bool) -> Bool {
+            let start = j + (closing ? 2 : 1)
+            guard b[j] == UInt8(ascii: "<"), !closing || (j + 1 < n && b[j + 1] == UInt8(ascii: "/")),
+                  start + name.count <= n,
+                  (0..<name.count).allSatisfy({ lower(b[start + $0]) == name[$0] }) else { return false }
+            return start + name.count == n || !isNameByte(b[start + name.count])
+        }
         while i < n {
-            if let hidden = hiddenElement {
-                // Up to `</name`, any case; the tag itself is read below.
+            if let current = hidden {
+                // Skip to the close tag that ends it; the tag itself is read below.
                 var j = i
+                var depth = current.depth
                 var found = false
-                while j + 1 + hidden.count < n {
-                    if b[j] == UInt8(ascii: "<"), b[j + 1] == UInt8(ascii: "/"),
-                       (0..<hidden.count).allSatisfy({ lower(b[j + 2 + $0]) == hidden[$0] }) {
-                        found = true
-                        break
+                while j < n {
+                    if b[j] == UInt8(ascii: "<") {
+                        if tagNamed(current.name, at: j, closing: true) {
+                            depth -= 1
+                            if !current.nests || depth == 0 { found = true; break }
+                        } else if current.nests, tagNamed(current.name, at: j, closing: false) {
+                            depth += 1
+                        }
                     }
                     j += 1
                 }
-                guard found else { return String(decoding: out, as: UTF8.self) }
-                hiddenElement = nil
+                guard found else {
+                    hidden = (current.name, current.nests, depth)
+                    return String(decoding: out, as: UTF8.self)
+                }
+                hidden = nil
                 i = j
                 continue
             }
             let byte = b[i]
+            if byte == UInt8(ascii: "&"), let (decoded, length) = Self.entity(b, at: i) {
+                out.append(contentsOf: decoded)
+                i += length
+                continue
+            }
             guard byte == UInt8(ascii: "<") else {
                 out.append(byte)
                 i += 1
@@ -297,31 +340,94 @@ struct VisibleHTMLText {
                 i += 1
                 continue
             }
-            // To the `>` that ends the tag: one inside a quoted attribute value doesn't.
+            // To the `>` that ends the tag: one inside a quoted attribute value doesn't. Attribute
+            // names outside quotes are collected on the way.
             var end = i + 1
             var quote: UInt8?
             var afterEquals = false
+            var inUnquotedValue = false
+            var attributes: [[UInt8]] = []
+            var attribute: [UInt8] = []
+            var inName = false
+            var closed = false
+            func isSpace(_ c: UInt8) -> Bool { c == UInt8(ascii: " ") || c == UInt8(ascii: "\t") || c == UInt8(ascii: "\n") || c == UInt8(ascii: "\r") }
             while end < n {
                 let c = b[end]
+                defer { end += 1 }
                 if let open = quote {
                     if c == open { quote = nil }
-                } else if c == UInt8(ascii: ">") {
-                    break
-                } else if afterEquals, c == UInt8(ascii: "\"") || c == UInt8(ascii: "'") {
-                    quote = c
+                    continue
                 }
-                if c == UInt8(ascii: "=") { afterEquals = quote == nil } else if c != UInt8(ascii: " "), c != UInt8(ascii: "\t"), c != UInt8(ascii: "\n") { afterEquals = false }
-                end += 1
+                if c == UInt8(ascii: ">") { closed = true; break }
+                if inUnquotedValue {
+                    if isSpace(c) { inUnquotedValue = false }
+                    continue
+                }
+                if afterEquals {
+                    if isSpace(c) { continue }
+                    afterEquals = false
+                    if c == UInt8(ascii: "\"") || c == UInt8(ascii: "'") { quote = c } else { inUnquotedValue = true }
+                    continue
+                }
+                if c == UInt8(ascii: "=") {
+                    if inName { attributes.append(attribute); inName = false }
+                    afterEquals = true
+                } else if isNameByte(c) {
+                    if !inName { attribute = []; inName = true }
+                    attribute.append(lower(c))
+                } else if inName {
+                    attributes.append(attribute)
+                    inName = false
+                }
             }
-            guard end < n else { return String(decoding: out, as: UTF8.self) }
+            end = closed ? end - 1 : n  // the defer stepped past the `>`; no `>` at all swallows the rest
+            if inName { attributes.append(attribute) }
             var nameEnd = i + (closing ? 2 : 1)
             let nameStart = nameEnd
-            while nameEnd < end, isLetter(b[nameEnd]) || (0x30...0x39).contains(b[nameEnd]) || b[nameEnd] == UInt8(ascii: "-") { nameEnd += 1 }
+            while nameEnd < end, isNameByte(b[nameEnd]) { nameEnd += 1 }
             let name = b[nameStart..<nameEnd].map(lower)
+            // The first "attribute" collected is the element's own name.
+            let attributeNames = Set(attributes.dropFirst())
             if Self.blockElements.contains(name) { out.append(UInt8(ascii: " ")) }
-            if !closing, Self.hiddenElements.contains(name) { hiddenElement = name }
             i = end + 1
+            let selfClosing = end > 0 && b[end - 1] == UInt8(ascii: "/")
+            if closing {
+                if name == Array("details".utf8), !details.isEmpty { details.removeLast() }
+                if name == Array("summary".utf8), details.last == true {
+                    // The rest of a collapsed <details> is hidden, up to its own </details>.
+                    hidden = (Array("details".utf8), true, 1)
+                }
+                continue
+            }
+            if name == Array("details".utf8) { details.append(!attributeNames.contains(Array("open".utf8))) }
+            if Self.rawTextHidden.contains(name) {
+                hidden = (name, false, 1)
+            } else if Self.nestingHidden.contains(name) || (attributeNames.contains(Array("hidden".utf8))
+                        && !Self.voidElements.contains(name) && !selfClosing) {
+                hidden = (name, true, 1)
+            }
         }
         return String(decoding: out, as: UTF8.self)
+    }
+
+    /// The UTF-8 an entity at `b[at]` stands for and its length, or nil to show `&` as written.
+    private static func entity(_ b: [UInt8], at start: Int) -> ([UInt8], Int)? {
+        var end = start + 1
+        while end < b.count, end - start <= 32, b[end] != UInt8(ascii: ";") {
+            let c = b[end]
+            guard (0x30...0x39).contains(c) || (0x41...0x5A).contains(c) || (0x61...0x7A).contains(c) || c == UInt8(ascii: "#") else { return nil }
+            end += 1
+        }
+        guard end < b.count, b[end] == UInt8(ascii: ";"), end > start + 1 else { return nil }
+        let body = String(decoding: b[(start + 1)..<end], as: UTF8.self)
+        let length = end - start + 1
+        if body.hasPrefix("#") {
+            let digits = body.dropFirst()
+            let value = digits.first == "x" || digits.first == "X" ? UInt32(digits.dropFirst(), radix: 16) : UInt32(digits, radix: 10)
+            guard let value, value != 0, let scalar = Unicode.Scalar(value) else { return nil }
+            return (Array(String(scalar).utf8), length)
+        }
+        guard let text = namedEntities[body] else { return nil }
+        return (Array(text.utf8), length)
     }
 }
