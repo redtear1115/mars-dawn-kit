@@ -112,11 +112,12 @@ struct MarkdownParsingWorkerTests {
 }
 
 /// The two-slot gate: FIFO hand-off, cancellation of waiters, exactly-once resumption.
-// Disabled on macOS 15, where the runtime kills the process when a test asks which executor it
-// is on. Marking the poll helper's closure @Sendable wasn't enough: blockingAndAsyncWaitersShareOneQueue
-// still traps, so something else in it asks the same question. The gate is the same code on both
-// systems and the CLI export step covers it there (mars-dawn-kit#26).
-@Suite(.enabled(if: runtimeAnswersExecutorQuestions))
+// Skipped on macOS 15, where the Concurrency runtime kills the process when a closure running on a
+// thread of its own is checked against the main actor (mars-dawn-kit#26). The skip carries its
+// reason, so the log says why. The gate is the same code on both systems and the CLI export step
+// covers it on macOS 15.
+@Suite(.enabled(if: runtimeAnswersExecutorQuestions,
+                "macOS 15's Concurrency runtime kills the test process on a main-actor check from a raw thread (mars-dawn-kit#26); runs on macOS 26"))
 struct WorkerGateTests {
     @Test func cancellingAWaiterReturnsNilPromptlyAndNeverRunsItsBody() async throws {
         let resumes = Counter<UInt64>()
