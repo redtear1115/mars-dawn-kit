@@ -105,7 +105,8 @@ public final class HTMLDocumentSchemeHandler: NSObject, WKURLSchemeHandler {
     nonisolated static func documentCSP(for policy: HTMLContentPolicy) -> String {
         var csp = policy == .running ? runningCSP : blockedCSP
         if policy == .running, upgradesInsecureRequests { csp += "; upgrade-insecure-requests" }
-        return csp + "; " + documentSandboxDirective(for: policy)
+        let directive = documentSandboxDirective(for: policy)
+        return directive.isEmpty ? csp : csp + "; " + directive
     }
 
     /// The CSP header for every subresource (an SVG or CSS file is never a live document).
@@ -170,13 +171,46 @@ public final class HTMLDocumentSchemeHandler: NSObject, WKURLSchemeHandler {
         let outcome: LogOutcome
     }
 
-    #if DEBUG
-    /// Test-only record of each request: its components below the scope root (never full
-    /// paths) and what happened to it.
+    /// A bounded record of each request: its components below the scope root (never full paths)
+    /// and what happened to it. The newest `logLimit` are kept.
+    ///
+    /// Not debug-only. It is how a document is observed from outside itself, in the app as well as
+    /// here — the page's CSP carries `sandbox`, so `evaluateJavaScript` is refused and the page
+    /// can no longer be asked anything — and a record that exists only in debug builds is a
+    /// behaviour nobody exercises in the build that ships.
     private(set) var requestLog: [LogEntry] = []
+    /// The most requests kept. A load may make 2,000; this bounds the memory a long-lived handler
+    /// can accumulate, at the cost of the oldest entries.
+    static let logLimit = 512
+
+    #if DEBUG
     /// Components of each read as it starts.
     private(set) var readLog: [[String]] = []
     #endif
+
+    /// What this handler served, and what it turned away, as paths below the scope root.
+    ///
+    /// Public so that tests **in the app** can observe a document from outside it. The page's CSP
+    /// carries `sandbox`, which refuses `evaluateJavaScript` as firmly as it refuses the page's
+    /// own script, so "did this document load its stylesheet?" can no longer be answered by asking
+    /// the page. It is answered here, by what the page asked this handler for — which is the
+    /// better question anyway. Debug builds only, and read-only.
+    public var servedPaths: [[String]] {
+        requestLog.compactMap { entry in
+            if case .served = entry.outcome { return entry.components }
+            return nil
+        }
+    }
+
+    /// Paths this handler refused or could not read.
+    public var unservedPaths: [[String]] {
+        requestLog.compactMap { entry in
+            switch entry.outcome {
+            case .refused, .failed: return entry.components
+            case .page, .served: return nil
+            }
+        }
+    }
 
     override public convenience init() {
         self.init(limits: Limits())
@@ -561,9 +595,13 @@ public final class HTMLDocumentSchemeHandler: NSObject, WKURLSchemeHandler {
     }
 
     private func record(_ components: [String]?, _ outcome: LogOutcome) {
-        #if DEBUG
+        // Not `#if DEBUG`. The record is declared unconditionally above, and a declaration whose
+        // writer is conditional is worse than no record at all: `servedPaths` would answer "the
+        // page asked for nothing" in a build where nothing was ever written down, which reads
+        // exactly like a real answer. That cost an hour here, and only a test asserting a
+        // *positive* caught it.
         requestLog.append(LogEntry(components: components, outcome: outcome))
-        #endif
+        if requestLog.count > Self.logLimit { requestLog.removeFirst(requestLog.count - Self.logLimit) }
     }
 }
 #endif
