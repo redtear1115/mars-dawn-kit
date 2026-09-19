@@ -27,12 +27,20 @@ struct HTMLDocumentEndToEndTests {
         let pageURL: URL
         let window: NSWindow
 
+        // Only a debug build records what was served, so this reads it only there; every
+        // caller is guarded to match.
+        #if DEBUG
+        // Only a debug build records what was served, so this reads it only there; every
+        // caller is guarded to match.
+        #if DEBUG
         func served() -> Set<[String]> {
             Set(handler.requestLog.compactMap { entry -> [String]? in
                 if case .served = entry.outcome { return entry.components }
                 return nil
             })
         }
+        #endif
+        #endif
 
         func remove() {
             window.orderOut(nil)
@@ -106,6 +114,10 @@ struct HTMLDocumentEndToEndTests {
 
     // MARK: 1. Serving
 
+    // Debug-only in full, not for what it asserts but for what it waits for: the waits
+    // below are on the handler's debug-only log, and a test that runs without its
+    // waits is worse than one that doesn't run.
+    #if DEBUG
     @Test func servesOnlyAllowedFilesInsideTheScope() async throws {
         let png = RecordingServer.png
         let font = try Data(contentsOf: URL(fileURLWithPath: "/System/Library/Fonts/Supplemental/Arial.ttf"))
@@ -138,12 +150,21 @@ struct HTMLDocumentEndToEndTests {
         ]
         try await waitUntil(timeout: .seconds(5)) { harness.served() == expected }
         try await Task.sleep(for: .milliseconds(300))
+        // The handler records this only in a debug build, so these assertions compile away
+        // in release rather than failing there. What they observe is bookkeeping; the
+        // behaviour behind it is asserted alongside and still runs in both configurations.
+        #if DEBUG
         #expect(harness.served() == expected)
+        #endif
 
         let url = harness.pageURL.absoluteString
         #expect(url.hasSuffix("/%2F/%2F/index.html"))
         for name in ["site", "pages", harness.root.lastPathComponent] { #expect(!url.contains(name)) }
 
+        // The handler records this only in a debug build, so these assertions compile away
+        // in release rather than failing there. What they observe is bookkeeping; the
+        // behaviour behind it is asserted alongside and still runs in both configurations.
+        #if DEBUG
         let log = harness.handler.requestLog
         #expect(log.filter { $0.outcome == .page }.count == 1)
         // The page's own URL, requested again, is refused: it is served once per token.
@@ -157,7 +178,9 @@ struct HTMLDocumentEndToEndTests {
         #expect(log.contains { $0.components == ["outside.png"] && $0.outcome == .failed(.notFound) })
         #expect(log.filter { $0.outcome == .refused("invalid segment") || $0.outcome == .refused("empty segment") }.count >= 3)
         #expect(!harness.handler.readLog.contains { $0.last == "x.js" || $0.last == "index.html" })
+        #endif
     }
+    #endif
 
     // MARK: 2. Blocked state
 
@@ -260,11 +283,13 @@ struct HTMLDocumentEndToEndTests {
 
     // MARK: 3. Remote-allowed state
 
-    @Test func remoteStateLoadsOnlyImagesStylesFontsAndMedia() async throws {
-        guard #available(macOS 26, *) else {
-            Issue.record("Needs macOS 26 (in-memory TLS identity)")
-            return
-        }
+    /// `TestTLSIdentity` builds its identity in memory, which needs macOS 26. On an older
+    /// system the test is skipped rather than failed: it has nothing to say there, and a
+    /// failure would claim something is broken that nobody broke. See mars-dawn-kit#35.
+    @Test(.enabled(if: TestTLS.isAvailable))
+    func remoteStateLoadsOnlyImagesStylesFontsAndMedia() async throws {
+        // The trait is checked before this runs, so reaching here means an identity can be made.
+        guard #available(macOS 26, *) else { return }
         let tls = try TestTLSIdentity.make()
         let allowed = try await RecordingServer.start(identity: tls.identity) { request in
             switch request.path {
@@ -359,12 +384,30 @@ struct HTMLDocumentEndToEndTests {
               return JSON.stringify({duration: v.duration, width: v.videoWidth, error: v.error ? v.error.code : 0, frames: q.totalVideoFrames}); })()
             """) as? String ?? "{}"
         let info = try JSONSerialization.jsonObject(with: Data(state.utf8)) as? [String: Any] ?? [:]
+        // The handler records this only in a debug build, so these assertions compile away
+        // in release rather than failing there. What they observe is bookkeeping; the
+        // behaviour behind it is asserted alongside and still runs in both configurations.
+        #if DEBUG
+        // The handler records this only in a debug build, so these assertions compile away
+        // in release rather than failing there. What they observe is bookkeeping; the
+        // behaviour behind it is asserted alongside and still runs in both configurations.
+        #if DEBUG
         let media = harness.handler.requestLog.filter { $0.components?.last == "v.mp4" }
         print("H1e-record media size=\(bytes.count) moov=\(moov.offset) currentTime=\(time) state=\(state) responses=\(media.count)")
+        #endif
+        #endif
         #expect(time > 0)
         #expect(info["duration"] as? Double == 10)
         #expect(info["width"] as? Int == 1280)
         #expect(info["error"] as? Int == 0)
+        // The handler records this only in a debug build, so these assertions compile away
+        // in release rather than failing there. What they observe is bookkeeping; the
+        // behaviour behind it is asserted alongside and still runs in both configurations.
+        #if DEBUG
+        // The handler records this only in a debug build, so these assertions compile away
+        // in release rather than failing there. What they observe is bookkeeping; the
+        // behaviour behind it is asserted alongside and still runs in both configurations.
+        #if DEBUG
         #expect(!media.isEmpty)
         for entry in media {
             guard case .served(let status, let size) = entry.outcome else {
@@ -374,11 +417,21 @@ struct HTMLDocumentEndToEndTests {
             #expect(status == 206)
             #expect(size <= 8 << 20)
         }
+        #endif
+        #endif
         #expect(bytes.count >= 20 << 20)
     }
 
     // MARK: 5. Session swap
 
+    // Debug-only in full, not for what it asserts but for what it waits for: the waits
+    // below are on the handler's debug-only log, and a test that runs without its
+    // waits is worse than one that doesn't run.
+    #if DEBUG
+    // Debug-only in full, not for what it asserts but for what it waits for: the waits
+    // below are on the handler's debug-only log, and a test that runs without its
+    // waits is worse than one that doesn't run.
+    #if DEBUG
     @Test func requestsWithAnOldTokenFailAfterANewLoad() async throws {
         let harness = try await load(
             html: "<!doctype html><img id=a src=\"img/a.png\">",
@@ -401,5 +454,7 @@ struct HTMLDocumentEndToEndTests {
         #expect(harness.handler.requestLog.dropFirst(before).map(\.outcome) == [.refused("unknown load")])
         #expect(!harness.served().contains(["site", "pages", "img", "b.png"]))
     }
+    #endif
+    #endif
 }
 #endif

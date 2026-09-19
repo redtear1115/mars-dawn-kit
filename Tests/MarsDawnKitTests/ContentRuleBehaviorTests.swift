@@ -98,8 +98,12 @@ struct ContentRuleBehaviorTests {
 
 /// The allowed rule lists lift their block for https only. Two loopback servers, one plain and
 /// one TLS, show what each state does with the same `<img>` in a real web view.
+///
+/// `TestTLSIdentity` builds its identity in memory, which needs macOS 26. On an older
+/// system the test is skipped rather than failed: it has nothing to say there, and a
+/// failure would claim something is broken that nobody broke. See mars-dawn-kit#35.
 @MainActor
-@Suite(.serialized, .timeLimit(.minutes(2)))
+@Suite(.serialized, .timeLimit(.minutes(2)), .enabled(if: TestTLS.isAvailable))
 struct SecureOnlyRuleBehaviorTests {
     enum Rules: String, CaseIterable, Sendable {
         /// The control: no list at all, so both references load.
@@ -109,10 +113,8 @@ struct SecureOnlyRuleBehaviorTests {
     }
 
     private func imageRequests(_ rules: Rules) async throws -> (plain: RecordingServer, secure: RecordingServer)? {
-        guard #available(macOS 26, *) else {
-            Issue.record("Needs macOS 26 (in-memory TLS identity)")
-            return nil
-        }
+        // The suite is skipped without it, so reaching here means it's there.
+        guard #available(macOS 26, *) else { return nil }
         let tls = try TestTLSIdentity.make()
         let plain = try await RecordingServer.start()
         let secure = try await RecordingServer.start(identity: tls.identity)

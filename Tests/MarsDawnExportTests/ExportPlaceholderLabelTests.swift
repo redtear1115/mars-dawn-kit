@@ -21,10 +21,15 @@ struct ExportPlaceholderLabelTests {
         #expect(bar == "")
     }
 
+    /// Through the bundle's own list of localizations, not a hard-coded folder name: SwiftPM
+    /// writes `zh-hant.lproj` under Xcode 26 and `zh-Hant.lproj` under 27, so asking for one
+    /// exact spelling finds nothing on the toolchain CI uses. `PreviewWebView.moduleLocalizedString`
+    /// was added for exactly this in #22 and carries the same note; this test was written before
+    /// it and never moved across. The product is unaffected -- it already goes through that
+    /// helper -- which is why the shipped 0.4.0 bundle has the translation while this test said
+    /// it didn't. See mars-dawn-kit#35.
     @Test func webImageLabelIsLocalized() throws {
-        let path = try #require(KitStrings.bundle.path(forResource: "zh-Hant", ofType: "lproj"))
-        let bundle = try #require(Bundle(path: path))
-        #expect(bundle.localizedString(forKey: "Web image", value: "missing", table: nil) == "網路圖片")
+        #expect(PreviewWebView.moduleLocalizedString("Web image", localization: "zh-Hant") == "網路圖片")
     }
 }
 #endif
