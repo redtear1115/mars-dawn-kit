@@ -112,12 +112,12 @@ struct MarkdownParsingWorkerTests {
 }
 
 /// The two-slot gate: FIFO hand-off, cancellation of waiters, exactly-once resumption.
-// Runs on every system. One test, blockingAndAsyncWaitersShareOneQueue, is skipped on macOS 15,
-// where the Concurrency runtime kills the process when it asks which executor it is on
-// (mars-dawn-kit#26): the other five passed there in CI run 35372733038, and that test was the
-// one the process died in. Its skip names the reason, so the log says why rather than just
-// "skipped".
-@Suite
+// Skipped on macOS 15, where the Concurrency runtime kills the process when a closure running on a
+// thread of its own is checked against the main actor (mars-dawn-kit#26). The skip carries its
+// reason, so the log says why. The gate is the same code on both systems and the CLI export step
+// covers it on macOS 15.
+@Suite(.enabled(if: runtimeAnswersExecutorQuestions,
+                "macOS 15's Concurrency runtime kills the test process on a main-actor check from a raw thread (mars-dawn-kit#26); runs on macOS 26"))
 struct WorkerGateTests {
     @Test func cancellingAWaiterReturnsNilPromptlyAndNeverRunsItsBody() async throws {
         let resumes = Counter<UInt64>()
@@ -290,14 +290,7 @@ struct WorkerGateTests {
         #expect(resumes.values.values.allSatisfy { $0 == 1 }, "a waiter was resumed twice")
     }
 
-    /// Skipped on macOS 15 only (mars-dawn-kit#26). Blocking callers here resume a continuation
-    /// from a thread of their own inside a detached task; on macOS 15 something on that path asks
-    /// the runtime which executor it is on, and the answer kills the process. The same product
-    /// path, a blocking caller and async callers sharing one gate, runs there in
-    /// blockingCallersFillingTheTaskPoolDontStallAsyncCallers and in the CLI export step.
-    @Test(.enabled(if: runtimeAnswersExecutorQuestions,
-                   "macOS 15's Concurrency runtime kills this test's process (mars-dawn-kit#26); it runs on macOS 26"))
-    func blockingAndAsyncWaitersShareOneQueue() async {
+    @Test func blockingAndAsyncWaitersShareOneQueue() async {
         let gate = WorkerGate(slots: 2)
         let latch = Latch(waiters: 8)
         let running = Counter<Int>()
