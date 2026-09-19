@@ -359,11 +359,12 @@ struct HTMLDocumentEndToEndTests {
     /// exists to stop, and which no CSP directive can.
     ///
     /// Both halves matter. Without the positive one, this passes when nothing ran at all.
-    @Test func aRunningDocumentCanFetchOverHTTPSButNotPreconnect() async throws {
-        guard #available(macOS 26, *) else {
-            Issue.record("Needs macOS 26 (in-memory TLS identity)")
-            return
-        }
+    /// Needs macOS 26 for `TestTLSIdentity`'s in-memory identity; skipped rather than failed on
+    /// an older system, the same as the other TLS tests since mars-dawn-kit#35.
+    @Test(.enabled(if: TestTLS.isAvailable))
+    func aRunningDocumentCanFetchOverHTTPSButNotPreconnect() async throws {
+        // The trait is checked before this runs, so reaching here means an identity can be made.
+        guard #available(macOS 26, *) else { return }
         let tls = try TestTLSIdentity.make()
         let target = try await RecordingServer.start(identity: tls.identity)
         defer { target.stop() }
@@ -387,11 +388,12 @@ struct HTMLDocumentEndToEndTests {
     }
 
     /// And the same page, not running, reaches neither.
-    @Test func aStaticDocumentFetchesNothing() async throws {
-        guard #available(macOS 26, *) else {
-            Issue.record("Needs macOS 26 (in-memory TLS identity)")
-            return
-        }
+    /// Needs macOS 26 for `TestTLSIdentity`'s in-memory identity; skipped rather than failed on
+    /// an older system, the same as the other TLS tests since mars-dawn-kit#35.
+    @Test(.enabled(if: TestTLS.isAvailable))
+    func aStaticDocumentFetchesNothing() async throws {
+        // The trait is checked before this runs, so reaching here means an identity can be made.
+        guard #available(macOS 26, *) else { return }
         let tls = try TestTLSIdentity.make()
         let target = try await RecordingServer.start(identity: tls.identity)
         defer { target.stop() }
