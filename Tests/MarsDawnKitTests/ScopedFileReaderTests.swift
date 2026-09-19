@@ -88,7 +88,7 @@ struct ScopedFileReaderTests {
         // item unscheduled for seconds when the whole suite runs at once, and timing the wait
         // from out here would measure that scheduling delay rather than the open (which is what
         // O_NONBLOCK is here to keep short).
-        let thread = Thread {
+        let thread = Thread { @Sendable in
             started.signal()
             let begin = DispatchTime.now()
             let outcome = failure { try read(reader, ["pipe.png"]) }

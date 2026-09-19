@@ -233,7 +233,7 @@ final class LoopbackRequestListener: @unchecked Sendable {
     }
 
     func start() {
-        Thread.detachNewThread { [socketFD] in
+        Thread.detachNewThread { @Sendable [socketFD] in
             while true {
                 let client = accept(socketFD, nil, nil)
                 if client < 0 { return }
