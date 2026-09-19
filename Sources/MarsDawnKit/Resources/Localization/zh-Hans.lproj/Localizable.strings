@@ -1,0 +1,14 @@
+/* Preview theme names and summaries (PreviewTheme.swift). Translated, as zh-Hant does. */
+"Dawn" = "黎明";
+"Warm Martian sunrise" = "温暖的火星日出";
+"Classic" = "典雅";
+"Elegant serif on paper" = "纸上的优雅衬线字";
+"Modern" = "流行";
+"Clean and familiar" = "清爽又熟悉";
+"Vivid" = "活泼";
+"Playful, bright and rounded" = "俏皮、明亮又圆润";
+
+/* Image placeholder labels for exported/printed pages and the preview. */
+"Web image" = "网络图像";
+"Image not available" = "无法显示图像";
+"Not loaded: unencrypted connection (http)" = "未载入：连接未加密（http）";
