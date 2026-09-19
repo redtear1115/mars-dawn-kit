@@ -1,0 +1,20 @@
+{
+  "markers": [
+    "BEFOREcynefin",
+    "CYNTITLE01",
+    "CYNITEM02",
+    "CYNITEM03",
+    "CYNITEM04",
+    "CYNITEM05",
+    "CYNLABEL06",
+    "AFTERcynefin"
+  ],
+  "markersOnLastPage": [
+    "AFTERcynefin"
+  ],
+  "diagrams": {
+    "rendered": 1,
+    "failed": 0
+  },
+  "notes": "Mermaid diagram type 'cynefin'. All markers extract from the PDF text."
+}

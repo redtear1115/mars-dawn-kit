@@ -1,0 +1,17 @@
+{
+  "markers": [
+    "BEFOREgitGraph",
+    "GITA01",
+    "GITBRANCH02",
+    "GITB03",
+    "AFTERgitGraph"
+  ],
+  "markersOnLastPage": [
+    "AFTERgitGraph"
+  ],
+  "diagrams": {
+    "rendered": 1,
+    "failed": 0
+  },
+  "notes": "Mermaid diagram type 'gitGraph'. All markers extract from the PDF text."
+}

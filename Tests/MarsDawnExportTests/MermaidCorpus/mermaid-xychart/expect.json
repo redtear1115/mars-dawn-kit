@@ -1,0 +1,18 @@
+{
+  "markers": [
+    "BEFORExychart",
+    "XYTITLE01",
+    "XYCAT02",
+    "XYCAT03",
+    "YAXIS04",
+    "AFTERxychart"
+  ],
+  "markersOnLastPage": [
+    "AFTERxychart"
+  ],
+  "diagrams": {
+    "rendered": 1,
+    "failed": 0
+  },
+  "notes": "Mermaid diagram type 'xychart'. All markers extract from the PDF text."
+}

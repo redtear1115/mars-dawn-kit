@@ -1,0 +1,18 @@
+{
+  "markers": [
+    "BEFOREc4",
+    "C4TITLE01",
+    "C4A02",
+    "C4B03",
+    "C4REL04",
+    "AFTERc4"
+  ],
+  "markersOnLastPage": [
+    "AFTERc4"
+  ],
+  "diagrams": {
+    "rendered": 1,
+    "failed": 0
+  },
+  "notes": "Mermaid diagram type 'c4'. All markers extract from the PDF text."
+}

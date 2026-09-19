@@ -1,0 +1,19 @@
+{
+  "markers": [
+    "BEFOREvenn",
+    "VENNTITLE01",
+    "VENNLABELA03",
+    "VENNLABELB05",
+    "VENNOVERLAP06",
+    "VENNTEXT07",
+    "AFTERvenn"
+  ],
+  "markersOnLastPage": [
+    "AFTERvenn"
+  ],
+  "diagrams": {
+    "rendered": 1,
+    "failed": 0
+  },
+  "notes": "Mermaid diagram type 'venn'. All markers extract from the PDF text."
+}

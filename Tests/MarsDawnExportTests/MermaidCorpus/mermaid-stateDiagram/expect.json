@@ -1,0 +1,17 @@
+{
+  "markers": [
+    "BEFOREstateDiagram",
+    "STA01",
+    "STB02",
+    "STLABEL03",
+    "AFTERstateDiagram"
+  ],
+  "markersOnLastPage": [
+    "AFTERstateDiagram"
+  ],
+  "diagrams": {
+    "rendered": 1,
+    "failed": 0
+  },
+  "notes": "Mermaid diagram type 'stateDiagram'. All markers extract from the PDF text."
+}

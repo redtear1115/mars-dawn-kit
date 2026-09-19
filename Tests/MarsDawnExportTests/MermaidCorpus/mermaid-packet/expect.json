@@ -1,0 +1,17 @@
+{
+  "markers": [
+    "BEFOREpacket",
+    "PACKTITLE01",
+    "PACKFIELD01",
+    "PACKFIELD02",
+    "AFTERpacket"
+  ],
+  "markersOnLastPage": [
+    "AFTERpacket"
+  ],
+  "diagrams": {
+    "rendered": 1,
+    "failed": 0
+  },
+  "notes": "Mermaid diagram type 'packet'. All markers extract from the PDF text."
+}

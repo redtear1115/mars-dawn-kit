@@ -1,0 +1,18 @@
+{
+  "markers": [
+    "BEFOREishikawa",
+    "ISHROOT01",
+    "ISHCAUSE02",
+    "ISHCAUSE03",
+    "ISHSUBCAUSE04",
+    "AFTERishikawa"
+  ],
+  "markersOnLastPage": [
+    "AFTERishikawa"
+  ],
+  "diagrams": {
+    "rendered": 1,
+    "failed": 0
+  },
+  "notes": "Mermaid diagram type 'ishikawa'. All markers extract from the PDF text."
+}

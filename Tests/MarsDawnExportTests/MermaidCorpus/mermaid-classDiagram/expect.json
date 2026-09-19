@@ -1,0 +1,17 @@
+{
+  "markers": [
+    "BEFOREclassDiagram",
+    "CLSA01",
+    "CLSFIELD02",
+    "CLSB04",
+    "AFTERclassDiagram"
+  ],
+  "markersOnLastPage": [
+    "AFTERclassDiagram"
+  ],
+  "diagrams": {
+    "rendered": 1,
+    "failed": 0
+  },
+  "notes": "Mermaid diagram type 'classDiagram'. All markers extract from the PDF text."
+}

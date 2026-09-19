@@ -37,6 +37,9 @@
     const dark = darkQuery.matches;
     const signature = `${theme}/${dark ? "dark" : "light"}`;
     if (signature === mermaidSignature) return false;
+    // If the bundle failed to load, diagrams fall back to their source (see renderMermaid);
+    // the rest of the page still has to render.
+    if (typeof mermaid === "undefined") return false;
     mermaidSignature = signature;
 
     const style = getComputedStyle(document.documentElement);
@@ -214,10 +217,23 @@
       block.classList.add("rendered");
       block.classList.remove("stale", "error");
       block.removeAttribute("data-error");
+      block.querySelector(".mermaid-error")?.remove();
     } catch (err) {
       if (!block.isConnected) return;
+      // An invalid diagram never blanks the page or loses its source: the source stays
+      // visible (unless an older rendering of it is still on screen while editing) and the
+      // message sits under it as ordinary, selectable text.
+      const message = String(err?.message ?? err).split("\n")[0];
       block.classList.add("error");
-      block.setAttribute("data-error", String(err?.message ?? err).split("\n")[0]);
+      block.setAttribute("data-error", message);
+      let note = block.querySelector(".mermaid-error");
+      if (!note) {
+        note = document.createElement("div");
+        note.className = "mermaid-error";
+        note.setAttribute("role", "note");
+        block.appendChild(note);
+      }
+      note.textContent = message;
       if (!placeholderSVG) block.classList.remove("rendered");
     } finally {
       document.getElementById(`d${id}`)?.remove();

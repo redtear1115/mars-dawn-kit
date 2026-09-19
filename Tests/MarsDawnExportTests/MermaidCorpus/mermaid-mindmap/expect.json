@@ -1,0 +1,17 @@
+{
+  "markers": [
+    "BEFOREmindmap",
+    "MINDROOT01",
+    "MINDCHILD02",
+    "MINDGRAND03",
+    "AFTERmindmap"
+  ],
+  "markersOnLastPage": [
+    "AFTERmindmap"
+  ],
+  "diagrams": {
+    "rendered": 1,
+    "failed": 0
+  },
+  "notes": "Mermaid diagram type 'mindmap'. All markers extract from the PDF text."
+}

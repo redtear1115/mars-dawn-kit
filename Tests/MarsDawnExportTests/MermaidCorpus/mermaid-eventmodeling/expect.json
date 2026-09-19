@@ -1,0 +1,16 @@
+{
+  "markers": [
+    "BEFOREeventmodeling",
+    "EVENTITY02",
+    "EVCMD04",
+    "AFTEReventmodeling"
+  ],
+  "markersOnLastPage": [
+    "AFTEReventmodeling"
+  ],
+  "diagrams": {
+    "rendered": 1,
+    "failed": 0
+  },
+  "notes": "The eventmodeling diagram (a Langium-based grammar) parses and draws entity/data/note declarations, but only the entities referenced by a timeframe (tf) actually render as visible text on the canvas: EVENTITY02 and EVCMD04 (used in `tf` lines) extract from the PDF, while the data entity EVDATA05, its value EVDATAVAL06, and the note EVNOTE07 do not appear in the extracted PDF text at all (not just as non-extractable paths -- they are not drawn). Kept in document.md to exercise parsing of those statements, but excluded from markers."
+}

@@ -1,0 +1,18 @@
+{
+  "markers": [
+    "BEFORErailroad",
+    "RAILRULE02",
+    "RAILTERM03",
+    "RAILRULE04",
+    "RAILTERM05",
+    "AFTERrailroad"
+  ],
+  "markersOnLastPage": [
+    "AFTERrailroad"
+  ],
+  "diagrams": {
+    "rendered": 1,
+    "failed": 0
+  },
+  "notes": "railroad-beta (a Langium-based grammar) accepts a `title` statement, but the renderer never draws it: RAILTITLE01 does not appear anywhere in the extracted PDF text, so document.md omits the title statement entirely and markers cover only the rule names and terminals, which do extract."
+}
