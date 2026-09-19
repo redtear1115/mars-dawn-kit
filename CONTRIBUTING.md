@@ -4,6 +4,8 @@ MarsDawnKit is the rendering core, PDF export and the `marsdawn` command-line to
 Markdown-to-HTML renderer, preview themes, paginated PDF export and the CLI built on top of them.
 This is the right repo for bugs and changes in any of those.
 
+This project follows the [Code of Conduct](CODE_OF_CONDUCT.md).
+
 ## What goes elsewhere
 
 - Feedback about the MarsDawn Mac app itself (not the renderer or the CLI) —
