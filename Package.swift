@@ -46,7 +46,11 @@ let package = Package(
                 .product(name: "cmark-gfm-extensions", package: "swift-cmark"),
             ]
         ),
-        .testTarget(name: "MarsDawnExportTests", dependencies: ["MarsDawnExport", "MarsDawnKit"]),
+        .testTarget(
+            name: "MarsDawnExportTests",
+            dependencies: ["MarsDawnExport", "MarsDawnKit"],
+            resources: [.copy("MermaidCorpus")]
+        ),
         .testTarget(name: "MarsDawnCLITests", dependencies: ["marsdawn"]),
     ]
 )

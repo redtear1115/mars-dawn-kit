@@ -1,0 +1,18 @@
+{
+  "markers": [
+    "BEFOREkanban",
+    "KANSEC01",
+    "KANTASK02",
+    "KANSEC03",
+    "KANTASK04",
+    "AFTERkanban"
+  ],
+  "markersOnLastPage": [
+    "AFTERkanban"
+  ],
+  "diagrams": {
+    "rendered": 1,
+    "failed": 0
+  },
+  "notes": "Mermaid diagram type 'kanban'. All markers extract from the PDF text."
+}

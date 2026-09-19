@@ -223,14 +223,14 @@ img { max-width: 100%; }
 .mermaid-block.rendered .mermaid-source { display: none; }
 .mermaid-output svg { max-width: 100%; height: auto; }
 .mermaid-block.stale .mermaid-output { opacity: 0.55; transition: opacity 0.15s; }
-.mermaid-block.error::after {
-  content: "Mermaid: " attr(data-error);
+.mermaid-error {
   display: block;
   margin-top: 6px;
   font: 12px var(--font-mono);
   color: var(--hl-keyword);
   text-align: left;
 }
+.mermaid-error::before { content: "Mermaid: "; }
 
 /* Math (KaTeX)
    KaTeX's stylesheet sets sizes and fonts but no colour, so its output inherits; these

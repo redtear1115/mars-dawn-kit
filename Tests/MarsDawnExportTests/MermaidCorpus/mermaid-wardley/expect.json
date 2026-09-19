@@ -1,0 +1,17 @@
+{
+  "markers": [
+    "BEFOREwardley",
+    "WARDTITLE01",
+    "WARDCOMP02",
+    "WARDANCHOR03",
+    "AFTERwardley"
+  ],
+  "markersOnLastPage": [
+    "AFTERwardley"
+  ],
+  "diagrams": {
+    "rendered": 1,
+    "failed": 0
+  },
+  "notes": "Mermaid diagram type 'wardley'. All markers extract from the PDF text."
+}

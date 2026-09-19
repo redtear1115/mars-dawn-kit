@@ -1,0 +1,16 @@
+{
+  "markers": [
+    "BEFOREagentflow",
+    "AGENTA02",
+    "AGENTB03",
+    "AFTERagentflow"
+  ],
+  "markersOnLastPage": [
+    "AFTERagentflow"
+  ],
+  "diagrams": {
+    "rendered": 1,
+    "failed": 0
+  },
+  "notes": "Mermaid diagram type 'agentflow'. All markers extract from the PDF text."
+}

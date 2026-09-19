@@ -1,0 +1,16 @@
+{
+  "markers": [
+    "BEFOREquadrantChart",
+    "QUADTITLE01",
+    "QUADPOINT02",
+    "AFTERquadrantChart"
+  ],
+  "markersOnLastPage": [
+    "AFTERquadrantChart"
+  ],
+  "diagrams": {
+    "rendered": 1,
+    "failed": 0
+  },
+  "notes": "Mermaid diagram type 'quadrantChart'. All markers extract from the PDF text."
+}

@@ -1,0 +1,17 @@
+{
+  "markers": [
+    "BEFOREtimeline",
+    "TIMELINETITLE01",
+    "TIMESEC02",
+    "TIMEEVENT03",
+    "AFTERtimeline"
+  ],
+  "markersOnLastPage": [
+    "AFTERtimeline"
+  ],
+  "diagrams": {
+    "rendered": 1,
+    "failed": 0
+  },
+  "notes": "Mermaid diagram type 'timeline'. All markers extract from the PDF text."
+}

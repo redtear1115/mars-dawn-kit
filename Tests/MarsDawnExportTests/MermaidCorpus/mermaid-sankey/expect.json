@@ -1,0 +1,17 @@
+{
+  "markers": [
+    "BEFOREsankey",
+    "SANKA01",
+    "SANKB02",
+    "SANKC03",
+    "AFTERsankey"
+  ],
+  "markersOnLastPage": [
+    "AFTERsankey"
+  ],
+  "diagrams": {
+    "rendered": 1,
+    "failed": 0
+  },
+  "notes": "Mermaid diagram type 'sankey'. All markers extract from the PDF text."
+}

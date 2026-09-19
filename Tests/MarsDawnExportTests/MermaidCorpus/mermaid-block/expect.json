@@ -1,0 +1,17 @@
+{
+  "markers": [
+    "BEFOREblock",
+    "BLOCKA01",
+    "BLOCKB02",
+    "BLOCKC03",
+    "AFTERblock"
+  ],
+  "markersOnLastPage": [
+    "AFTERblock"
+  ],
+  "diagrams": {
+    "rendered": 1,
+    "failed": 0
+  },
+  "notes": "Mermaid diagram type 'block'. All markers extract from the PDF text."
+}

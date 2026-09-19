@@ -1,0 +1,7 @@
+{
+  "markers": ["BEFOREINVALID01", "AFTERINVALID03"],
+  "markersOnLastPage": ["AFTERINVALID03"],
+  "placeholders": ["Mermaid:", "this is not valid INVALIDSRC02"],
+  "diagrams": {"rendered": 0, "failed": 1},
+  "notes": "An invalid Mermaid diagram between two paragraphs. Its source text (including the marker INVALIDSRC02) and the 'Mermaid:' error prefix stay visible on the page, and the paragraph after it (AFTERINVALID03) still renders normally."
+}

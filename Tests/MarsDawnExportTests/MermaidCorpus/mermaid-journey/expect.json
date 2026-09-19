@@ -1,0 +1,17 @@
+{
+  "markers": [
+    "BEFOREjourney",
+    "JOURNEYTITLE01",
+    "JOURNEYSEC02",
+    "JOURNEYTASK03",
+    "AFTERjourney"
+  ],
+  "markersOnLastPage": [
+    "AFTERjourney"
+  ],
+  "diagrams": {
+    "rendered": 1,
+    "failed": 0
+  },
+  "notes": "Mermaid diagram type 'journey'. All markers extract from the PDF text."
+}

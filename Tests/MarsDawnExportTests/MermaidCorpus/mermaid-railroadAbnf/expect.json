@@ -1,0 +1,18 @@
+{
+  "markers": [
+    "BEFORErailroadAbnf",
+    "RAILABNFRULE02",
+    "RAILABNFTERM03",
+    "RAILABNFRULE04",
+    "RAILABNFTERM05",
+    "AFTERrailroadAbnf"
+  ],
+  "markersOnLastPage": [
+    "AFTERrailroadAbnf"
+  ],
+  "diagrams": {
+    "rendered": 1,
+    "failed": 0
+  },
+  "notes": "Same as railroad-beta: the `title` statement is accepted by the parser but never drawn, so it is omitted from document.md; only rule names and terminals extract."
+}

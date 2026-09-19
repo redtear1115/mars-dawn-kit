@@ -1,3 +1,24 @@
+Mermaid 12.0.0
+https://github.com/mermaid-js/mermaid
+
+Vendored from the npm package mermaid@12.0.0
+https://registry.npmjs.org/mermaid/-/mermaid-12.0.0.tgz
+(registry integrity
+sha512-/wQXC9iBxoGV8p3erbvaXs9h77VyLDBH6GdayVjj3hEcSQhFU4N1WUhUppotCEqlIxI2pRMwjwBSwTB1MfZBgQ==,
+tarball SHA-256 7df1e7de572d26ea7aca5eaa7b0e77f5caacb63567006f4077c2753d730ffd9d).
+mermaid.min.js is the package's dist/mermaid.min.js, verbatim (the IIFE build; it defines
+`window.mermaid`). Its own version object reads `version:"12.0.0"`.
+
+Pinned on purpose (redtear1115/mars-dawn#3). A Mermaid upgrade is a breaking change: a newer
+engine can report "syntax error" for diagrams people already have. Replacing this file means
+redoing this record and running the Mermaid corpus in MarsDawnExportTests before and after;
+VendoredMermaidTests fails until the record matches the file.
+
+SHA-256 of each vendored file, relative to this folder:
+  28fca7ae6ebc7ed7bb63bde63136a74bfef14f296a57e403657eeb8b32836073  mermaid.min.js
+
+The package's licence follows.
+
 The MIT License (MIT)
 
 Copyright (c) 2014 - 2022 Knut Sveidqvist
