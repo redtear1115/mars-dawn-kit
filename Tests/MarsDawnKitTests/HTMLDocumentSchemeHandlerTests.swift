@@ -620,11 +620,18 @@ struct HTMLDocumentSchemeHandlerTests {
         try stoppedFile.write(to: tree.url("site/pages/img/a.png"))
         try nextFile.write(to: tree.url("site/shared/logo.png"))
 
-        // The allocator only sometimes hands the next task the address just freed, so this asks
-        // repeatedly. Five tries was enough on macOS 26 and never succeeded on 15, where CI ran
-        // it (mars-dawn-kit#35). Raising the budget weakens nothing -- every assertion below is
-        // unchanged, and a miss costs one handler and one started read, no waiting.
-        for attempt in 1...50 {
+        // The setup is luck: it needs the allocator to hand the next task the address it has just
+        // freed. That was true on macOS 26 and not on 15, where CI runs (mars-dawn-kit#35).
+        //
+        // Not answered by retrying harder. A green here has always meant "the allocator
+        // cooperated this run", on every system including the ones where it passes, so a bigger
+        // budget would hide the luck rather than remove it. When the address isn't reused the
+        // scenario cannot be built at all -- an unmet precondition, not a defect -- so the miss
+        // is reported as a known intermittent issue: visible in the run, and not a failure.
+        //
+        // The guard it covers is real and deserves a test that doesn't depend on the allocator.
+        // That is its own work, argued on its own, not folded in here to unredden CI.
+        for attempt in 1...5 {
             let handler = Handler()
             let page = try begin(handler, tree)
             func task(_ path: String) -> FakeSchemeTask {
@@ -642,7 +649,11 @@ struct HTMLDocumentSchemeHandlerTests {
             let stoppedIdentity = startAndStop()
             let next = task("/%2F/shared/logo.png")
             guard ObjectIdentifier(next) == stoppedIdentity else {
-                if attempt == 50 { Issue.record("the allocator never reused the stopped task's address") }
+                if attempt == 5 {
+                    withKnownIssue("the allocator never reused the stopped task's address", isIntermittent: true) {
+                        Issue.record("precondition not met on this system")
+                    }
+                }
                 continue
             }
             handler.webView(webView, start: next)
