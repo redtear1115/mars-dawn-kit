@@ -10,12 +10,17 @@ The rendering core of [MarsDawn](https://marsdawn.southern-light.dev), a Markdow
 
 ## Build and test
 
-Requires Xcode 26 (the package uses swift-tools 6.2).
+Requires Xcode 26 or later (the package uses swift-tools 6.2).
 
 ```sh
 swift build
 swift test
 ```
+
+On a machine with only a few cores, add `--no-parallel`. CI runs `swift test --no-parallel` and
+`swift test -c release --no-parallel` (`.github/workflows/ci.yml`), because on its 3-CPU runners the
+WebKit suites time out waiting for their pages when every suite runs at once, and the timing-budget
+tests miss their budgets.
 
 Two things that have caught people out when writing tests here:
 
