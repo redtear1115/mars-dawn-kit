@@ -14,12 +14,16 @@ This is the right repo for bugs and changes in any of those.
 
 ## Build and test
 
-Requires Xcode 26 (the package uses swift-tools 6.2).
+Requires Xcode 26 or later (the package uses swift-tools 6.2).
 
 ```sh
 swift build
 swift test
 ```
+
+On a machine with only a few cores, add `--no-parallel`. CI runs `swift test --no-parallel`
+(`.github/workflows/ci.yml`) because on its 3-CPU runners the WebKit suites time out waiting for
+their pages when every suite runs at once, and the timing-budget tests miss their budgets.
 
 CI also runs the release configuration and, on the iOS job, `xcodebuild -scheme MarsDawnKit
 -destination 'generic/platform=iOS' build`. If you're touching anything platform-sensitive, it's
@@ -40,8 +44,8 @@ A good issue says what you expected, what happened, and how to reproduce it — 
 that triggers the bug is worth more than a description of one.
 
 Keep pull requests small and focused on one change. Describe what changed and why, not just what.
-CI (`swift build`, `swift test`, `swift test -c release`, and the CLI export smoke test) has to be
-green; a PR that doesn't build or test cleanly won't be reviewed.
+CI (`swift build`, `swift test --no-parallel`, `swift test -c release --no-parallel`, and the CLI
+export smoke test) has to be green; a PR that doesn't build or test cleanly won't be reviewed.
 
 Version bumps and tagging are covered in [RELEASING.md](RELEASING.md) — you don't need to touch
 `Sources/marsdawn/Version.swift` unless you're cutting a release.
