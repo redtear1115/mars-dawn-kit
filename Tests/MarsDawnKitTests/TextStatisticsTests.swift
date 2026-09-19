@@ -117,6 +117,53 @@ struct TextStatisticsTests {
         #expect(TextStatistics(markdownBody: file).words > split.words)
     }
 
+    // MARK: HTML (#19): count what a reader sees rendered, in blocks and inline alike
+
+    private func words(_ markdown: String) -> Int { TextStatistics(markdownBody: markdown).words }
+
+    /// The preview renders an HTML block's text, so it counts, exactly as text inside inline
+    /// HTML already did: the issue's two rows, three words each.
+    @Test func textInsideAnHTMLBlockCountsLikeTextInsideInlineHTML() {
+        #expect(words("<div class=note>Html wrapped text</div>\n") == 3)
+        #expect(words("A <span class=x>red</span> word.\n") == 3)
+    }
+
+    /// What a page never shows doesn't count, in a block or inline: script, style and template
+    /// contents, and comments. The shown words beside them are the twins.
+    @Test func hiddenContentIsNotCounted() {
+        #expect(words("<script>var hidden = 1</script>\n\nShown words.\n") == 2)
+        #expect(words("<style>p { color: red }</style>\n\nShown words.\n") == 2)
+        #expect(words("<template><p>hidden text</p></template>\n\nShown words.\n") == 2)
+        #expect(words("A <script>b c</script> d.\n") == 2)
+        #expect(words("<!-- hidden words -->\n\nOne.\n") == 1)
+        #expect(words("a <!-- b --> c\n") == 2)
+    }
+
+    /// A block-level tag breaks words, as the page lays them out; an inline tag doesn't.
+    @Test func blockTagsSeparateWordsAndInlineTagsDoNot() {
+        #expect(words("<div><p>one</p><p>two</p></div>\n") == 2)
+        #expect(words("<div><b>bold</b>er</div>\n") == 1)
+    }
+
+    /// A `>` inside a quoted attribute value doesn't end the tag, as in the page.
+    @Test func aGreaterThanSignInAQuotedAttributeStaysInTheTag() {
+        #expect(words("A <span title=\"a>b\">red</span> word.\n") == 3)
+        #expect(words("<div title='x>y z'>shown</div>\n") == 1)
+    }
+
+    /// A `<` that can't start a tag is shown as itself.
+    @Test func aLessThanSignThatStartsNoTagIsText() {
+        #expect(TextStatistics(markdownBody: "<div>a < b</div>\n").characters == 3)
+    }
+
+    /// Untrusted input: two million unclosed `<a` in a block is one tag with no end, and
+    /// scanning it stays linear. A quadratic scan of this would run for hours; the limit only
+    /// catches that, it doesn't time anything.
+    @Test(.timeLimit(.minutes(1))) func anUnclosedRunOfTagsStaysLinear() {
+        let body = "<div>\n" + String(repeating: "<a", count: 2_000_000) + "\n"
+        #expect(TextStatistics(markdownBody: body).words == 0)
+    }
+
     @Test func performanceOnALargeDocument() {
         var lines: [String] = []
         for i in 0..<5000 {
