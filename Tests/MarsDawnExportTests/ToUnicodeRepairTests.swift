@@ -21,6 +21,38 @@ struct ToUnicodeRepairTests {
         text.unicodeScalars.filter { scalar in radicalRanges.contains { $0.contains(scalar.value) } }
     }
 
+    /// Whether PDFKit's text layer on this OS shows what the ToUnicode CMap says, measured on an
+    /// unrepaired glyph run whose CMap maps 頁's glyph to the radical ⾴. macOS 26 does; macOS 15's
+    /// PDFKit reads the ideograph there even though the CMap says ⾴ (CI, run 35442187245), so a
+    /// text-layer assertion there can't see the bug or the repair. The CMap-level checks below
+    /// don't depend on it and run everywhere.
+    static let textLayerReadsTheCMap: Bool = {
+        let text = PDFDocument(data: glyphRunPDF([("PingFangTC-Regular", "頁")]))?.page(at: 0)?.string ?? ""
+        return !radicals(in: text).isEmpty
+    }()
+
+    /// Radical destinations left in the CMaps a reader would use (the newest revision of each
+    /// ToUnicode object), counted by the repair's own rewrite. `keeping` leaves those out.
+    static func radicalDestinations(in pdf: Data, keeping keep: Set<UInt32> = []) throws -> Int {
+        let bytes = [UInt8](pdf)
+        let start = try #require(ToUnicodeRepair.lastStartXref(bytes))
+        var tables = [try #require(ToUnicodeRepair.XrefTable(bytes, at: start))]
+        if let prev = tables[0].trailer.range(of: #"/Prev\s+\d+"#, options: .regularExpression)
+            .flatMap({ Int(tables[0].trailer[$0].split(separator: " ").last ?? "") }) {
+            tables.append(try #require(ToUnicodeRepair.XrefTable(bytes, at: prev)))
+        }
+        let references = ToUnicodeRepair.toUnicodeReferences(bytes)
+        #expect(!references.isEmpty, "precondition: the PDF has ToUnicode CMaps")
+        var count = 0
+        for (number, generation) in references {
+            let table = try #require(tables.first { $0.entries[number]?.generation == generation })
+            let entry = try #require(table.entries[number])
+            let cmap = try #require(ToUnicodeRepair.streamContents(bytes, object: number, at: entry.offset, table: table))
+            count += try #require(ToUnicodeRepair.rewriteCMap(cmap, keeping: keep)).1
+        }
+        return count
+    }
+
     private func export(_ markdown: String, theme: PreviewTheme, paper: DocumentExporter.Paper = .a4) async throws -> URL {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("tounicode-\(UUID().uuidString).pdf")
         _ = try await DocumentExporter.exportPDF(
@@ -54,6 +86,12 @@ struct ToUnicodeRepairTests {
     @Test func aRadicalInTheSourceStaysARadical() async throws {
         let url = try await export("示 and the radical ⽰, and 頁面.\n", theme: .dawn)
         defer { try? FileManager.default.removeItem(at: url) }
+        // In the CMaps, on every OS: ⽰ is the one radical destination left.
+        let data = try Data(contentsOf: url)
+        #expect(try Self.radicalDestinations(in: data) > 0, "⽰ stays in the CMap")
+        #expect(try Self.radicalDestinations(in: data, keeping: [0x2F70]) == 0, "everything else, 頁面 included, is repaired")
+        // In the text layer, where PDFKit shows the CMap (see `textLayerReadsTheCMap`).
+        guard Self.textLayerReadsTheCMap else { return }
         let text = try #require(PDFDocument(url: url)?.page(at: 0)?.string)
         #expect(text.unicodeScalars.contains("\u{2F70}"), "⽰ stays: \(text)")
         #expect(text.contains("頁面"), "頁面 is still repaired: \(text)")
@@ -99,8 +137,11 @@ struct ToUnicodeRepairTests {
     /// checked entry by entry, and every page draws exactly as before.
     @Test func theRepairIsAValidIncrementalUpdateThatDrawsIdentically() throws {
         let original = Self.glyphRunPDF([("PingFangTC-Regular", "頁面目文示"), ("STSongti-TC-Regular", "言一車馬")])
-        let before = try #require(PDFDocument(data: original)?.page(at: 0)?.string)
-        #expect(!Self.radicals(in: before).isEmpty, "precondition: the drawn PDF has radicals in its text layer")
+        #expect(try Self.radicalDestinations(in: original) >= 9, "precondition: the drawn PDF's CMaps map to radicals")
+        if Self.textLayerReadsTheCMap {
+            let before = try #require(PDFDocument(data: original)?.page(at: 0)?.string)
+            #expect(!Self.radicals(in: before).isEmpty, "precondition: the drawn PDF has radicals in its text layer")
+        }
 
         let (repaired, outcome) = ToUnicodeRepair.repair(original, source: "")
         guard case .repaired(let cmaps, let mappings) = outcome else {
@@ -126,7 +167,9 @@ struct ToUnicodeRepairTests {
         #expect(table.trailer.contains("/Prev \(originalStart)"))
         #expect(table.trailer.contains("/Root"))
 
-        // It opens, reads as the ideographs, and draws the same.
+        // Its CMaps have no radical destinations left, it opens, reads as the ideographs, and
+        // draws the same.
+        #expect(try Self.radicalDestinations(in: repaired) == 0)
         let after = try #require(PDFDocument(data: repaired))
         let text = try #require(after.page(at: 0)?.string)
         #expect(Self.radicals(in: text).isEmpty, "\(text)")
