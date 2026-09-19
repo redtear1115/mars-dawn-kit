@@ -343,7 +343,10 @@
     if (title) box.dataset.title = title;
     const label = document.createElement("span");
     label.className = "image-placeholder-label";
-    const raw = box.dataset.src.replace(/^[^/]*\/\/[^/]*\//, "").replace(/\?.*$/, "");
+    // The path as the document wrote it. An absolute one travels as `marsdawn-asset://abs/…`
+    // without its leading slash (DocumentAssetSchemeHandler.previewURL), so it gets it back (#23).
+    const host = (box.dataset.src.match(/^[^/]*\/\/([^/]*)\//) || [])[1];
+    const raw = (host === "abs" ? "/" : "") + box.dataset.src.replace(/^[^/]*\/\/[^/]*\//, "").replace(/\?.*$/, "");
     let name = raw;
     try { name = decodeURIComponent(raw); } catch (_) {}
     label.textContent = `${assetState.needsAccess ? assetState.blockedLabel : assetState.missingLabel}: ${name}`;
