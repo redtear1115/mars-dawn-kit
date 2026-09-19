@@ -194,7 +194,8 @@ public final class HTMLDocumentSchemeHandler: NSObject, WKURLSchemeHandler {
     /// carries `sandbox`, which refuses `evaluateJavaScript` as firmly as it refuses the page's
     /// own script, so "did this document load its stylesheet?" can no longer be answered by asking
     /// the page. It is answered here, by what the page asked this handler for — which is the
-    /// better question anyway. Debug builds only, and read-only.
+    /// better question anyway. Read-only, and present in **every** build: see `requestLog` above
+    /// for why the record isn't debug-only.
     public var servedPaths: [[String]] {
         requestLog.compactMap { entry in
             if case .served = entry.outcome { return entry.components }
