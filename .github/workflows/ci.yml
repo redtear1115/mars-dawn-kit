@@ -22,7 +22,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runner: [macos-15, macos-26]
+        runner: [macos-15]  # EXPERIMENT (#26): macOS 15 only; revert before merge
     runs-on: ${{ matrix.runner }}
     # A nesting or table regression hangs rather than fails, so don't wait the 6-hour default.
     timeout-minutes: 30
@@ -45,9 +45,48 @@ jobs:
       # WebKit suites time out waiting for their pages and the timing-budget tests miss their
       # budgets. Run alone they pass (checked on both runners in #22), and so does the whole
       # suite run serially.
-      - run: swift test --no-parallel
-      # Release builds inline more, so stack use per nesting level differs from debug.
-      - run: swift test -c release --no-parallel
+      # EXPERIMENT (#26), revert before merge: which gate test leaves the process in a state where
+      # ScopedFileReaderTests.refusesAFIFOWithoutHanging traps later? Each run is its own process.
+      - name: Bisect the macOS 15 trap
+        run: |
+          set -uo pipefail
+          report() {
+            echo "::group::$1: start order"
+            grep -E "◇ Test [a-zA-Z]+\\(" "/tmp/$1.log" | sed -E 's/.*◇ Test ([a-zA-Z]+).*/\1/' | tr '\n' ' '; echo
+            echo "::endgroup::"
+            echo "RESULT $1: exit $2 | $(grep -E 'Test run with|unexpected signal' /tmp/$1.log | tail -1)"
+            sleep 5  # the crash report is written a moment after the crash
+            for f in ~/Library/Logs/DiagnosticReports/*.ips; do
+              [ -e "$f" ] || continue
+              echo "::group::$1 crash report $(basename "$f")"
+              python3 - "$f" <<'PYX'
+          import json,sys
+          text=open(sys.argv[1]).read().split("\n",1)
+          body=json.loads(text[1]) if len(text)>1 else {}
+          print("exception:", body.get("exception"), "| termination:", body.get("termination",{}).get("indicator"))
+          frames=body.get("threads",[])
+          images=body.get("usedImages",[])
+          for t in frames:
+              if not t.get("triggered"): continue
+              print("triggered thread:", t.get("name"), t.get("queue"))
+              for fr in t.get("frames",[])[:40]:
+                  img=images[fr.get("imageIndex",0)].get("name","?") if images else "?"
+                  print("  ", img, fr.get("symbol","?"), "+", fr.get("symbolLocation",""))
+          PYX
+              echo "::endgroup::"
+              rm -f "$f"
+            done
+          }
+          run() { name=$1; shift; swift test --no-parallel --filter "$1" > "/tmp/$name.log" 2>&1; report "$name" $?; }
+          rm -f ~/Library/Logs/DiagnosticReports/*.ips
+          run E0-fifo-alone 'refusesAFIFOWithoutHanging'
+          run E1-gate-and-reader 'WorkerGateTests|ScopedFileReaderTests'
+          run E2-cancelling 'cancellingAWaiterReturnsNilPromptlyAndNeverRunsItsBody|ScopedFileReaderTests'
+          run E3-freedSlot 'aFreedSlotStartsTheWaitingJobOnTheReleasingThread|ScopedFileReaderTests'
+          run E4-blockingCallers 'blockingCallersFillingTheTaskPoolDontStallAsyncCallers|ScopedFileReaderTests'
+          run E5-alreadyCancelled 'alreadyCancelledTasksNeverStart|ScopedFileReaderTests'
+          run E6-racing 'cancellationRacingCompletionResumesEachWaiterOnce|ScopedFileReaderTests'
+          echo "done"
       # Two groups of tests don't run here, so the CLI covers their ground on the real system:
       # one of the gate's tests, which macOS 15's Concurrency runtime kills (mars-dawn-kit#26), and the
       # wall-clock budgets, which a shared 3-CPU runner can't measure (mars-dawn-kit#15). These
