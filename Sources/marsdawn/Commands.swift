@@ -18,7 +18,7 @@ struct MarsDawnCommand: AsyncParsableCommand {
         (use --force), \(CLIFailure.Code.exportFailed.rawValue) export failed, 64 usage error.
         """,
         version: MarsDawnCLI.version,
-        subcommands: [Open.self, Export.self]
+        subcommands: [Open.self, Export.self, Skill.self]
     )
 }
 
