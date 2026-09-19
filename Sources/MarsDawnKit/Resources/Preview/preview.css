@@ -376,12 +376,9 @@ img { max-width: 100%; }
      the end of it, like a loose list's last paragraph, which collapses out through the li and
      the ul -- made a document ending at the foot of a page overflow it by that margin alone,
      and WebKit opened a blank page for it (#20). Only the chain of last children, so spacing
-     inside the last block is untouched. */
-  .markdown-body > :last-child,
-  .markdown-body > :last-child > :last-child,
-  .markdown-body > :last-child > :last-child > :last-child,
-  .markdown-body > :last-child > :last-child > :last-child > :last-child,
-  .markdown-body > :last-child > :last-child > :last-child > :last-child > :last-child { margin-bottom: 0; }
+     inside the last block is untouched: a last child none of whose ancestors in the page is
+     followed by a sibling, at any depth (#47 -- quotes nest without limit). */
+  .markdown-body :last-child:not(.markdown-body :not(:last-child) *) { margin-bottom: 0; }
   table { display: table; width: auto; overflow: visible; }
   thead { display: table-header-group; }
 

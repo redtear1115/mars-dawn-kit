@@ -34,6 +34,17 @@ struct BlankPageTests {
         try await expectNoBlankPageAtTheBoundary(body: Self.looseListLast, paper: .a4)
     }
 
+    /// A loose list inside a quote: the trailing margin comes from four levels down (#47).
+    @Test func aQuotedLooseListEndingAtThePageBoundaryAddsNoBlankPage() async throws {
+        try await expectNoBlankPageAtTheBoundary(body: Self.paragraphs + "\n\n> - first item\n>\n> - last item\n", paper: .a4)
+    }
+
+    /// Three quotes deep, then a loose list: six levels, past any fixed-depth rule (#47). The
+    /// rule has to hold at any depth.
+    @Test func aDeeplyNestedLooseListEndingAtThePageBoundaryAddsNoBlankPage() async throws {
+        try await expectNoBlankPageAtTheBoundary(body: Self.paragraphs + "\n\n> > > - first item\n> > >\n> > > - last item\n", paper: .a4)
+    }
+
     // MARK: -
 
     private func expectNoBlankPageAtTheBoundary(body: String, paper: DocumentExporter.Paper) async throws {
