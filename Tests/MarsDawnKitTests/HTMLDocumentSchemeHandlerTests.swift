@@ -210,7 +210,12 @@ struct HTMLDocumentSchemeHandlerTests {
         // in release rather than failing there. What they observe is bookkeeping; the
         // behaviour behind it is asserted alongside and still runs in both configurations.
         #if DEBUG
+        // The handler records this only in a debug build, so these assertions compile away
+        // in release rather than failing there. What they observe is bookkeeping; the
+        // behaviour behind it is asserted alongside and still runs in both configurations.
+        #if DEBUG
         #expect(handler.readLog.isEmpty)
+        #endif
         #endif
         #expect(Handler.map(rawPath: "/sub/%2F/x.png", ancestors: ["site", "pages"]) == .refused("placeholder out of place"))
     }
@@ -258,7 +263,12 @@ struct HTMLDocumentSchemeHandlerTests {
         // in release rather than failing there. What they observe is bookkeeping; the
         // behaviour behind it is asserted alongside and still runs in both configurations.
         #if DEBUG
+        // The handler records this only in a debug build, so these assertions compile away
+        // in release rather than failing there. What they observe is bookkeeping; the
+        // behaviour behind it is asserted alongside and still runs in both configurations.
+        #if DEBUG
         #expect(!handler.readLog.contains(["site", "pages", "doc.html"]))
+        #endif
         #endif
 
         let stalePage = page
@@ -338,7 +348,12 @@ struct HTMLDocumentSchemeHandlerTests {
         // in release rather than failing there. What they observe is bookkeeping; the
         // behaviour behind it is asserted alongside and still runs in both configurations.
         #if DEBUG
+        // The handler records this only in a debug build, so these assertions compile away
+        // in release rather than failing there. What they observe is bookkeeping; the
+        // behaviour behind it is asserted alongside and still runs in both configurations.
+        #if DEBUG
         #expect(handler.readLog.isEmpty)
+        #endif
         #endif
     }
 
@@ -455,7 +470,12 @@ struct HTMLDocumentSchemeHandlerTests {
         // in release rather than failing there. What they observe is bookkeeping; the
         // behaviour behind it is asserted alongside and still runs in both configurations.
         #if DEBUG
+        // The handler records this only in a debug build, so these assertions compile away
+        // in release rather than failing there. What they observe is bookkeeping; the
+        // behaviour behind it is asserted alongside and still runs in both configurations.
+        #if DEBUG
         #expect(handler.requestLog.suffix(2).map(\.outcome) == [.failed(.tooLarge), .failed(.tooLarge)])
+        #endif
         #endif
     }
 
@@ -479,7 +499,12 @@ struct HTMLDocumentSchemeHandlerTests {
         // in release rather than failing there. What they observe is bookkeeping; the
         // behaviour behind it is asserted alongside and still runs in both configurations.
         #if DEBUG
+        // The handler records this only in a debug build, so these assertions compile away
+        // in release rather than failing there. What they observe is bookkeeping; the
+        // behaviour behind it is asserted alongside and still runs in both configurations.
+        #if DEBUG
         #expect(handler.readLog.count == 2)
+        #endif
         #endif
         // A new load gets a new budget.
         let fresh = try begin(handler, tree)
@@ -502,7 +527,12 @@ struct HTMLDocumentSchemeHandlerTests {
         // in release rather than failing there. What they observe is bookkeeping; the
         // behaviour behind it is asserted alongside and still runs in both configurations.
         #if DEBUG
+        // The handler records this only in a debug build, so these assertions compile away
+        // in release rather than failing there. What they observe is bookkeeping; the
+        // behaviour behind it is asserted alongside and still runs in both configurations.
+        #if DEBUG
         #expect(handler.requestLog.last?.outcome == .refused("byte budget"))
+        #endif
         #endif
         // Once the budget is used up, requests fail before any read.
         limits.bytesPerLoad = Int64(size)
@@ -515,7 +545,12 @@ struct HTMLDocumentSchemeHandlerTests {
         // in release rather than failing there. What they observe is bookkeeping; the
         // behaviour behind it is asserted alongside and still runs in both configurations.
         #if DEBUG
+        // The handler records this only in a debug build, so these assertions compile away
+        // in release rather than failing there. What they observe is bookkeeping; the
+        // behaviour behind it is asserted alongside and still runs in both configurations.
+        #if DEBUG
         #expect(exact.readLog.count == 1)
+        #endif
         #endif
     }
 
@@ -558,7 +593,12 @@ struct HTMLDocumentSchemeHandlerTests {
         // in release rather than failing there. What they observe is bookkeeping; the
         // behaviour behind it is asserted alongside and still runs in both configurations.
         #if DEBUG
+        // The handler records this only in a debug build, so these assertions compile away
+        // in release rather than failing there. What they observe is bookkeeping; the
+        // behaviour behind it is asserted alongside and still runs in both configurations.
+        #if DEBUG
         #expect(handler.readLog == [["site", "pages", "img", "a.png"], ["site", "pages", "img", "a.png"], ["site", "pages", "%2F.png"]])
+        #endif
         #endif
     }
 
@@ -605,9 +645,11 @@ struct HTMLDocumentSchemeHandlerTests {
             #expect(next.body == nextFile)
             #expect(next.body != stoppedFile)
             #if DEBUG
+            #if DEBUG
             // Both files were read; only the one that is still wanted was answered.
             #expect(handler.readLog == [["site", "pages", "img", "a.png"], ["site", "shared", "logo.png"]])
             #expect(handler.requestLog == [.init(components: ["site", "shared", "logo.png"], outcome: .served(status: 200, bytes: nextFile.count))])
+            #endif
             #endif
             return
         }
@@ -631,12 +673,21 @@ struct HTMLDocumentSchemeHandlerTests {
         // in release rather than failing there. What they observe is bookkeeping; the
         // behaviour behind it is asserted alongside and still runs in both configurations.
         #if DEBUG
+        // The handler records this only in a debug build, so these assertions compile away
+        // in release rather than failing there. What they observe is bookkeeping; the
+        // behaviour behind it is asserted alongside and still runs in both configurations.
+        #if DEBUG
         #expect(handler.requestLog.last?.outcome == .refused("stale session"))
+        #endif
         #endif
     }
 
     // MARK: WebKit resolution
 
+    // Debug-only in full, not for what it asserts but for what it waits for: the waits
+    // below are on the handler's debug-only log, and a test that runs without its
+    // waits is worse than one that doesn't run.
+    #if DEBUG
     // Debug-only in full, not for what it asserts but for what it waits for: the waits
     // below are on the handler's debug-only log, and a test that runs without its
     // waits is worse than one that doesn't run.
@@ -678,6 +729,7 @@ struct HTMLDocumentSchemeHandlerTests {
         // `%2F/nope.png` adds a third placeholder at depth two: refused before any read.
         #expect(handler.requestLog.contains { $0.outcome == .refused("placeholder out of place") })
     }
+    #endif
     #endif
 }
 #endif
