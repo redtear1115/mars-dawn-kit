@@ -49,10 +49,11 @@ jobs:
       # ScopedFileReaderTests.refusesAFIFOWithoutHanging traps later? Each run is its own process.
       - name: Bisect the macOS 15 trap
         run: |
-          set -uo pipefail
+          set +e
           report() {
-            echo "::group::$1: start order"
-            grep -E "◇ Test [a-zA-Z]+\\(" "/tmp/$1.log" | sed -E 's/.*◇ Test ([a-zA-Z]+).*/\1/' | tr '\n' ' '; echo
+            echo "START ORDER $1: $(grep -o 'Test [a-zA-Z]*() started' "/tmp/$1.log" | sed 's/Test //; s/() started//' | tr '\n' ' ')"
+            echo "::group::$1: log tail"
+            tail -25 "/tmp/$1.log"
             echo "::endgroup::"
             echo "RESULT $1: exit $2 | $(grep -E 'Test run with|unexpected signal' /tmp/$1.log | tail -1)"
             sleep 5  # the crash report is written a moment after the crash
