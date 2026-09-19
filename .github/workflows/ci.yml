@@ -81,14 +81,19 @@ jobs:
           run() { name=$1; shift; swift test --no-parallel --filter "$1" > "/tmp/$name.log" 2>&1; report "$name" $?; }
           rm -f ~/Library/Logs/DiagnosticReports/*.ips
           run E0-fifo-alone 'refusesAFIFOWithoutHanging'
-          run E1-gate-and-reader 'WorkerGateTests|ScopedFileReaderTests'
-          run E2-cancelling 'cancellingAWaiterReturnsNilPromptlyAndNeverRunsItsBody|ScopedFileReaderTests'
-          run E3-freedSlot 'aFreedSlotStartsTheWaitingJobOnTheReleasingThread|ScopedFileReaderTests'
-          run E4-blockingCallers 'blockingCallersFillingTheTaskPoolDontStallAsyncCallers|ScopedFileReaderTests'
-          run E5-alreadyCancelled 'alreadyCancelledTasksNeverStart|ScopedFileReaderTests'
-          run E6-racing 'cancellationRacingCompletionResumesEachWaiterOnce|ScopedFileReaderTests'
-          run F1-full-debug '.'
-          swift test -c release --no-parallel > /tmp/F2-full-release.log 2>&1; report F2-full-release $?
+          run X1-empty 'x1EmptyThread'
+          run X2-clock 'x2ThreadReadsTheClock'
+          run X3-instance-helper 'x3ThreadCallsAnInstanceHelper'
+          run X4-static-fifo 'x4ThreadDoesTheFIFOReadThroughAStatic'
+          bin="$(swift build --show-bin-path)/MarsDawnKitPackageTests.xctest/Contents/MacOS/MarsDawnKitPackageTests"
+          nm -j "$bin" | grep -E 'refusesAFIFOWithoutHanging|x3ThreadCallsAnInstanceHelper' | while read -r sym; do
+            name=$(echo "$sym" | xcrun swift-demangle --simplified)
+            echo "SYMBOL $name"
+            case "$name" in *closure*) ;; *) continue;; esac
+            echo "::group::DISASM $name"
+            otool -tV -p "$sym" "$bin" | sed -n 2,110p
+            echo "::endgroup::"
+          done
           echo "done"
       # Two groups of tests don't run here, so the CLI covers their ground on the real system:
       # one of the gate's tests, which macOS 15's Concurrency runtime kills (mars-dawn-kit#26), and the
