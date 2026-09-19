@@ -30,12 +30,16 @@ struct HTMLDocumentEndToEndTests {
         // Only a debug build records what was served, so this reads it only there; every
         // caller is guarded to match.
         #if DEBUG
+        // Only a debug build records what was served, so this reads it only there; every
+        // caller is guarded to match.
+        #if DEBUG
         func served() -> Set<[String]> {
             Set(handler.requestLog.compactMap { entry -> [String]? in
                 if case .served = entry.outcome { return entry.components }
                 return nil
             })
         }
+        #endif
         #endif
 
         func remove() {
@@ -110,6 +114,10 @@ struct HTMLDocumentEndToEndTests {
 
     // MARK: 1. Serving
 
+    // Debug-only in full, not for what it asserts but for what it waits for: the waits
+    // below are on the handler's debug-only log, and a test that runs without its
+    // waits is worse than one that doesn't run.
+    #if DEBUG
     @Test func servesOnlyAllowedFilesInsideTheScope() async throws {
         let png = RecordingServer.png
         let font = try Data(contentsOf: URL(fileURLWithPath: "/System/Library/Fonts/Supplemental/Arial.ttf"))
@@ -172,6 +180,7 @@ struct HTMLDocumentEndToEndTests {
         #expect(!harness.handler.readLog.contains { $0.last == "x.js" || $0.last == "index.html" })
         #endif
     }
+    #endif
 
     // MARK: 2. Blocked state
 
@@ -379,13 +388,22 @@ struct HTMLDocumentEndToEndTests {
         // in release rather than failing there. What they observe is bookkeeping; the
         // behaviour behind it is asserted alongside and still runs in both configurations.
         #if DEBUG
+        // The handler records this only in a debug build, so these assertions compile away
+        // in release rather than failing there. What they observe is bookkeeping; the
+        // behaviour behind it is asserted alongside and still runs in both configurations.
+        #if DEBUG
         let media = harness.handler.requestLog.filter { $0.components?.last == "v.mp4" }
         print("H1e-record media size=\(bytes.count) moov=\(moov.offset) currentTime=\(time) state=\(state) responses=\(media.count)")
+        #endif
         #endif
         #expect(time > 0)
         #expect(info["duration"] as? Double == 10)
         #expect(info["width"] as? Int == 1280)
         #expect(info["error"] as? Int == 0)
+        // The handler records this only in a debug build, so these assertions compile away
+        // in release rather than failing there. What they observe is bookkeeping; the
+        // behaviour behind it is asserted alongside and still runs in both configurations.
+        #if DEBUG
         // The handler records this only in a debug build, so these assertions compile away
         // in release rather than failing there. What they observe is bookkeeping; the
         // behaviour behind it is asserted alongside and still runs in both configurations.
@@ -400,11 +418,16 @@ struct HTMLDocumentEndToEndTests {
             #expect(size <= 8 << 20)
         }
         #endif
+        #endif
         #expect(bytes.count >= 20 << 20)
     }
 
     // MARK: 5. Session swap
 
+    // Debug-only in full, not for what it asserts but for what it waits for: the waits
+    // below are on the handler's debug-only log, and a test that runs without its
+    // waits is worse than one that doesn't run.
+    #if DEBUG
     // Debug-only in full, not for what it asserts but for what it waits for: the waits
     // below are on the handler's debug-only log, and a test that runs without its
     // waits is worse than one that doesn't run.
@@ -431,6 +454,7 @@ struct HTMLDocumentEndToEndTests {
         #expect(harness.handler.requestLog.dropFirst(before).map(\.outcome) == [.refused("unknown load")])
         #expect(!harness.served().contains(["site", "pages", "img", "b.png"]))
     }
+    #endif
     #endif
 }
 #endif
