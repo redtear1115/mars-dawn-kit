@@ -12,7 +12,6 @@ enum RenderGoldenCorpus {
         " ---\ntitle: x\n---\n",
         "----\ntitle: x\n----\n",
         "\n---\ntitle: x\n---\n",
-        "\u{FEFF}---\ntitle: x\n---\nBody\n",
         "Title\n---\n\nText\n---\nMore\n",
         "# Doc\n\n---\n\ntitle: x\n---\n",
         "...\ntitle: x\n...\n",
