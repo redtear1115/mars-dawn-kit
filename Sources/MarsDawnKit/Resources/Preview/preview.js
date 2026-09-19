@@ -346,9 +346,15 @@
     // The path as the document wrote it. An absolute one travels as `marsdawn-asset://abs/…`
     // without its leading slash (DocumentAssetSchemeHandler.previewURL), so it gets it back (#23).
     const host = (box.dataset.src.match(/^[^/]*\/\/([^/]*)\//) || [])[1];
-    const raw = (host === "abs" ? "/" : "") + box.dataset.src.replace(/^[^/]*\/\/[^/]*\//, "").replace(/\?.*$/, "");
+    // A `../` source travels resolved, with the source as written in the fragment
+    // (DocumentAssetSchemeHandler.previewURL(forImageSource:baseDirectory:)): show that (mars-dawn#8).
+    const hashAt = box.dataset.src.indexOf("#");
+    const written = hashAt >= 0 ? box.dataset.src.slice(hashAt + 1) : "";
+    const raw = written || ((host === "abs" ? "/" : "") + box.dataset.src.replace(/#.*$/, "").replace(/^[^/]*\/\/[^/]*\//, "").replace(/\?.*$/, ""));
     let name = raw;
-    try { name = decodeURIComponent(raw); } catch (_) {}
+    try { name = decodeURIComponent(raw); } catch (_) {}  // malformed: shown as it is
+    // Document-controlled text: only ever set as text, and kept to a readable length.
+    if (name.length > 300) name = name.slice(0, 300) + "…";
     label.textContent = `${assetState.needsAccess ? assetState.blockedLabel : assetState.missingLabel}: ${name}`;
     box.appendChild(label);
     if (assetState.needsAccess) {
