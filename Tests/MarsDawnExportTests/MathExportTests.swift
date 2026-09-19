@@ -108,6 +108,48 @@ struct MathExportTests {
         #expect(!text.contains("\\sum"))
     }
 
+    /// Each expression reaches the PDF's text layer once (#16). KaTeX also writes a MathML copy
+    /// for screen readers, hidden on screen by clipping; printed, WebKit still drew its text,
+    /// invisibly, so the text layer had every expression twice -- the MathML one in Mathematical
+    /// Italic letters (𝐸, 𝑥) set in STIXTwoMath. The visible math is the positive fixture: its
+    /// text and KaTeX's own fonts must still be there.
+    @Test func exportedPDFTextHasEachExpressionOnce() async throws {
+        let url = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("marsdawn-math-once-\(UUID().uuidString).pdf")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let markdown = "Inline $E=mc^2$ here.\n\n$$\n\\int_0^1 x\\,dx = \\frac{1}{2}\n$$\n"
+        _ = try await DocumentExporter.exportPDF(
+            markdown: markdown, to: url, theme: .dawn, baseDirectory: nil, allowRemoteImages: false
+        )
+
+        let document = try #require(PDFDocument(url: url))
+        let text = (0..<document.pageCount).compactMap { document.page(at: $0)?.string }.joined()
+        let mathAlphanumerics = text.unicodeScalars.filter { (0x1D400...0x1D7FF).contains($0.value) }
+        #expect(mathAlphanumerics.isEmpty, "no MathML copy: \(String(String.UnicodeScalarView(mathAlphanumerics)))")
+        #expect(text.filter { $0 == "∫" }.count == 1, "the integral once: \(text)")
+        #expect(text.contains("mc2") && text.contains("dx"), "the visible math is in the text layer")
+
+        let bytes = try Data(contentsOf: url)
+        #expect(bytes.range(of: Data("STIXTwoMath".utf8)) == nil, "the MathML's font isn't embedded")
+        #expect(bytes.range(of: Data("KaTeX_Math".utf8)) != nil && bytes.range(of: Data("KaTeX_Main".utf8)) != nil, "KaTeX's fonts still are")
+    }
+
+    /// On screen the MathML stays: it's what a screen reader reads in the live preview. The rule
+    /// that drops it from the PDF is print-only.
+    @Test func theMathMLStaysOnScreen() async throws {
+        let exporter = DocumentExporter(baseDirectory: nil, allowRemoteImages: false)
+        try await exporter.prepare(markdown: "Inline $E=mc^2$ here.", theme: .dawn)
+        let state = try #require(try await exporter.webView.evaluateJavaScript("""
+        (() => {
+          const mathml = document.querySelector(".katex-mathml");
+          return mathml ? getComputedStyle(mathml).display + "|" + mathml.querySelectorAll("math").length : "absent";
+        })()
+        """) as? String)
+        #expect(state != "absent", "precondition: KaTeX wrote MathML")
+        #expect(!state.hasPrefix("none|"), "the MathML is displayed on screen: \(state)")
+        #expect(state.hasSuffix("|1"))
+    }
+
     private struct PageState: Decodable {
         let inline: Int
         let block: Int

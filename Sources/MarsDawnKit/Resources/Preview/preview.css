@@ -367,6 +367,11 @@ img { max-width: 100%; }
   .math-block, .math-inline.math-display { overflow: hidden; }
   .katex-display > .katex { max-width: 100%; }
   .math-skipped, .math-error { white-space: pre-wrap; overflow-wrap: anywhere; }
+  /* KaTeX's MathML copy is for screen readers in the live preview, hidden there by clipping.
+     Printed, WebKit still draws its text, invisibly, so the PDF's text layer had every
+     expression twice (#16). Paper has no screen reader, and the export's PDF carries no
+     structure tags for one to use, so it goes; the screen keeps it. */
+  .katex-mathml { display: none; }
   table { display: table; width: auto; overflow: visible; }
   thead { display: table-header-group; }
 
