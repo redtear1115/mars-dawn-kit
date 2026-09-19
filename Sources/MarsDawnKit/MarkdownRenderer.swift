@@ -223,9 +223,15 @@ private struct HTMLVisitor: MarkupVisitor {
     let lineOffset: Int
     /// The math taken out of the body before it was parsed.
     let math: MathExtractor.Extraction
+    /// The next number to try for each base, as `base-N`.
     private var usedSlugs: [String: Int] = [:]
     /// Every heading `id` given out so far in this render.
     private var usedIDs: Set<String> = []
+    /// Every heading's own slug, in document order, taken before any heading is written.
+    private var headingSlugs: [String] = []
+    /// For each slug some heading has as its own, the first such heading: it keeps that slug.
+    private var slugOwners: [String: Int] = [:]
+    private var headingIndex = 0
     private var tightListStack: [Bool] = []
 
     init(options: MarkdownRenderer.Options, lineOffset: Int, math: MathExtractor.Extraction) {
@@ -254,7 +260,24 @@ private struct HTMLVisitor: MarkupVisitor {
     // MARK: Blocks
 
     mutating func visitDocument(_ document: Document) -> String {
-        visitChildren(document)
+        collectHeadingSlugs(document)
+        return visitChildren(document)
+    }
+
+    /// The first pass for heading `id`s: every heading's own slug, in the order `visit` meets
+    /// them, and the first heading that has each one. Headings are blocks, so inline nodes are
+    /// never descended into.
+    private mutating func collectHeadingSlugs(_ document: Document) {
+        var stack: [any Markup] = Array(document.children).reversed()
+        while let node = stack.popLast() {
+            if let heading = node as? Heading {
+                let slug = slugify(slugSource(heading.plainText))
+                if !slug.isEmpty, slugOwners[slug] == nil { slugOwners[slug] = headingSlugs.count }
+                headingSlugs.append(slug)
+                continue
+            }
+            stack.append(contentsOf: node.children.filter { !($0 is InlineMarkup) }.reversed())
+        }
     }
 
     mutating func visitParagraph(_ paragraph: Paragraph) -> String {
@@ -267,7 +290,8 @@ private struct HTMLVisitor: MarkupVisitor {
 
     mutating func visitHeading(_ heading: Heading) -> String {
         let level = min(max(heading.level, 1), 6)
-        let id = uniqueSlug(for: slugSource(heading.plainText))
+        let id = headingID(headingIndex)
+        headingIndex += 1
         return "<h\(level) id=\"\(escapeAttribute(id))\"\(lineAttribute(heading))>\(visitChildren(heading))</h\(level)>\n"
     }
 
@@ -467,17 +491,27 @@ private struct HTMLVisitor: MarkupVisitor {
         }
     }
 
-    /// The heading's `id`: its slug, numbered from `-1` when the slug repeats. A heading with
-    /// nothing to slug (`# $$`, `# !!!`) is `section`, as in Pandoc, rather than an empty `id`
-    /// nothing can link to (#14). A numbered `id` that another heading already has as its own
-    /// (`a-1` after `# a-1`, `section-1` after `# Section 1`) moves on to the next number, so no
-    /// two headings share one.
-    private mutating func uniqueSlug(for text: String) -> String {
-        let slug = slugify(text)
+    /// The `id` of the heading at `index` in document order, in two passes (#14).
+    ///
+    /// 1. A heading whose own slug no earlier heading has keeps it. That is decided for the
+    ///    whole document first (`collectHeadingSlugs`), so a heading with a real slug is never
+    ///    displaced by one without: `# section` stays `section` whatever comes before it.
+    /// 2. Every other heading takes the next free number. A repeated slug is `base-1`,
+    ///    `base-2`, …; a heading with nothing to slug (`# $$`, `# !!!`) is `section`, then
+    ///    `section-1`, …, as in Pandoc, rather than an empty `id` nothing can link to. A number
+    ///    is free when no heading has it as its own slug and it hasn't been given out, so no
+    ///    two headings share an `id`.
+    private mutating func headingID(_ index: Int) -> String {
+        let slug = index < headingSlugs.count ? headingSlugs[index] : ""
+        if !slug.isEmpty, slugOwners[slug] == index {
+            usedIDs.insert(slug)
+            usedSlugs[slug] = max(usedSlugs[slug, default: 0], 1)
+            return slug
+        }
         let base = slug.isEmpty ? "section" : slug
-        var count = usedSlugs[base, default: 0]
+        var count = usedSlugs[base, default: slug.isEmpty ? 0 : 1]
         var id = count == 0 ? base : "\(base)-\(count)"
-        while usedIDs.contains(id) {
+        while slugOwners[id] != nil || usedIDs.contains(id) {
             count += 1
             id = "\(base)-\(count)"
         }

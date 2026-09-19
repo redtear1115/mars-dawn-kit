@@ -22,8 +22,8 @@ struct MarkdownRendererTests {
         #expect(!html.contains(#"id="""#))
     }
 
-    /// The fallback numbers count headings that fell back (and any heading titled "Section"),
-    /// so editing other named headings doesn't move them.
+    /// The fallback numbers skip every slug a heading has as its own, so editing a named
+    /// heading doesn't move them, unless its new slug is itself `section` or `section-N`.
     @Test func sectionIDsDontMoveWhenANamedHeadingChanges() {
         let before = headingIDs(MarkdownRenderer.render("# $$\n\n# Intro\n\n# !!!\n"))
         let after = headingIDs(MarkdownRenderer.render("# $$\n\n# Introduction, rewritten\n\n# !!!\n"))
@@ -31,16 +31,27 @@ struct MarkdownRendererTests {
         #expect(after == ["section", "introduction-rewritten", "section-1"])
     }
 
-    /// Every `id` is unique, even where a numbered slug meets a heading that already has that
-    /// name: `Section 1` slugs to `section-1`, which a second fallback would also produce, and
-    /// `a-1` is what a second `a` becomes.
+    /// A heading with a real slug is never displaced by one without, before it or after it: an
+    /// existing `#section` or `#section-1` link still lands on the heading it named (found by
+    /// the verifier on #48).
+    @Test func aNamedHeadingKeepsItsSlugWhateverFallsBack() {
+        #expect(headingIDs(MarkdownRenderer.render("# $$\n\n# section\n\n# section-1\n"))
+            == ["section-2", "section", "section-1"])
+        #expect(headingIDs(MarkdownRenderer.render("# !!!\n\n# Section\n")) == ["section-1", "section"])
+        #expect(headingIDs(MarkdownRenderer.render("# Section\n\n# $$\n\n# !!!\n")) == ["section", "section-1", "section-2"])
+    }
+
+    /// Every `id` is unique. Where main gave two headings the same `id`, the heading whose own
+    /// slug it is keeps it and the repeat moves on to the next free number: `# a`, `# a`,
+    /// `# a-1` was `a`, `a-1`, `a-1` and is `a`, `a-2`, `a-1`. A later repeat of the same slug
+    /// moves up by one with it: `# a-1`, `# a`, `# a`, `# a` was `a-1`, `a`, `a-1`, `a-2` and is
+    /// `a-1`, `a`, `a-2`, `a-3`.
     @Test func headingIDsStayUniqueWhenNumberedSlugsCollide() {
+        #expect(headingIDs(MarkdownRenderer.render("# a\n\n# a\n\n# a-1\n")) == ["a", "a-2", "a-1"])
+        #expect(headingIDs(MarkdownRenderer.render("# a-1\n\n# a\n\n# a\n\n# a\n")) == ["a-1", "a", "a-2", "a-3"])
+        #expect(headingIDs(MarkdownRenderer.render("# a\n\n# a-1\n\n# a\n")) == ["a", "a-1", "a-2"])
         let fallback = headingIDs(MarkdownRenderer.render("# $$\n\n# Section 1\n\n# !!!\n"))
-        #expect(Set(fallback).count == fallback.count, "\(fallback)")
-        #expect(fallback.allSatisfy { !$0.isEmpty })
-        let named = headingIDs(MarkdownRenderer.render("# a\n\n# a-1\n\n# a\n"))
-        #expect(Set(named).count == named.count, "\(named)")
-        #expect(named.prefix(2) == ["a", "a-1"], "the first of each keeps its plain slug")
+        #expect(fallback == ["section", "section-1", "section-2"])
     }
 
     @Test func mermaidBlocksAreMarkedForTheDiagramRenderer() {
