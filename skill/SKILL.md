@@ -1,18 +1,3 @@
-#if os(macOS)
-import ArgumentParser
-import Foundation
-
-/// The agent skill for this exact CLI (#60): `marsdawn skill > ~/.claude/skills/marsdawn/SKILL.md`.
-///
-/// Printed from here, so the skill never describes an option the installed CLI lacks.
-/// `SkillTests` check it against the CLI's own help.
-///
-/// **The canonical text is `skill/SKILL.md` in this repository**, and this string must equal it
-/// byte for byte (`SkillTests.theEmbeddedTextIsTheSkillFile`). The website's `/cli/skill/SKILL.md`
-/// is checked against that file at the kit tag the site documents, so a wording change lands
-/// here first and reaches the site with a release.
-enum MarsDawnSkill {
-    static let text = #"""
 ---
 name: marsdawn
 description: Export Markdown to PDF with the marsdawn command-line tool on macOS and read its JSON result, and open Markdown you wrote in MarsDawn for the user to review. Use when asked to turn a Markdown file into a PDF, or to render Markdown with tables, math, Mermaid diagrams or highlighted code into a PDF. Also use after writing or revising a Markdown document the user will read, to open it in MarsDawn for review.
@@ -92,22 +77,3 @@ marsdawn open plan.md:42 --json
 ## Full contract
 
 Every field, schema and code: https://marsdawn.southern-light.dev/cli/agents/
-"""#
-}
-
-extension MarsDawnCommand {
-    struct Skill: ParsableCommand {
-        static let configuration = CommandConfiguration(
-            abstract: "Print the agent skill (SKILL.md) that matches this version of marsdawn.",
-            discussion: """
-            Install it for Claude Code with:
-              mkdir -p ~/.claude/skills/marsdawn && marsdawn skill > ~/.claude/skills/marsdawn/SKILL.md
-            """
-        )
-
-        func run() {
-            FileHandle.standardOutput.write(Data((MarsDawnSkill.text + "\n").utf8))
-        }
-    }
-}
-#endif

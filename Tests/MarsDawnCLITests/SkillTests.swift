@@ -76,6 +76,17 @@ struct SkillTests {
         }
     }
 
+    /// One source: the repository's `skill/SKILL.md` is what `marsdawn skill` prints, byte for
+    /// byte, so the website can check its copy against the file at a tag without building Swift.
+    @Test func theEmbeddedTextIsTheSkillFile() throws {
+        let file = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("skill/SKILL.md")
+        let data = try Data(contentsOf: file)
+        #expect(data.count > 1000, "positive fixture: the file has the skill in it")
+        #expect(data == Data((MarsDawnSkill.text + "\n").utf8))
+    }
+
     @Test func itPrintsTheSkillAndNothingElse() throws {
         let pipe = Pipe()
         let saved = dup(STDOUT_FILENO)
