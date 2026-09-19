@@ -27,20 +27,14 @@ struct HTMLDocumentEndToEndTests {
         let pageURL: URL
         let window: NSWindow
 
-        // Only a debug build records what was served, so this reads it only there; every
-        // caller is guarded to match.
-        #if DEBUG
-        // Only a debug build records what was served, so this reads it only there; every
-        // caller is guarded to match.
-        #if DEBUG
+        /// What the handler served, from its request record -- which this branch writes in every
+        /// build, so this is no longer debug-only (it was, under #36, while the record was).
         func served() -> Set<[String]> {
             Set(handler.requestLog.compactMap { entry -> [String]? in
                 if case .served = entry.outcome { return entry.components }
                 return nil
             })
         }
-        #endif
-        #endif
 
         func remove() {
             window.orderOut(nil)
