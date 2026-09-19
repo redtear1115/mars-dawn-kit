@@ -171,6 +171,11 @@ extension MarsDawnCommand {
         @Flag(name: .customShort("a"), help: .hidden)
         var vsCodeAdd = false
 
+        /// For an agent opening files mid-task: MarsDawn opens them without coming to the front,
+        /// so the window the user is working in keeps focus (#59).
+        @Flag(name: .long, help: "Open without bringing MarsDawn to the front.")
+        var background = false
+
         @OptionGroup var output: OutputOptions
 
         func validate() throws {
@@ -265,6 +270,13 @@ extension MarsDawnCommand {
             return folders
         }
 
+        /// How the app is asked to open things: brought to the front unless `--background`.
+        func openConfiguration() -> NSWorkspace.OpenConfiguration {
+            let configuration = NSWorkspace.OpenConfiguration()
+            configuration.activates = !background
+            return configuration
+        }
+
         @MainActor
         func run() async throws {
             let targets = try resolvedTargets()
@@ -272,15 +284,13 @@ extension MarsDawnCommand {
             let app = try MarsDawnApp.require()
             // Files asking for the same line travel in one event; the line applies to all of them.
             for group in RevealEvent.groups(for: targets) {
-                let configuration = NSWorkspace.OpenConfiguration()
-                configuration.activates = true
+                let configuration = openConfiguration()
                 configuration.appleEvent = RevealEvent.openDocuments(urls: group.urls, line: group.line)
                 _ = try await NSWorkspace.shared.open(group.urls, withApplicationAt: app, configuration: configuration)
             }
             // Folders travel on their own, with no reveal line: a folder has no line to land on.
             if !folders.isEmpty {
-                let configuration = NSWorkspace.OpenConfiguration()
-                configuration.activates = true
+                let configuration = openConfiguration()
                 _ = try await NSWorkspace.shared.open(folders, withApplicationAt: app, configuration: configuration)
             }
             var fields: [String: Any] = [

@@ -40,7 +40,7 @@ swift run marsdawn open notes.md --folder .
 swift run marsdawn export notes.md -o notes.pdf --theme classic --paper a4
 ```
 
-- `open <paths…> [--line N] [--folder DIR] [--json]` opens files in the MarsDawn app, and folders in its sidebar.
+- `open <paths…> [--line N] [--folder DIR] [--background] [--json]` opens files in the MarsDawn app, and folders in its sidebar.
   - **It needs the MarsDawn app, which is not publicly available yet.** It is headed for the Mac App Store; until it is there, `open` exits with code 3 on any Mac that does not already have the app, and everything below describes what it will do once you have it. `export` needs no app and works today.
   - A file argument can name a line: `notes.md:120` lands on line 120, and a column after it (`notes.md:120:8`) is accepted and ignored. An argument that names a file which exists is always the whole filename, so a file called `weird:12` still opens as itself.
   - `--line N` says the same thing for a single file, and is the way to ask for a line on a path that itself ends in a colon and digits. With more than one file it is a usage error.
@@ -50,6 +50,7 @@ swift run marsdawn export notes.md -o notes.pdf --theme classic --paper a4
   - A MarsDawn window's sidebar shows **one** folder, so naming two is a usage error. Naming the same folder twice (as an argument and again with `--folder`) is not — it's one folder.
   - There is no `-a`. VS Code's `-a` adds a second root to a window; MarsDawn has one folder per window, so `--folder` sets that folder rather than adding to it. Passing `-a` fails with a message saying so.
   - `--line` needs a file. A folder has no line to land on, so asking for one is a usage error.
+  - `--background` opens without bringing MarsDawn to the front, for an agent that opens files while you work elsewhere. Without it, MarsDawn comes to the front, as before. The `--json` result is the same either way.
   - `--json` prints `ok`, `app` and `opened`: one object per file, `{"path": …}`, carrying `"line"` when one was asked for. A folder adds `"folder": {"path": …, "requested": true}` — **`requested`, not `attached`**: the command hands the folder to the app and returns, and whether the sidebar ends up showing it, or the app has to ask you for access first, is decided inside the app and never reported back here.
 - `export <file> [-o out.pdf] [--theme dawn|classic|modern|vivid] [--paper a4|letter] [--allow-remote-images] [--force] [--json]` renders a PDF without opening a window.
   - The theme defaults to `$MARSDAWN_THEME`, then `dawn`.
