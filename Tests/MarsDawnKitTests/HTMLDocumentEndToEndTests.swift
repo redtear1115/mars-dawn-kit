@@ -27,20 +27,14 @@ struct HTMLDocumentEndToEndTests {
         let pageURL: URL
         let window: NSWindow
 
-        // Only a debug build records what was served, so this reads it only there; every
-        // caller is guarded to match.
-        #if DEBUG
-        // Only a debug build records what was served, so this reads it only there; every
-        // caller is guarded to match.
-        #if DEBUG
+        /// What the handler served, from its request record -- which this branch writes in every
+        /// build, so this is no longer debug-only (it was, under #36, while the record was).
         func served() -> Set<[String]> {
             Set(handler.requestLog.compactMap { entry -> [String]? in
                 if case .served = entry.outcome { return entry.components }
                 return nil
             })
         }
-        #endif
-        #endif
 
         func remove() {
             window.orderOut(nil)
@@ -79,13 +73,13 @@ struct HTMLDocumentEndToEndTests {
         configuration.setURLSchemeHandler(other, forURLScheme: "h1-other")
         let webView = PreviewWKWebView(frame: NSRect(x: 0, y: 0, width: 800, height: 600), configuration: configuration)
         let window = Self.host(webView)
-        webView.applyContentRuleList(try await HTMLContentRules.ruleList(allowsRemoteContent: remote))
+        webView.applyContentRuleList(try await HTMLContentRules.ruleList(for: remote ? .running : .blocked))
 
         let pageURL = try handler.beginLoad(
             document: Data(html.utf8),
             documentURL: root.appendingPathComponent("site/pages/index.html"),
             scopeRoot: root,
-            allowsRemoteContent: remote
+            policy: remote ? .running : .blocked
         )
         let navigation = TestNavigationDelegate()
         navigation.trustedCertificate = certificate
@@ -349,13 +343,80 @@ struct HTMLDocumentEndToEndTests {
         #expect(harness.other.requests.isEmpty)
     }
 
+    // MARK: 3b. What a running document can reach (A4-3)
+
+    /// `connect-src https:` and the running rule list have to agree about `fetch()`, or one of
+    /// them is a grant that never works. WebKit's dialect accepts both `raw` and `fetch` as
+    /// resource-type names and doesn't document which a `fetch()` is classified under, so this
+    /// measures it: the lift names `fetch` only, because naming `raw` as well also lifted
+    /// `<link rel=preconnect>` and `<link rel=preload as=fetch>` — the very reach the rule list
+    /// exists to stop, and which no CSP directive can.
+    ///
+    /// Both halves matter. Without the positive one, this passes when nothing ran at all.
+    /// Needs macOS 26 for `TestTLSIdentity`'s in-memory identity; skipped rather than failed on
+    /// an older system, the same as the other TLS tests since mars-dawn-kit#35.
+    @Test(.enabled(if: TestTLS.isAvailable))
+    func aRunningDocumentCanFetchOverHTTPSButNotPreconnect() async throws {
+        // The trait is checked before this runs, so reaching here means an identity can be made.
+        guard #available(macOS 26, *) else { return }
+        let tls = try TestTLSIdentity.make()
+        let target = try await RecordingServer.start(identity: tls.identity)
+        defer { target.stop() }
+        let preconnect = try await RecordingServer.start(identity: tls.identity)
+        defer { preconnect.stop() }
+
+        let html = """
+        <!doctype html><html><head>
+        <link rel=preconnect href="https://127.0.0.1:\(preconnect.port)/">
+        </head><body><script>
+        fetch("https://127.0.0.1:\(target.port)/beacon?sent=1").catch(() => {});
+        </script></body></html>
+        """
+        let harness = try await load(html: html, remote: true, javaScript: true, trusting: tls.certificate)
+        defer { harness.remove() }
+        try await waitUntil(timeout: .seconds(8)) { !target.paths.isEmpty }
+        try await Task.sleep(for: Self.window)
+        print("A4-3-record running fetch paths=\(target.paths) preconnect accepts=\(preconnect.accepts)")
+        #expect(target.paths.contains("/beacon?sent=1"), "arrived: \(target.paths)")
+        #expect(preconnect.accepts == 0, "preconnect connected while running")
+    }
+
+    /// And the same page, not running, reaches neither.
+    /// Needs macOS 26 for `TestTLSIdentity`'s in-memory identity; skipped rather than failed on
+    /// an older system, the same as the other TLS tests since mars-dawn-kit#35.
+    @Test(.enabled(if: TestTLS.isAvailable))
+    func aStaticDocumentFetchesNothing() async throws {
+        // The trait is checked before this runs, so reaching here means an identity can be made.
+        guard #available(macOS 26, *) else { return }
+        let tls = try TestTLSIdentity.make()
+        let target = try await RecordingServer.start(identity: tls.identity)
+        defer { target.stop() }
+        let html = """
+        <!doctype html><html><body><script>
+        fetch("https://127.0.0.1:\(target.port)/beacon?sent=1").catch(() => {});
+        </script></body></html>
+        """
+        let harness = try await load(html: html, remote: false, javaScript: true, trusting: tls.certificate)
+        defer { harness.remove() }
+        try await Task.sleep(for: .seconds(2))
+        #expect(target.accepts == 0, "a static document reached the network: \(target.paths)")
+    }
+
     // MARK: 4. Media
 
-    /// Recorded on macOS 26.6 under `swift test`: WebKit never decodes a frame here
-    /// (`totalVideoFrames` stays 0), and `currentTime` advances even for a copy truncated to
-    /// 3 MB, so `currentTime > 0` alone doesn't show media data was served. The fixture's
-    /// movie header sits past the first 8 MB, so a known duration and frame size show the
-    /// player reached it through ranged responses. Frame delivery needs the app (H2).
+    /// Ranged serving, observed through this handler rather than through `evaluateJavaScript`.
+    ///
+    /// The page's CSP now carries `sandbox` (A4-3, D-2), and an opaque origin refuses app-injected
+    /// script as well as the page's own — "Cannot execute JavaScript in this document". That is the
+    /// trade P3-9 recorded and the plan chose deliberately: fix the test, not the policy. So the
+    /// page reports what it found by *requesting* a path that encodes it, and the request log is
+    /// the instrument. It is a better measurement anyway: it watches what the page did to the
+    /// outside world instead of asking the page about itself.
+    ///
+    /// The fixture's movie header sits past the first 8 MB, so a known duration and frame size
+    /// show the player reached it through ranged responses. The old `currentTime > 0` assertion is
+    /// gone: this test's own note recorded that `currentTime` advances even for a truncated copy,
+    /// so it never showed that media data was served.
     @Test func playsMediaServedInRanges() async throws {
         let movie = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("e2e-\(UUID().uuidString).mp4")
         defer { try? FileManager.default.removeItem(at: movie) }
@@ -363,51 +424,34 @@ struct HTMLDocumentEndToEndTests {
         let bytes = try Data(contentsOf: movie)
         let moov = try #require(HTMLMediaFixture.topLevelBoxes(in: bytes).first { $0.type == "moov" })
         #expect(moov.offset > 8 << 20)
-        let harness = try await load(
-            html: "<!doctype html><video id=v src=\"media/v.mp4\" muted playsinline preload=auto></video>",
-            javaScript: true
-        ) { root in
+        let html = """
+        <!doctype html><html><body>
+        <video id=v src="media/v.mp4" muted playsinline preload=auto></video>
+        <script>
+        const v = document.getElementById('v');
+        function report() {
+          const i = new Image();
+          i.src = 'probe/d-' + Math.round(v.duration) + '-w-' + v.videoWidth + '-e-' + (v.error ? v.error.code : 0) + '.png';
+          document.body.append(i);
+        }
+        v.addEventListener('loadedmetadata', report);
+        v.addEventListener('error', report);
+        </script></body></html>
+        """
+        let harness = try await load(html: html, remote: true, javaScript: true) { root in
             try FileManager.default.createDirectory(at: root.appendingPathComponent("site/pages/media"), withIntermediateDirectories: true)
             try bytes.write(to: root.appendingPathComponent("site/pages/media/v.mp4"))
         }
         defer { harness.remove() }
-        // Not awaited: play() may never settle, and an await here can't be cancelled.
-        _ = try await harness.webView.evaluateJavaScript("document.getElementById('v').play(); 0")
-        var time = 0.0
-        let deadline = ContinuousClock.now + .seconds(20)
-        while ContinuousClock.now < deadline, time <= 0.5 {
-            try await Task.sleep(for: .milliseconds(200))
-            time = try await harness.webView.evaluateJavaScript("document.getElementById('v').currentTime") as? Double ?? 0
+
+        try await waitUntil(timeout: .seconds(20)) {
+            harness.handler.requestLog.contains { ($0.components?.last ?? "").hasPrefix("d-") }
         }
-        let state = try await harness.webView.evaluateJavaScript("""
-            (() => { const v = document.getElementById('v'); const q = v.getVideoPlaybackQuality();
-              return JSON.stringify({duration: v.duration, width: v.videoWidth, error: v.error ? v.error.code : 0, frames: q.totalVideoFrames}); })()
-            """) as? String ?? "{}"
-        let info = try JSONSerialization.jsonObject(with: Data(state.utf8)) as? [String: Any] ?? [:]
-        // The handler records this only in a debug build, so these assertions compile away
-        // in release rather than failing there. What they observe is bookkeeping; the
-        // behaviour behind it is asserted alongside and still runs in both configurations.
-        #if DEBUG
-        // The handler records this only in a debug build, so these assertions compile away
-        // in release rather than failing there. What they observe is bookkeeping; the
-        // behaviour behind it is asserted alongside and still runs in both configurations.
-        #if DEBUG
+        let probe = try #require(harness.handler.requestLog.compactMap { $0.components?.last }.first { $0.hasPrefix("d-") })
         let media = harness.handler.requestLog.filter { $0.components?.last == "v.mp4" }
-        print("H1e-record media size=\(bytes.count) moov=\(moov.offset) currentTime=\(time) state=\(state) responses=\(media.count)")
-        #endif
-        #endif
-        #expect(time > 0)
-        #expect(info["duration"] as? Double == 10)
-        #expect(info["width"] as? Int == 1280)
-        #expect(info["error"] as? Int == 0)
-        // The handler records this only in a debug build, so these assertions compile away
-        // in release rather than failing there. What they observe is bookkeeping; the
-        // behaviour behind it is asserted alongside and still runs in both configurations.
-        #if DEBUG
-        // The handler records this only in a debug build, so these assertions compile away
-        // in release rather than failing there. What they observe is bookkeeping; the
-        // behaviour behind it is asserted alongside and still runs in both configurations.
-        #if DEBUG
+        print("A4-3-record media size=\(bytes.count) moov=\(moov.offset) probe=\(probe) responses=\(media.count)")
+        // The page read the metadata, which lives past the first 8 MB, so ranged reads got there.
+        #expect(probe == "d-10-w-1280-e-0.png", "the page reported \(probe)")
         #expect(!media.isEmpty)
         for entry in media {
             guard case .served(let status, let size) = entry.outcome else {
@@ -417,44 +461,55 @@ struct HTMLDocumentEndToEndTests {
             #expect(status == 206)
             #expect(size <= 8 << 20)
         }
-        #endif
-        #endif
         #expect(bytes.count >= 20 << 20)
     }
 
     // MARK: 5. Session swap
 
-    // Debug-only in full, not for what it asserts but for what it waits for: the waits
-    // below are on the handler's debug-only log, and a test that runs without its
-    // waits is worse than one that doesn't run.
-    #if DEBUG
-    // Debug-only in full, not for what it asserts but for what it waits for: the waits
-    // below are on the handler's debug-only log, and a test that runs without its
-    // waits is worse than one that doesn't run.
-    #if DEBUG
+    /// A request carrying a retired token is refused, observed the same way as everything else
+    /// now: the page itself keeps asking, on an interval, so the token can be retired underneath
+    /// it without racing a one-shot.
+    ///
+    /// It used to inject the second request with `evaluateJavaScript`. The page's `sandbox`
+    /// (A4-3, D-2) refuses app-injected script as firmly as the page's own, and this is the
+    /// better instrument regardless: what a page with a stale base URL gets is the thing under
+    /// test, not what we can inject into it.
     @Test func requestsWithAnOldTokenFailAfterANewLoad() async throws {
+        let html = """
+        <!doctype html><html><body><img id=a src="img/a.png">
+        <script>
+        let n = 0;
+        setInterval(() => {
+          const i = new Image();
+          i.src = 'img/b.png?n=' + (++n);
+          document.body.append(i);
+        }, 300);
+        </script></body></html>
+        """
         let harness = try await load(
-            html: "<!doctype html><img id=a src=\"img/a.png\">",
-            files: ["site/pages/img/a.png": RecordingServer.png, "site/pages/img/b.png": RecordingServer.png]
+            html: html,
+            files: ["site/pages/img/a.png": RecordingServer.png, "site/pages/img/b.png": RecordingServer.png],
+            remote: true,
+            javaScript: true
         )
         defer { harness.remove() }
+        // The page is live, and its own repeated request is being served under the current token.
         try await waitUntil(timeout: .seconds(5)) { harness.served().contains(["site", "pages", "img", "a.png"]) }
+        try await waitUntil(timeout: .seconds(5)) { harness.served().contains(["site", "pages", "img", "b.png"]) }
+
+        // Retire it. Everything the page asks for from here carries the old one.
         let before = harness.handler.requestLog.count
         _ = try harness.handler.beginLoad(
             document: Data("<p>new</p>".utf8),
             documentURL: harness.root.appendingPathComponent("site/pages/index.html"),
             scopeRoot: harness.root,
-            allowsRemoteContent: false
-        )
-        // App script, not page script: JavaScript is off for the page.
-        _ = try await harness.webView.evaluateJavaScript(
-            "const i = document.createElement('img'); i.src = 'img/b.png'; document.body.append(i); 0"
+            policy: .blocked
         )
         try await waitUntil(timeout: .seconds(5)) { harness.handler.requestLog.count > before }
-        #expect(harness.handler.requestLog.dropFirst(before).map(\.outcome) == [.refused("unknown load")])
-        #expect(!harness.served().contains(["site", "pages", "img", "b.png"]))
+        let after = Array(harness.handler.requestLog.dropFirst(before))
+        #expect(!after.isEmpty, "the page stopped asking")
+        #expect(after.allSatisfy { $0.outcome == .refused("unknown load") },
+                "a retired token was not refused: \(after.map(\.outcome))")
     }
-    #endif
-    #endif
 }
 #endif

@@ -10,8 +10,15 @@ public enum HTMLDocumentText {
     public struct Prepared: Sendable, Equatable {
         /// The page as UTF-8.
         public let html: Data
-        /// Whether the page references web content (for the banner only; not a control).
-        public let referencesRemoteContent: Bool
+        /// Whether the page might run something: a `<script` element or an inline event handler.
+        /// **For the affordance and the copy only; never a control.** It decides whether the
+        /// window offers to run the document at all, so that a file with no script never spends
+        /// the one signal the design rests on.
+        public let mightRunScript: Bool
+        /// Whether the page asks for code from the web. **Copy only, never a control** — the CSP
+        /// refuses remote code whatever this says; this is only what lets the bar explain the
+        /// refusal instead of leaving a page silently half-working.
+        public let asksForRemoteScript: Bool
         /// The WHATWG name of the encoding the file was read with.
         public let encoding: String
     }
@@ -31,7 +38,8 @@ public enum HTMLDocumentText {
         let (text, encoding) = decode(Array(data))
         return Prepared(
             html: Data(neutralizingHTMLDocumentTags(text).utf8),
-            referencesRemoteContent: referencesRemoteContent(text),
+            mightRunScript: mightRunScript(text),
+            asksForRemoteScript: asksForRemoteScript(text),
             encoding: encoding
         )
     }

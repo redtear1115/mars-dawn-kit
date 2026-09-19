@@ -52,25 +52,61 @@ public final class HTMLDocumentSchemeHandler: NSObject, WKURLSchemeHandler {
     // MARK: Content-Security-Policy
 
     nonisolated static let blockedCSP = "default-src 'none'; img-src marsdawn-html: data:; style-src marsdawn-html: 'unsafe-inline'; font-src marsdawn-html: data:; media-src marsdawn-html:; script-src 'none'; object-src 'none'; frame-src 'none'; child-src 'none'; worker-src 'none'; connect-src 'none'; manifest-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'"
-    nonisolated static let remoteAllowedCSP = "default-src 'none'; img-src marsdawn-html: data: https:; style-src marsdawn-html: 'unsafe-inline' https:; font-src marsdawn-html: data: https:; media-src marsdawn-html: https:; script-src 'none'; object-src 'none'; frame-src 'none'; child-src 'none'; worker-src 'none'; connect-src 'none'; manifest-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'"
 
-    /// P3-9: `sandbox` directive added to the page's CSP (nil: none). Not adopted: WebKit then
-    /// refuses the app's own script in the page, which the media checks need.
-    nonisolated static let documentSandboxDirective: String? = nil
-    /// P3-9: whether the remote-allowed page CSP adds `upgrade-insecure-requests`. Not adopted,
-    /// for two reasons. MarsDawn supports https only, and plaintext http is blocked rather than
+    /// The policy for a document the reader chose to run (A4-3).
+    ///
+    /// `script-src 'unsafe-inline'` and nothing else: the document runs the code it arrived with.
+    /// No `https:`, so a `<script src="https://…">` is refused (D-1c) — refusing remote code is
+    /// what keeps "the program is the bytes in the file" true, and it is the property the bar's
+    /// "its own code" claims. No `'unsafe-eval'`, for the same reason: data fetched at run time
+    /// must not become code. No `marsdawn-html:` either, because `ServedFileType` never serves
+    /// `js`, so the token would grant a source that can't be satisfied — and a dead token that
+    /// reads as live is how a later change to the served types would silently turn this into
+    /// "execute arbitrary .js from the reader's folder", a permission nobody reviewed.
+    ///
+    /// `connect-src https:` is what the copy means by "can send data over the network".
+    nonisolated static let runningCSP = "default-src 'none'; img-src marsdawn-html: data: https:; style-src marsdawn-html: 'unsafe-inline' https:; font-src marsdawn-html: data: https:; media-src marsdawn-html: https:; script-src 'unsafe-inline'; object-src 'none'; frame-src 'none'; child-src 'none'; worker-src 'none'; connect-src https:; manifest-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'"
+
+    /// P3-9, revisited for A4-3: the `sandbox` directive on the page's CSP, per policy.
+    ///
+    /// It was `nil` in H1 because `sandbox` stops the end-to-end tests' own `evaluateJavaScript`
+    /// instrumentation working — a production control dropped to keep a test harness going. With
+    /// scripts deliberately on, it is the control that matters most, so the tests changed instead:
+    /// they observe what a page *did* through this handler's request log rather than asking the
+    /// page about itself.
+    ///
+    /// Without `allow-same-origin` the page runs in an opaque origin, so every file this handler
+    /// serves is cross-origin to it. That is what keeps file *contents* away from script: canvas
+    /// is tainted by a sibling image, `CSSStyleSheet.cssRules` throws for a sibling stylesheet,
+    /// and a `.vtt` track won't load at all, since no `Access-Control-Allow-Origin` is sent.
+    /// It is the line between "the document can learn which files exist" — which it can, and
+    /// which per-file consent and the folder narrowing make acceptable — and "it can read them".
+    ///
+    /// `allow-scripts` is the only capability granted while running. Not granted, and each one
+    /// load-bearing: forms (a second exfiltration channel), popups, modals (`alert` is the
+    /// cheapest way for a page to imitate the app's own chrome), top-level navigation, pointer
+    /// lock, presentation and orientation lock.
+    nonisolated static func documentSandboxDirective(for policy: HTMLContentPolicy) -> String {
+        switch policy {
+        case .blocked: return "sandbox"
+        case .running: return "sandbox allow-scripts"
+        }
+    }
+
+    /// P3-9: whether the running page's CSP adds `upgrade-insecure-requests`. Not adopted, for
+    /// two reasons. MarsDawn supports https only, and plaintext http is blocked rather than
     /// upgraded: the directive would turn a page's `http://` reference into a TLS connection to
     /// the same host instead of stopping it, so a document could reach a host the reader was
-    /// never told about. And the plan's condition for adopting it — the remote case still
-    /// passing with its HTTP listener — was never met, because that case moved to TLS listeners.
+    /// never told about. And the plan's condition for adopting it — the remote case still passing
+    /// with its HTTP listener — was never met, because that case moved to TLS listeners.
     nonisolated static let upgradesInsecureRequests = false
 
     /// The CSP header for the page.
-    nonisolated static func documentCSP(allowsRemoteContent: Bool) -> String {
-        var policy = allowsRemoteContent ? remoteAllowedCSP : blockedCSP
-        if allowsRemoteContent, upgradesInsecureRequests { policy += "; upgrade-insecure-requests" }
-        if let documentSandboxDirective { policy += "; \(documentSandboxDirective)" }
-        return policy
+    nonisolated static func documentCSP(for policy: HTMLContentPolicy) -> String {
+        var csp = policy == .running ? runningCSP : blockedCSP
+        if policy == .running, upgradesInsecureRequests { csp += "; upgrade-insecure-requests" }
+        let directive = documentSandboxDirective(for: policy)
+        return directive.isEmpty ? csp : csp + "; " + directive
     }
 
     /// The CSP header for every subresource (an SVG or CSS file is never a live document).
@@ -88,18 +124,18 @@ public final class HTMLDocumentSchemeHandler: NSObject, WKURLSchemeHandler {
         /// The folders from the scope root to the document's folder.
         let ancestors: [String]
         let document: Data
-        let allowsRemoteContent: Bool
+        let policy: HTMLContentPolicy
         var pageServed = false
         var requestCount = 0
         var bytesServed: Int64 = 0
         var loggedExhaustion = false
 
-        init(token: String, reader: ScopedFileReader, ancestors: [String], document: Data, allowsRemoteContent: Bool) {
+        init(token: String, reader: ScopedFileReader, ancestors: [String], document: Data, policy: HTMLContentPolicy) {
             self.token = token
             self.reader = reader
             self.ancestors = ancestors
             self.document = document
-            self.allowsRemoteContent = allowsRemoteContent
+            self.policy = policy
         }
     }
 
@@ -135,13 +171,47 @@ public final class HTMLDocumentSchemeHandler: NSObject, WKURLSchemeHandler {
         let outcome: LogOutcome
     }
 
-    #if DEBUG
-    /// Test-only record of each request: its components below the scope root (never full
-    /// paths) and what happened to it.
+    /// A bounded record of each request: its components below the scope root (never full paths)
+    /// and what happened to it. The newest `logLimit` are kept.
+    ///
+    /// Not debug-only. It is how a document is observed from outside itself, in the app as well as
+    /// here — the page's CSP carries `sandbox`, so `evaluateJavaScript` is refused and the page
+    /// can no longer be asked anything — and a record that exists only in debug builds is a
+    /// behaviour nobody exercises in the build that ships.
     private(set) var requestLog: [LogEntry] = []
+    /// The most requests kept. A load may make 2,000; this bounds the memory a long-lived handler
+    /// can accumulate, at the cost of the oldest entries.
+    static let logLimit = 512
+
+    #if DEBUG
     /// Components of each read as it starts.
     private(set) var readLog: [[String]] = []
     #endif
+
+    /// What this handler served, and what it turned away, as paths below the scope root.
+    ///
+    /// Public so that tests **in the app** can observe a document from outside it. The page's CSP
+    /// carries `sandbox`, which refuses `evaluateJavaScript` as firmly as it refuses the page's
+    /// own script, so "did this document load its stylesheet?" can no longer be answered by asking
+    /// the page. It is answered here, by what the page asked this handler for — which is the
+    /// better question anyway. Read-only, and present in **every** build: see `requestLog` above
+    /// for why the record isn't debug-only.
+    public var servedPaths: [[String]] {
+        requestLog.compactMap { entry in
+            if case .served = entry.outcome { return entry.components }
+            return nil
+        }
+    }
+
+    /// Paths this handler refused or could not read.
+    public var unservedPaths: [[String]] {
+        requestLog.compactMap { entry in
+            switch entry.outcome {
+            case .refused, .failed: return entry.components
+            case .page, .served: return nil
+            }
+        }
+    }
 
     override public convenience init() {
         self.init(limits: Limits())
@@ -159,8 +229,8 @@ public final class HTMLDocumentSchemeHandler: NSObject, WKURLSchemeHandler {
     ///   - document: The page, already prepared (see `HTMLDocumentText`), at most 16 MB.
     ///   - documentURL: The document's file, which must be inside `scopeRoot`.
     ///   - scopeRoot: The folder whose files the page may use (the document's folder or a granted one).
-    ///   - allowsRemoteContent: Whether the page's CSP allows https images, styles, fonts and media.
-    public func beginLoad(document: Data, documentURL: URL, scopeRoot: URL, allowsRemoteContent: Bool) throws -> URL {
+    ///   - policy: Blocked, or running because the reader chose to run this document (A4-3).
+    public func beginLoad(document: Data, documentURL: URL, scopeRoot: URL, policy: HTMLContentPolicy) throws -> URL {
         session = nil
         guard document.count <= limits.documentBytes else { throw LoadError.tooLarge }
         guard documentURL.isFileURL else { throw LoadError.outsideScope }
@@ -176,7 +246,7 @@ public final class HTMLDocumentSchemeHandler: NSObject, WKURLSchemeHandler {
         let token = try Self.makeToken()
         let ancestors = Array(components.dropLast())
         session = Session(token: token, reader: reader, ancestors: ancestors, document: document,
-                          allowsRemoteContent: allowsRemoteContent)
+                          policy: policy)
         let path = String(repeating: Self.placeholderSegment + "/", count: ancestors.count) + Self.pageName
         return URL(string: "\(Self.scheme)://\(token)/\(path)")!
     }
@@ -346,7 +416,7 @@ public final class HTMLDocumentSchemeHandler: NSObject, WKURLSchemeHandler {
             session.pageServed = true
             let headers = Self.headers(
                 contentType: "text/html; charset=utf-8", length: session.document.count,
-                csp: Self.documentCSP(allowsRemoteContent: session.allowsRemoteContent)
+                csp: Self.documentCSP(for: session.policy)
             )
             respond(urlSchemeTask, status: 200, headers: headers, body: session.document)
             record(nil, .page)
@@ -526,9 +596,13 @@ public final class HTMLDocumentSchemeHandler: NSObject, WKURLSchemeHandler {
     }
 
     private func record(_ components: [String]?, _ outcome: LogOutcome) {
-        #if DEBUG
+        // Not `#if DEBUG`. The record is declared unconditionally above, and a declaration whose
+        // writer is conditional is worse than no record at all: `servedPaths` would answer "the
+        // page asked for nothing" in a build where nothing was ever written down, which reads
+        // exactly like a real answer. That cost an hour here, and only a test asserting a
+        // *positive* caught it.
         requestLog.append(LogEntry(components: components, outcome: outcome))
-        #endif
+        if requestLog.count > Self.logLimit { requestLog.removeFirst(requestLog.count - Self.logLimit) }
     }
 }
 #endif
