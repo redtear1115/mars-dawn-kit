@@ -283,6 +283,12 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
             )
         }
         signposter.endInterval("paginate", paginateSignpost)
+        // A PDF saved to a file gets its text layer repaired: CJK radicals where the page shows
+        // ideographs (mars-dawn-kit#18). Printing to paper has no text layer to repair.
+        if completed, operation.printInfo.jobDisposition == .save,
+           let url = operation.printInfo.dictionary()[NSPrintInfo.AttributeKey.jobSavingURL] as? URL {
+            ToUnicodeRepair.repairFile(at: url, source: markdown)
+        }
         return (completed, exporter.diagramErrors)
     }
 
