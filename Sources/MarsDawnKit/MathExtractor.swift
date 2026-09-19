@@ -158,19 +158,28 @@ public enum MathExtractor {
 
     /// Extracts math, drawing the placeholder nonce from `generator` (for tests).
     public static func extract(from body: String, using generator: inout some RandomNumberGenerator) -> Extraction {
+        extractCountingWork(from: body, using: &generator).extraction
+    }
+
+    /// `extract`, also returning how many steps the extractor itself took: every node it
+    /// visits, every line and byte it scans, every entry it searches. Parsing is not counted.
+    /// The count depends only on the input, so a test can check that it grows linearly
+    /// without timing anything (mars-dawn-kit#15).
+    static func extractCountingWork(from body: String, using generator: inout some RandomNumberGenerator) -> (extraction: Extraction, work: Int) {
         let hex = String(generator.next() as UInt64, radix: 16)
         let nonce = String(repeating: "0", count: 16 - hex.count) + hex
         guard body.utf8.count <= maxBodyBytes, body.utf8.contains(Byte.dollar) else {
-            return Extraction(markdown: body, nonce: nonce, expressions: [])
+            return (Extraction(markdown: body, nonce: nonce, expressions: []), 0)
         }
         // The whole run happens inside one worker body: the document and every node stay
         // there, and only the rewritten source and the expressions come back.
-        let rewritten = MarkdownParsing.withDocument(body) { outcome -> (String, [Expression]) in
-            guard case .document(let document) = outcome else { return (body, []) }
+        let rewritten = MarkdownParsing.withDocument(body) { outcome -> (String, [Expression], Int) in
+            guard case .document(let document) = outcome else { return (body, [], 0) }
             var engine = Engine(body: body, nonce: nonce)
-            return engine.run(document)
+            let (markdown, expressions) = engine.run(document)
+            return (markdown, expressions, engine.steps)
         }
-        return Extraction(markdown: rewritten.0, nonce: nonce, expressions: rewritten.1)
+        return (Extraction(markdown: rewritten.0, nonce: nonce, expressions: rewritten.1), rewritten.2)
     }
 
     /// True when a code block's info string names the `math` language (first word, any
@@ -335,9 +344,10 @@ private func isInlineContainer(_ node: any Markup) -> Bool {
 
 /// Visits block-level nodes in document order, calling `visit` with the number of
 /// enclosing block quotes. Returning false skips the node's children.
-private func walkBlocks(_ document: Document, _ visit: (any Markup, Int) -> Bool) {
+private func walkBlocks(_ document: Document, _ steps: inout Int, _ visit: (any Markup, Int) -> Bool) {
     var stack: [(any Markup, Int)] = [(document, 0)]
     while let (node, quoteDepth) = stack.popLast() {
+        steps += 1
         guard node is Document || visit(node, quoteDepth) else { continue }
         let childDepth = quoteDepth + (node is BlockQuote ? 1 : 0)
         for child in Array(node.children).reversed() where !(child is InlineMarkup) {
@@ -348,9 +358,10 @@ private func walkBlocks(_ document: Document, _ visit: (any Markup, Int) -> Bool
 
 /// Calls `visit` for every descendant of `node` in document order. Returning false skips
 /// that descendant's children.
-private func walkDescendants(_ node: any Markup, _ visit: (any Markup) -> Bool) {
+private func walkDescendants(_ node: any Markup, _ steps: inout Int, _ visit: (any Markup) -> Bool) {
     var stack: [any Markup] = Array(node.children).reversed()
     while let current = stack.popLast() {
+        steps += 1
         guard visit(current), current.childCount > 0 else { continue }
         stack.append(contentsOf: Array(current.children).reversed())
     }
@@ -358,9 +369,9 @@ private func walkDescendants(_ node: any Markup, _ visit: (any Markup) -> Bool) 
 
 /// Links, images, code spans, inline HTML, emphasis and strong emphasis under `node`,
 /// keyed by kind and content.
-private func inlineSignature(_ node: any Markup) -> [String: Int] {
+private func inlineSignature(_ node: any Markup, _ steps: inout Int) -> [String: Int] {
     var signature: [String: Int] = [:]
-    walkDescendants(node) { child in
+    walkDescendants(node, &steps) { child in
         let key: String? = switch child {
         case let link as Link: "L" + (link.destination ?? "") + "\u{0}" + (link.title ?? "")
         case let image as Image: "I" + (image.source ?? "") + "\u{0}" + (image.title ?? "")
@@ -434,6 +445,9 @@ private struct Engine {
     private var candidates: [Candidate] = []
     private var lengthChecker = LengthChecker()
     private var nextLinkZone = 0
+    /// The extractor's own work so far: one per node visited, line or byte scanned, or entry
+    /// searched (`MathExtractor.extractCountingWork`). Every loop in the engine adds to it.
+    private(set) var steps = 0
 
     init(body: String, nonce: String) {
         self.body = body
@@ -444,6 +458,7 @@ private struct Engine {
         var start = 0
         var position = 0
         while position < s.count {
+            steps += 1
             switch s[position] {
             case Byte.newline:
                 lineStarts.append(start)
@@ -472,30 +487,38 @@ private struct Engine {
         // cut off where the next block starts.
         var blocks: [(node: any Markup, start: Int, quoteDepth: Int)] = []
         var visited = 0
-        walkBlocks(original) { node, quoteDepth in
+        var walked = 0
+        walkBlocks(original, &walked) { node, quoteDepth in
             // Past the limit, stop descending; the body is returned unchanged below.
             visited += 1
             guard visited <= MathExtractor.maxBlocks else { return false }
             if let range = node.range { blocks.append((node, offset(range.lowerBound), quoteDepth)) }
             return !isInlineContainer(node)
         }
+        steps += walked
         guard visited <= MathExtractor.maxBlocks else { return (body, []) }
         mask = [UInt8](repeating: 0, count: s.count)
         var ordinals: [Int: Int] = [:]
-        for (index, block) in blocks.enumerated() where isInlineContainer(block.node) {
+        for (index, block) in blocks.enumerated() {
+            steps += 1
+            guard isInlineContainer(block.node) else { continue }
             guard let range = block.node.range else { continue }
             let line = range.lowerBound.line
             let ordinal = ordinals[line, default: 0]
             ordinals[line] = ordinal + 1
             guard candidates.count < MathExtractor.maxExpressionCount else { continue }
-            let limit = blocks[(index + 1)...].first { $0.start > block.start }?.start ?? s.count
+            var searched = 0
+            let limit = blocks[(index + 1)...].first { searched += 1; return $0.start > block.start }?.start ?? s.count
+            steps += searched
             collect(block.node, range: range, limit: limit,
                     key: ContainerKey(line: line, ordinal: ordinal), quoteDepth: block.quoteDepth)
         }
         mask = []
         guard !candidates.isEmpty else { return (body, []) }
 
-        let originalBlocks = blockEntries(original)
+        var entrySteps = 0
+        let originalBlocks = blockEntries(original, &entrySteps)
+        steps += entrySteps
         // Pass 1 is done, so the state the check reads never changes again. A copy of it
         // is what the nested worker bodies capture; the document itself is not captured,
         // because it is not `Sendable` and must not escape its own body.
@@ -503,15 +526,17 @@ private struct Engine {
         var active = Set(containers.indices.filter { containers[$0].expectedSignature != nil })
         for _ in 0..<Self.maxRounds {
             guard !active.isEmpty else { break }
-            let (markdown, expressions, order) = build(active)
+            let (markdown, expressions, order, buildSteps) = build(active)
+            steps += buildSteps
             let round = active
             // Nested: already on the worker, so this parse runs inline there.
-            let failed = MarkdownParsing.withDocument(markdown) { outcome -> Set<Int>? in
+            let checked = MarkdownParsing.withDocument(markdown) { outcome -> (Set<Int>, Int)? in
                 guard case .document(let rewritten) = outcome else { return nil }
                 return checker.check(rewritten, active: round, order: order, originalBlocks: originalBlocks)
             }
             // A rewrite the worker refuses can't be checked, so it is never used.
-            guard let failed else { return (body, []) }
+            guard let (failed, checkSteps) = checked else { return (body, []) }
+            steps += checkSteps
             if failed.isEmpty { return (markdown, expressions) }
             active.subtract(failed)
         }
@@ -527,24 +552,26 @@ private struct Engine {
 
     /// Where cmark-gfm's column count starts on a continuation line: after the block-quote
     /// markers and all leading whitespace.
-    private func contentStart(line: Int, quoteDepth: Int) -> Int {
+    private mutating func contentStart(line: Int, quoteDepth: Int) -> Int {
         var position = lineStarts[line - 1]
         let end = lineEnds[line - 1]
         var remaining = quoteDepth
         while remaining > 0 {
-            while position < end, Byte.isSpaceOrTab(s[position]) { position += 1 }
+            steps += 1
+            while position < end, Byte.isSpaceOrTab(s[position]) { steps += 1; position += 1 }
             guard position < end, s[position] == Byte.greater else { break }
             position += 1
             remaining -= 1
         }
-        while position < end, Byte.isSpaceOrTab(s[position]) { position += 1 }
+        while position < end, Byte.isSpaceOrTab(s[position]) { steps += 1; position += 1 }
         return position
     }
 
     /// 1-based line containing a byte offset.
-    private func line(containing position: Int) -> Int {
+    private mutating func line(containing position: Int) -> Int {
         var low = 0, high = lineStarts.count - 1
         while low < high {
+            steps += 1
             let mid = (low + high + 1) / 2
             if lineStarts[mid] <= position { low = mid } else { high = mid - 1 }
         }
@@ -601,7 +628,8 @@ private struct Engine {
         var linkTexts: [Range<Int>] = []
         var opaque: [Range<Int>] = []
         var reliable = true
-        walkDescendants(node) { child in
+        var walked = 0
+        walkDescendants(node, &walked) { child in
             guard reliable else { return false }
             switch child {
             case let link as Link:
@@ -651,6 +679,7 @@ private struct Engine {
                 return true
             }
         }
+        steps += walked
         guard reliable else { return }
 
         // Zones: 1 = scannable, 2 = opaque, 3... = the text of one link.
@@ -665,6 +694,7 @@ private struct Engine {
         let firstCandidate = candidates.count
         let containerIndex = containers.count
         for line in firstLine...lastLine {
+            steps += 1
             let segmentStart = line == firstLine ? start : lineStarts[line - 1]
             let segmentEnd = line == lastLine ? end : lineEnds[line - 1]
             if segmentStart < segmentEnd {
@@ -677,14 +707,20 @@ private struct Engine {
         // What the rewritten container should still contain: everything except what the
         // math enclosed (estimated by parsing each expression on its own). Nested: this
         // runs inline on the worker the body's parse already opened.
-        var expected: [String: Int]? = inlineSignature(node)
-        for candidate in candidates[firstCandidate...]
-        where candidate.tex.utf8.contains(where: { Byte.structural.contains($0) }) {
+        var signatureSteps = 0
+        var expected: [String: Int]? = inlineSignature(node, &signatureSteps)
+        steps += signatureSteps
+        for candidate in candidates[firstCandidate...] {
+            steps += 1 + candidate.tex.utf8.count
+            guard candidate.tex.utf8.contains(where: { Byte.structural.contains($0) }) else { continue }
             let tex = candidate.tex
-            let signature = MarkdownParsing.withDocument(tex) { outcome -> [String: Int]? in
+            let counted = MarkdownParsing.withDocument(tex) { outcome -> ([String: Int], Int)? in
                 guard case .document(let document) = outcome else { return nil }
-                return inlineSignature(document)
+                var texSteps = 0
+                return (inlineSignature(document, &texSteps), texSteps)
             }
+            steps += counted?.1 ?? 0
+            let signature = counted?.0
             // TeX the worker refuses leaves no way to tell what the math encloses, so the
             // container is never rewritten and its math stays as source. Defensive: the
             // TeX is a run of bytes from one line of a body the worker already accepted,
@@ -692,6 +728,7 @@ private struct Engine {
             // (`texIsNeverDeeperThanTheBodyItCameFrom`).
             guard let signature else { expected = nil; break }
             for (key, count) in signature {
+                steps += 1
                 let remaining = (expected?[key] ?? 0) - count
                 if remaining < 0 { expected = nil; break }
                 expected?[key] = remaining == 0 ? nil : remaining
@@ -707,13 +744,14 @@ private struct Engine {
     private mutating func displayRewrite(start: Int, end: Int, firstLine: Int, lastLine: Int)
         -> (range: Range<Int>, tex: String, fence: FenceRewrite)?? {
         var e = end
-        while e > start, Byte.isWhitespace(s[e - 1]) { e -= 1 }
+        while e > start, Byte.isWhitespace(s[e - 1]) { steps += 1; e -= 1 }
         guard e - start >= 4, s[start] == Byte.dollar, s[start + 1] == Byte.dollar,
               s[e - 1] == Byte.dollar, s[e - 2] == Byte.dollar else { return nil }
         let texRange = (start + 2)..<(e - 2)
         // Exactly one display expression: no other unescaped `$$` inside, closer unescaped.
         var backslashes = 0
         for position in texRange {
+            steps += 1
             let byte = s[position]
             if byte == Byte.dollar, backslashes % 2 == 0, s[position + 1] == Byte.dollar { return nil }
             backslashes = byte == Byte.backslash ? backslashes + 1 : 0
@@ -723,6 +761,7 @@ private struct Engine {
 
         var longestRun = 0, run = 0
         for position in lineStarts[firstLine - 1]..<lineEnds[lastLine - 1] {
+            steps += 1
             run = s[position] == Byte.backtick ? run + 1 : 0
             longestRun = max(longestRun, run)
         }
@@ -736,13 +775,15 @@ private struct Engine {
 
     private mutating func fillMask(_ range: Range<Int>, _ value: UInt8) {
         guard !range.isEmpty else { return }
+        steps += range.count
         mask.withUnsafeMutableBufferPointer { buffer in
             UnsafeMutableBufferPointer(rebasing: buffer[range]).update(repeating: value)
         }
     }
 
-    private func contains(_ byte: UInt8, in range: Range<Int>) -> Bool {
+    private mutating func contains(_ byte: UInt8, in range: Range<Int>) -> Bool {
         guard !range.isEmpty else { return false }
+        steps += range.count
         return s.withUnsafeBufferPointer { buffer in
             memchr(buffer.baseAddress! + range.lowerBound, Int32(byte), range.count) != nil
         }
@@ -754,6 +795,8 @@ private struct Engine {
         private var topCursor = 0
         private var links: [UInt8: [Int]] = [:]
         private var linkCursors: [UInt8: Int] = [:]
+        /// Cursor moves, for the engine's `steps`.
+        private(set) var steps = 0
 
         var isEmpty: Bool { top.isEmpty && links.isEmpty }
 
@@ -763,12 +806,12 @@ private struct Engine {
 
         mutating func next(zone: UInt8, from start: Int) -> Int? {
             if zone == 1 {
-                while topCursor < top.count, top[topCursor] < start { topCursor += 1 }
+                while topCursor < top.count, top[topCursor] < start { steps += 1; topCursor += 1 }
                 return topCursor < top.count ? top[topCursor] : nil
             }
             guard let list = links[zone] else { return nil }
             var cursor = linkCursors[zone, default: 0]
-            while cursor < list.count, list[cursor] < start { cursor += 1 }
+            while cursor < list.count, list[cursor] < start { steps += 1; cursor += 1 }
             linkCursors[zone] = cursor
             return cursor < list.count ? list[cursor] : nil
         }
@@ -782,6 +825,7 @@ private struct Engine {
         var doubles = Closers()
         var backslashes = 0
         for position in segment {
+            steps += 1
             let byte = s[position]
             if byte == Byte.dollar, backslashes % 2 == 0 {
                 let zone = mask[position]
@@ -798,10 +842,12 @@ private struct Engine {
             backslashes = byte == Byte.backslash ? backslashes + 1 : 0
         }
         guard !singles.isEmpty || !doubles.isEmpty else { return }
+        defer { steps += singles.steps + doubles.steps }
 
         let end = segment.upperBound
         var i = segment.lowerBound
         while i < end {
+            steps += 1
             guard candidates.count < MathExtractor.maxExpressionCount else { return }
             let zone = mask[i]
             guard zone == 1 || zone >= 3 else { i += 1; continue }
@@ -810,7 +856,7 @@ private struct Engine {
                 i += i + 1 < end && Byte.isASCIIPunctuation(s[i + 1]) && mask[i + 1] == zone ? 2 : 1
             case Byte.dollar:
                 var runEnd = i
-                while runEnd < end, s[runEnd] == Byte.dollar, mask[runEnd] == zone { runEnd += 1 }
+                while runEnd < end, s[runEnd] == Byte.dollar, mask[runEnd] == zone { steps += 1; runEnd += 1 }
                 let run = runEnd - i
                 if run == 2, let close = doubles.next(zone: zone, from: i + 2),
                    s[(i + 2)..<close].contains(where: { !Byte.isWhitespace($0) }),
@@ -844,7 +890,8 @@ private struct Engine {
 
     /// Rewrites the active containers. Returns the markdown, the expressions and, for each
     /// expression index, the candidate it came from.
-    private func build(_ active: Set<Int>) -> (String, [MathExtractor.Expression], [Int]) {
+    private func build(_ active: Set<Int>) -> (String, [MathExtractor.Expression], [Int], steps: Int) {
+        var steps = s.count  // the copy into `out`
         var out: [UInt8] = []
         out.reserveCapacity(s.count)
         var expressions: [MathExtractor.Expression] = []
@@ -855,7 +902,9 @@ private struct Engine {
             out += bytes
             position = range.upperBound
         }
-        for (index, candidate) in candidates.enumerated() where active.contains(candidate.container) {
+        for (index, candidate) in candidates.enumerated() {
+            steps += 1
+            guard active.contains(candidate.container) else { continue }
             let placeholder = MathExtractor.placeholder(index: expressions.count, nonce: nonceBytes)
             expressions.append(.init(tex: candidate.tex, display: candidate.display, isBlock: candidate.fence != nil))
             order.append(index)
@@ -867,7 +916,7 @@ private struct Engine {
             }
         }
         out += s[position...]
-        return (String(decoding: out, as: UTF8.self), expressions, order)
+        return (String(decoding: out, as: UTF8.self), expressions, order, steps)
     }
 
     // MARK: Pass 2
@@ -876,9 +925,9 @@ private struct Engine {
     /// turns into fences is recorded per entry rather than applied here, so the original
     /// document's entries are taken once and then compared against any round's display
     /// lines with `BlockEntry.substituting(displayLines:)`, without keeping the document.
-    private func blockEntries(_ document: Document) -> [BlockEntry] {
+    private func blockEntries(_ document: Document, _ steps: inout Int) -> [BlockEntry] {
         var entries: [BlockEntry] = []
-        walkBlocks(document) { node, _ in
+        walkBlocks(document, &steps) { node, _ in
             let first = node.range?.lowerBound.line ?? 0
             entries.append(BlockEntry(kind: ObjectIdentifier(type(of: node)), firstLine: first,
                                       lastLine: node.range?.upperBound.line ?? first,
@@ -888,9 +937,15 @@ private struct Engine {
         return entries
     }
 
-    /// Returns the active containers that failed the structural check.
+    /// Returns the active containers that failed the structural check, and the steps it took.
     private func check(_ document: Document, active: Set<Int>, order: [Int],
-                       originalBlocks: [BlockEntry]) -> Set<Int> {
+                       originalBlocks: [BlockEntry]) -> (Set<Int>, Int) {
+        // Separate counters, so no closure below touches one another is passing `inout`.
+        var walked = 0, walkedInside = 0, signed = 0, scanned = 0
+        func placeholders(in string: String) -> [Int] {
+            scanned += string.utf8.count
+            return MathExtractor.placeholderIndices(in: string, nonce: nonce)
+        }
         var failed = Set<Int>()
         var found = [Int](repeating: 0, count: order.count)
         func container(of index: Int) -> Int? {
@@ -903,13 +958,14 @@ private struct Engine {
         // Where the rewritten containers ended up.
         var keyToContainer: [ContainerKey: Int] = [:]
         for index in active where !containers[index].isDisplay { keyToContainer[containers[index].key] = index }
+        scanned += active.count
         var seen = Set<Int>()
         var ordinals: [Int: Int] = [:]
-        walkBlocks(document) { node, _ in
+        walkBlocks(document, &walked) { node, _ in
             if let code = node as? CodeBlock {
-                reject(MathExtractor.placeholderIndices(in: code.code, nonce: nonce))
+                reject(placeholders(in: code.code))
                 let info = code.language ?? ""
-                var infoIndices = MathExtractor.placeholderIndices(in: info, nonce: nonce)
+                var infoIndices = placeholders(in: info)
                 if let index = MathExtractor.blockPlaceholderIndex(info: info, nonce: nonce),
                    let owner = container(of: index), containers[owner].isDisplay, code.parent is Document,
                    code.range?.lowerBound.line == containers[owner].firstLine {
@@ -920,7 +976,7 @@ private struct Engine {
                 return false
             }
             if let html = node as? HTMLBlock {
-                reject(MathExtractor.placeholderIndices(in: html.rawHTML, nonce: nonce))
+                reject(placeholders(in: html.rawHTML))
                 return false
             }
             guard isInlineContainer(node) else { return true }
@@ -935,13 +991,13 @@ private struct Engine {
             }
             if let owner {
                 seen.insert(owner)
-                if inlineSignature(node) != containers[owner].expectedSignature { failed.insert(owner) }
+                if inlineSignature(node, &signed) != containers[owner].expectedSignature { failed.insert(owner) }
             }
             // Placeholders count only in plain text of their own container, outside images.
-            walkDescendants(node) { child in
+            walkDescendants(node, &walkedInside) { child in
                 switch child {
                 case let text as Text:
-                    for index in MathExtractor.placeholderIndices(in: text.string, nonce: nonce) {
+                    for index in placeholders(in: text.string) {
                         guard let expected = container(of: index) else { continue }
                         // A display placeholder in text is never expanded; its fence is checked above.
                         if containers[expected].isDisplay { continue }
@@ -949,17 +1005,17 @@ private struct Engine {
                     }
                     return false
                 case let link as Link:
-                    reject(MathExtractor.placeholderIndices(in: (link.destination ?? "") + (link.title ?? ""), nonce: nonce))
+                    reject(placeholders(in: (link.destination ?? "") + (link.title ?? "")))
                     return true
                 case let image as Image:
                     let strings = [image.source ?? "", image.title ?? "", image.plainText]
-                    reject(strings.flatMap { MathExtractor.placeholderIndices(in: $0, nonce: nonce) })
+                    reject(strings.flatMap { placeholders(in: $0) })
                     return false
                 case let code as InlineCode:
-                    reject(MathExtractor.placeholderIndices(in: code.code, nonce: nonce))
+                    reject(placeholders(in: code.code))
                     return false
                 case let html as InlineHTML:
-                    reject(MathExtractor.placeholderIndices(in: html.rawHTML, nonce: nonce))
+                    reject(placeholders(in: html.rawHTML))
                     return false
                 default:
                     return true
@@ -969,15 +1025,19 @@ private struct Engine {
         }
         for index in active where !containers[index].isDisplay && !seen.contains(index) { failed.insert(index) }
         for (index, count) in found.enumerated() where count != 1 { reject([index]) }
+        scanned += active.count + found.count
 
         // Block structure must be unchanged, except rewritten `$$` paragraphs. A structural
         // change also disturbs the containers after it, so only the blamed containers are
         // reverted this round; the next round checks the rest again.
         let displayLines = Set(active.filter { containers[$0].isDisplay }.map { containers[$0].firstLine })
         let before = displayLines.isEmpty ? originalBlocks : originalBlocks.map { $0.substituting(displayLines: displayLines) }
-        let after = blockEntries(document)
+        var entrySteps = 0
+        let after = blockEntries(document, &entrySteps)
+        scanned += active.count + before.count
         let differs = before.indices.first { index in
-            index >= after.count || before[index].kind != after[index].kind
+            scanned += 1
+            return index >= after.count || before[index].kind != after[index].kind
                 || before[index].firstLine != after[index].firstLine
         }
         if let mismatch = differs ?? (before.count < after.count ? before.count : nil) {
@@ -988,8 +1048,9 @@ private struct Engine {
             }
             var touched = touching(mismatch < before.count ? before[mismatch] : nil)
             if touched.isEmpty { touched = touching(mismatch < after.count ? after[mismatch] : nil) }
-            return touched.isEmpty ? active : touched
+            scanned += 2 * active.count
+            return (touched.isEmpty ? active : touched, walked + walkedInside + signed + scanned + entrySteps)
         }
-        return failed
+        return (failed, walked + walkedInside + signed + scanned + entrySteps)
     }
 }

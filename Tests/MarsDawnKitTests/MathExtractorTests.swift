@@ -624,37 +624,24 @@ struct MathExtractorTests {
     /// (swift-markdown itself overflows the stack on very deep nesting, so the work runs
     /// on a thread with a large stack.)
     ///
-    /// The baseline is the shape the extractor now has: one worker holding two guarded
-    /// parses, the body's and the rewrite's. A bare `Document(parsing:)` would leave the
-    /// pre-scans and the worker's own cost charged to the extractor, and two separate
-    /// guarded parses would charge it one worker too few, which on this input is larger
-    /// than the work being measured.
+    /// Counted, not timed (mars-dawn-kit#15). This used to time `extract` against two guarded
+    /// parses and bound the difference, and on a loaded machine the subtraction was noise: it
+    /// failed with nothing wrong. `extractCountingWork` counts the extractor's own steps --
+    /// every node it visits, line and byte it scans, entry it searches, parsing excluded --
+    /// which depends only on the input. Eight times the input must cost at most ten times the
+    /// steps: linear work gives eight, and a quadratic step anywhere the engine counts scales
+    /// its share by sixty-four.
     @Test func nestedListsScaleLinearly() {
         @Sendable func line(_ depth: Int) -> String { String(repeating: "- ", count: depth) + "$x$" }
-        @Sendable func seconds(_ body: String, _ work: (String) -> Void) -> Double {
-            var best = Double.infinity
-            for _ in 0..<5 {
-                let start = ContinuousClock.now
-                work(body)
-                let elapsed = ContinuousClock.now - start
-                best = min(best, Double(elapsed.components.seconds) + Double(elapsed.components.attoseconds) / 1e18)
-            }
-            return best
-        }
-        final class Results: @unchecked Sendable { var values: [(extract: Double, parse: Double)] = [] }
+        final class Results: @unchecked Sendable { var values: [(work: Int, expressions: Int)] = [] }
         let box = Results()
         let done = DispatchSemaphore(value: 0)
         let thread = Thread { @Sendable in
-            for copies in [10, 40] {
+            for copies in [10, 80] {
                 let body = Array(repeating: line(500), count: copies).joined(separator: "\n\n")
-                let parse = seconds(body) { source in
-                    // One worker, two parses: what extraction costs before its own work.
-                    MarkdownParsing.withDocument(source) { _ in
-                        MarkdownParsing.withDocument(source) { _ in }
-                    }
-                }
-                let total = seconds(body) { _ = MathExtractor.extract(from: $0) }
-                box.values.append((total, parse))
+                var generator = SplitMix(state: 7)
+                let (extraction, work) = MathExtractor.extractCountingWork(from: body, using: &generator)
+                box.values.append((work, extraction.expressionCount))
             }
             done.signal()
         }
@@ -664,16 +651,12 @@ struct MathExtractorTests {
         let results = box.values
         #expect(results.count == 2)
         guard results.count == 2 else { return }
-        // Two guarded parses plus linear work: what the extractor adds beyond parsing grows
-        // linearly with the input (F18), which is the property that catches a quadratic
-        // regression. The bound is relative to what this machine just measured, because these
-        // are wall-clock figures from a machine that may be running anything else. A fixed cap
-        // of 0.1s failed on a 3-CPU CI runner at 0.1018s, and a cap of "less than one parse"
-        // failed in release at 0.0353s against 0.0341s, both with nothing wrong
-        // (mars-dawn-kit#15).
-        let ownSmall = max(results[0].extract - results[0].parse, 0.002)
-        let ownLarge = max(results[1].extract - results[1].parse, 0)
-        expectWithinBudget(ownLarge, ownSmall * 4 * 3 + 0.05, "\(ownSmall)s → \(ownLarge)s")
+        // The work being counted is real: every copy's `$x$` was extracted.
+        #expect(results[0].expressions == 10 && results[1].expressions == 80)
+        let (small, large) = (results[0].work, results[1].work)
+        print("work: nestedListsScaleLinearly \(small) → \(large) steps, ×\(Double(large) / Double(max(small, 1)))")
+        #expect(small > 0)
+        #expect(large <= small * 10, "\(small) → \(large) steps for 8× the input")
     }
 
     // MARK: swift-markdown
