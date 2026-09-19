@@ -178,6 +178,77 @@ struct OpenCommandTests {
             == CLIFailure.Code.inputNotFound.rawValue)
     }
 
+    // MARK: Folders (S1)
+
+    /// The folder's own sandbox, made per test so a directory argument has somewhere real to point.
+    private func makeFolder() throws -> URL {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("open-folder-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
+
+    private func folders(_ arguments: [String]) throws -> [String] {
+        try MarsDawnCommand.Open.parse(arguments).resolvedFolders().map(\.path)
+    }
+
+    @Test func aDirectoryArgumentOpensAsAFolderNotAFile() throws {
+        let dir = try makeFolder()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        #expect(try targets([dir.path]).isEmpty)
+        #expect(try folders([dir.path]) == [dir.standardizedFileURL.path])
+    }
+
+    @Test func aFileAndAFolderTravelTogether() throws {
+        let dir = try makeFolder()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let command = try MarsDawnCommand.Open.parse([files.path("a.md"), "--folder", dir.path])
+        #expect(try command.resolvedTargets().map(\.url.lastPathComponent) == ["a.md"])
+        #expect(try command.resolvedFolders().map(\.path) == [dir.standardizedFileURL.path])
+    }
+
+    /// The same folder named twice is one folder, not two: asking for it as an argument and
+    /// again with --folder is a reasonable thing for a script to do.
+    @Test func thesameFolderNamedTwiceIsOneFolder() throws {
+        let dir = try makeFolder()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        #expect(try folders([dir.path, "--folder", dir.path]) == [dir.standardizedFileURL.path])
+    }
+
+    @Test func twoDifferentFoldersAreAUsageError() throws {
+        let one = try makeFolder(), two = try makeFolder()
+        defer { try? FileManager.default.removeItem(at: one); try? FileManager.default.removeItem(at: two) }
+        #expect(exitCode { _ = try MarsDawnCommand.Open.parse([one.path, "--folder", two.path]).resolvedFolders() } == 64)
+        #expect(exitCode { _ = try MarsDawnCommand.parseAsRoot(["open", "--folder", one.path, "--folder", two.path]) } == 64)
+    }
+
+    @Test func aLineCannotBeAskedForOnAFolder() throws {
+        let dir = try makeFolder()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        #expect(exitCode { _ = try MarsDawnCommand.parseAsRoot(["open", "--line", "9", dir.path]) } == 64)
+    }
+
+    @Test func openWithNothingToOpenIsAUsageError() {
+        #expect(exitCode { _ = try MarsDawnCommand.parseAsRoot(["open"]) } == 64)
+    }
+
+    /// VS Code's muscle memory lands here, so the error names the flag we do have.
+    @Test func dashAIsRefusedByName() throws {
+        let dir = try makeFolder()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        #expect(exitCode { _ = try MarsDawnCommand.parseAsRoot(["open", "-a", dir.path]) } == 64)
+        #expect(MarsDawnCommand.Open.noDashA.contains("--folder"))
+        #expect(MarsDawnCommand.Open.noDashA.contains("one folder"))
+    }
+
+    @Test func aFolderThatIsntThereOrIsntAFolderIsReported() throws {
+        #expect(exitCode { _ = try MarsDawnCommand.Open.parse(["--folder", "/definitely/not/here"]).resolvedFolders() }
+            == CLIFailure.Code.inputNotFound.rawValue)
+        // A file passed where a folder belongs is named as such, not reported as missing.
+        #expect(exitCode { _ = try MarsDawnCommand.Open.parse(["--folder", files.path("a.md")]).resolvedFolders() }
+            == CLIFailure.Code.inputNotFound.rawValue)
+    }
+
     @Test func aMissingFileIsReportedBeforeTheAppIsLookedFor() {
         #expect(exitCode { _ = try MarsDawnCommand.Open.parse(["/definitely/not/here.md:3"]).resolvedTargets() }
             == CLIFailure.Code.inputNotFound.rawValue)
