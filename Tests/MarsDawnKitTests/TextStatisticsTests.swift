@@ -186,4 +186,15 @@ struct TextStatisticsTests {
         #expect(stats.words > 0)
         #expect(elapsed < .seconds(3))
     }
+
+    /// The full named-entity list is loaded (#69), with the counter's own choices on top.
+    @Test func namedEntitiesCoverTheWholeList() {
+        #expect(HTMLNamedEntities.table.count == 2125)
+        #expect(HTMLNamedEntities.table["eacute"] == "é")
+        #expect(HTMLNamedEntities.table["NewLine"] == "\n")
+        #expect(HTMLNamedEntities.table["ThinSpace"] == "\u{2009}")
+        #expect(TextStatistics(markdownBody: "<div>caf&eacute; words</div>\n").words == 2)
+        #expect(TextStatistics(markdownBody: "<div>soft&shy;hyphen</div>\n").words == 1, "the override: a soft hyphen joins")
+        #expect(TextStatistics(markdownBody: "<div>a &bogus; b</div>\n").words == 3, "an unknown name shows as written")
+    }
 }

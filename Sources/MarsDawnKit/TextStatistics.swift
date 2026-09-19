@@ -256,7 +256,10 @@ struct VisibleHTMLText {
         "figure", "footer", "h1", "h2", "h3", "h4", "h5", "h6", "header", "hr", "li", "main", "nav", "ol",
         "p", "pre", "section", "summary", "table", "td", "th", "tr", "ul",
     ])
-    private static let namedEntities: [String: String] = [
+    /// Where this counter deliberately differs from the HTML table: a soft hyphen and the
+    /// spacing entities read as nothing and as a plain space, so they never split a word or join
+    /// two. Everything else comes from the full list (#69).
+    private static let entityOverrides: [String: String] = [
         "amp": "&", "lt": "<", "gt": ">", "quot": "\"", "apos": "'", "nbsp": " ", "copy": "©", "reg": "®",
         "trade": "™", "hellip": "…", "mdash": "—", "ndash": "–", "lsquo": "‘", "rsquo": "’", "ldquo": "“",
         "rdquo": "”", "bull": "•", "middot": "·", "times": "×", "divide": "÷", "deg": "°", "plusmn": "±",
@@ -427,7 +430,7 @@ struct VisibleHTMLText {
             guard let value, value != 0, let scalar = Unicode.Scalar(value) else { return nil }
             return (Array(String(scalar).utf8), length)
         }
-        guard let text = namedEntities[body] else { return nil }
+        guard let text = entityOverrides[body] ?? HTMLNamedEntities.table[body] else { return nil }
         return (Array(text.utf8), length)
     }
 }
