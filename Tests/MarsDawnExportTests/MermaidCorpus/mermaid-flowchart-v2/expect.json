@@ -1,0 +1,17 @@
+{
+  "markers": [
+    "BEFOREflowchart-v2",
+    "FLOWVA01",
+    "FLOWVB02",
+    "FLOWVC03",
+    "AFTERflowchart-v2"
+  ],
+  "markersOnLastPage": [
+    "AFTERflowchart-v2"
+  ],
+  "diagrams": {
+    "rendered": 1,
+    "failed": 0
+  },
+  "notes": "Mermaid diagram type 'flowchart-v2'. All markers extract from the PDF text."
+}

@@ -1,0 +1,17 @@
+{
+  "markers": [
+    "BEFOREsequence",
+    "SEQA01",
+    "SEQB02",
+    "SEQMSG03",
+    "AFTERsequence"
+  ],
+  "markersOnLastPage": [
+    "AFTERsequence"
+  ],
+  "diagrams": {
+    "rendered": 1,
+    "failed": 0
+  },
+  "notes": "Mermaid diagram type 'sequence'. All markers extract from the PDF text."
+}

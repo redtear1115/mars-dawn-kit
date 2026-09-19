@@ -1,0 +1,17 @@
+{
+  "markers": [
+    "BEFOREswimlane",
+    "SWIMLANE01",
+    "SWIMA02",
+    "SWIMB03",
+    "AFTERswimlane"
+  ],
+  "markersOnLastPage": [
+    "AFTERswimlane"
+  ],
+  "diagrams": {
+    "rendered": 1,
+    "failed": 0
+  },
+  "notes": "Mermaid diagram type 'swimlane'. All markers extract from the PDF text."
+}

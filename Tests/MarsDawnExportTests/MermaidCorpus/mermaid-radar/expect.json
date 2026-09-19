@@ -1,0 +1,19 @@
+{
+  "markers": [
+    "BEFOREradar",
+    "RADARTITLE01",
+    "RADARAX01",
+    "RADARAX02",
+    "RADARAX03",
+    "RADARCURVE04",
+    "AFTERradar"
+  ],
+  "markersOnLastPage": [
+    "AFTERradar"
+  ],
+  "diagrams": {
+    "rendered": 1,
+    "failed": 0
+  },
+  "notes": "Mermaid diagram type 'radar'. All markers extract from the PDF text."
+}

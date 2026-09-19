@@ -1,0 +1,17 @@
+{
+  "markers": [
+    "BEFORErequirement",
+    "REQA01",
+    "REQTEXT02",
+    "REQELEM03",
+    "AFTERrequirement"
+  ],
+  "markersOnLastPage": [
+    "AFTERrequirement"
+  ],
+  "diagrams": {
+    "rendered": 1,
+    "failed": 0
+  },
+  "notes": "Mermaid diagram type 'requirement'. All markers extract from the PDF text."
+}

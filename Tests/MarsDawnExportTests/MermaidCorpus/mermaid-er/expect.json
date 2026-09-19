@@ -1,0 +1,17 @@
+{
+  "markers": [
+    "BEFOREer",
+    "ERA01",
+    "ERB02",
+    "ERLABEL03",
+    "AFTERer"
+  ],
+  "markersOnLastPage": [
+    "AFTERer"
+  ],
+  "diagrams": {
+    "rendered": 1,
+    "failed": 0
+  },
+  "notes": "Mermaid diagram type 'er'. All markers extract from the PDF text."
+}

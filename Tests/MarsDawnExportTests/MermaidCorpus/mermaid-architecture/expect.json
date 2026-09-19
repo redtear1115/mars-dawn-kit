@@ -1,0 +1,17 @@
+{
+  "markers": [
+    "BEFOREarchitecture",
+    "ARCHGROUP01",
+    "ARCHSVC02",
+    "ARCHSVC03",
+    "AFTERarchitecture"
+  ],
+  "markersOnLastPage": [
+    "AFTERarchitecture"
+  ],
+  "diagrams": {
+    "rendered": 1,
+    "failed": 0
+  },
+  "notes": "Mermaid diagram type 'architecture'. All markers extract from the PDF text."
+}

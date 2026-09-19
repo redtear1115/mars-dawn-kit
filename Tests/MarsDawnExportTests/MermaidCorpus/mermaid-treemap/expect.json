@@ -1,0 +1,18 @@
+{
+  "markers": [
+    "BEFOREtreemap",
+    "TREEMAPTITLE01",
+    "TREEMAPROOT02",
+    "TREEMAPCHILD03",
+    "TREEMAPCHILD04",
+    "AFTERtreemap"
+  ],
+  "markersOnLastPage": [
+    "AFTERtreemap"
+  ],
+  "diagrams": {
+    "rendered": 1,
+    "failed": 0
+  },
+  "notes": "Mermaid diagram type 'treemap'. All markers extract from the PDF text."
+}

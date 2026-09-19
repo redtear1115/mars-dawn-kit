@@ -1,0 +1,17 @@
+{
+  "markers": [
+    "BEFOREusecase",
+    "USECASEACTOR01",
+    "USECASESB02",
+    "USECASEUC03",
+    "AFTERusecase"
+  ],
+  "markersOnLastPage": [
+    "AFTERusecase"
+  ],
+  "diagrams": {
+    "rendered": 1,
+    "failed": 0
+  },
+  "notes": "Mermaid diagram type 'usecase'. All markers extract from the PDF text."
+}

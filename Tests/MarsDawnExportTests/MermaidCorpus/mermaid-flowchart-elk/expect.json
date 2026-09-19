@@ -1,0 +1,17 @@
+{
+  "markers": [
+    "BEFOREflowchart-elk",
+    "ELKA01",
+    "ELKB02",
+    "ELKC03",
+    "AFTERflowchart-elk"
+  ],
+  "markersOnLastPage": [
+    "AFTERflowchart-elk"
+  ],
+  "diagrams": {
+    "rendered": 1,
+    "failed": 0
+  },
+  "notes": "Mermaid diagram type 'flowchart-elk'. All markers extract from the PDF text."
+}

@@ -1,0 +1,17 @@
+{
+  "markers": [
+    "BEFOREgantt",
+    "GANTTTITLE01",
+    "GANTTSEC02",
+    "GANTTTASK03",
+    "AFTERgantt"
+  ],
+  "markersOnLastPage": [
+    "AFTERgantt"
+  ],
+  "diagrams": {
+    "rendered": 1,
+    "failed": 0
+  },
+  "notes": "Mermaid diagram type 'gantt'. All markers extract from the PDF text."
+}
