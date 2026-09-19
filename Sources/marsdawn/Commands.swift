@@ -12,7 +12,7 @@ struct MarsDawnCommand: AsyncParsableCommand {
         abstract: "Open Markdown documents in MarsDawn or export them to PDF.",
         discussion: """
         export renders on its own and needs nothing else installed. open hands the files to the \
-        MarsDawn app, so it needs the app, which is not publicly available yet.
+        MarsDawn app, so it needs the app, from the Mac App Store: \(MarsDawnApp.storeURL)
         Pass --json for machine-readable results. Exit codes: 0 success, \(CLIFailure.Code.inputNotFound.rawValue) input not found, \
         \(CLIFailure.Code.appNotInstalled.rawValue) MarsDawn not installed (open only), \(CLIFailure.Code.outputExists.rawValue) output exists \
         (use --force), \(CLIFailure.Code.exportFailed.rawValue) export failed, \(CLIFailure.Code.appCannotOpenFolders.rawValue) this MarsDawn \
@@ -80,7 +80,7 @@ struct CLIFailure: Error, CustomStringConvertible {
     }
 
     static func appNotInstalled() -> CLIFailure {
-        CLIFailure(code: .appNotInstalled, message: "MarsDawn is not installed. open needs the app, which is not publicly available yet; export works without it.")
+        CLIFailure(code: .appNotInstalled, message: "MarsDawn is not installed. open needs the app, from the Mac App Store: \(MarsDawnApp.storeURL) (export works without it).")
     }
 
     /// `appNotInstalled`, but naming why `$MARSDAWN_APP_PATH` was rejected. Same code and kind
@@ -119,6 +119,11 @@ struct WaitRangeFailure: Error, CustomStringConvertible {
 
 /// Where MarsDawn is installed. Replaceable for tests.
 enum MarsDawnApp {
+    /// The app's Mac App Store listing, which `open`'s help and its not-installed error point to.
+    /// **Held until launch (#56):** the listing is only live from launch. The Apple ID is App Store
+    /// Connect's, and the URL has no country, so it opens each visitor's own storefront.
+    static let storeURL = "https://apps.apple.com/app/id6812925073"
+
     static let bundleIdentifier = "dev.southern-light.marsdawn"
 
     /// What `resolveOverride` found for `$MARSDAWN_APP_PATH`, once the variable is known to be set.
@@ -259,7 +264,7 @@ struct OpenTarget: Equatable {
 extension MarsDawnCommand {
     struct Open: AsyncParsableCommand {
         static let configuration = CommandConfiguration(
-            abstract: "Open Markdown files in MarsDawn for review. Needs the MarsDawn app, which is not publicly available yet.",
+            abstract: "Open Markdown files in MarsDawn for review. Needs the MarsDawn app, from the Mac App Store.",
             discussion: """
             A folder argument opens in the window's sidebar instead of as a document, so \
             `marsdawn open .` shows the current directory; --folder does the same alongside files. \

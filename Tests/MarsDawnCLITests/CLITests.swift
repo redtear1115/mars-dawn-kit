@@ -85,6 +85,19 @@ struct StandaloneToolTests {
         } throws: { ($0 as? CLIFailure)?.code == .appNotInstalled }
     }
 
+    /// `open`'s help and its not-installed error send people to the real listing, and the README
+    /// says the same (#56). Fails while the held placeholder is still there.
+    @Test func theStoreLinkIsTheRealListing() throws {
+        #expect(MarsDawnApp.storeURL.wholeMatch(of: /https:\/\/apps\.apple\.com\/app\/id\d+/) != nil,
+                "replace the placeholder with the listing's Apple ID: \(MarsDawnApp.storeURL)")
+        #expect(CLIFailure.appNotInstalled().message.contains(MarsDawnApp.storeURL))
+        let readme = try String(contentsOf: URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("README.md"), encoding: .utf8)
+        #expect(readme.contains(MarsDawnApp.storeURL), "the README links the same listing")
+        #expect(!readme.contains("not publicly available"))
+    }
+
     /// The Homebrew formula asserts `marsdawn --version` equals its own `version`, so this has
     /// to stay a plain release number with nothing around it.
     @Test func versionIsAPlainReleaseNumber() {
