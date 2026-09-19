@@ -369,6 +369,9 @@
     const raw = written || ((host === "abs" ? "/" : "") + box.dataset.src.replace(/#.*$/, "").replace(/^[^/]*\/\/[^/]*\//, "").replace(/\?.*$/, ""));
     let name = raw;
     try { name = decodeURIComponent(raw); } catch (_) {}  // malformed: shown as it is
+    // Bidi controls would reorder the label around them (`evil<RLO>gnp.exe` reads as a
+    // different name): the path is shown without them (#70).
+    name = name.replace(/[\u202A-\u202E\u2066-\u2069]/g, "");
     // Document-controlled text: only ever set as text, and kept to a readable length.
     if (name.length > 300) name = name.slice(0, 300) + "…";
     label.textContent = `${assetState.needsAccess ? assetState.blockedLabel : assetState.missingLabel}: ${name}`;

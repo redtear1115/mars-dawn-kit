@@ -81,9 +81,15 @@ struct DocumentAssetTests {
         #expect(url("..%2fx.png") == "marsdawn-asset://abs/root/x.png#../x.png")
         #expect(url("../my folder/a b.png?v=1#f") == "marsdawn-asset://abs/root/my%20folder/a%20b.png#../my%20folder/a%20b.png")
         #expect(url("../%3Cscript%3E.png") == "marsdawn-asset://abs/root/%3Cscript%3E.png#../%3Cscript%3E.png")
-        // Too long to carry: resolved, without the fragment.
+        // Too long to carry whole: the start of it, cut at the cap, so the label never falls back
+        // to the resolved path (#70).
         let long = "../" + String(repeating: "a", count: 5000) + ".png"
-        #expect(url(long) == "marsdawn-asset://abs/root/" + String(repeating: "a", count: 5000) + ".png")
+        let cap = Handler.maxWrittenSourceLength
+        #expect(url(long) == "marsdawn-asset://abs/root/" + String(repeating: "a", count: 5000) + ".png#../"
+            + String(repeating: "a", count: cap - 3))
+        // A cut never splits a character.
+        #expect(Handler.prefix(of: "ab" + String(repeating: "é", count: 3), maxUTF8: 5) == "abé")
+        #expect(Handler.prefix(of: "short", maxUTF8: 10) == "short")
         for source in ["img/a.png", "/abs/x.png", "https://example.com/a.png", "data:image/png;base64,AA", "#x",
                        "a..b/c.png", "%252e%252e/x.png", "..\\x.png", "../../../../x.png", ""] {
             #expect(url(source) == Handler.previewURL(forImageSource: source, hasBaseDirectory: true), "\(source)")

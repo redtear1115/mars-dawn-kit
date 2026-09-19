@@ -42,14 +42,14 @@ public final class DocumentAssetSchemeHandler: NSObject, WKURLSchemeHandler {
     /// every placeholder decodes it) in its fragment, percent-encoded, which the handler never
     /// reads (`URL.path` excludes it). The page's placeholder for an image that can't load shows
     /// it, so the reader sees the path in the document, not the absolute path it resolved to. A
-    /// path longer than `maxWrittenSourceLength` bytes goes without one, and the placeholder
-    /// shows the resolved path.
+    /// path longer than `maxWrittenSourceLength` bytes carries its start, cut at a character
+    /// boundary: the label shows 300 characters at most, and the resolved path, which names the
+    /// user's folders, must never stand in for it (#70).
     public nonisolated static func previewURL(forImageSource source: String, baseDirectory: URL?) -> String? {
         if let baseDirectory, let absolute = parentRelativePath(source, in: baseDirectory) {
             guard let url = previewURL(forImageSource: absolute, hasBaseDirectory: true) else { return nil }
-            let written = writtenPath(source)
-            guard written.utf8.count <= maxWrittenSourceLength,
-                  let fragment = written.addingPercentEncoding(withAllowedCharacters: writtenSourceAllowed) else { return url }
+            let written = prefix(of: writtenPath(source), maxUTF8: maxWrittenSourceLength)
+            guard let fragment = written.addingPercentEncoding(withAllowedCharacters: writtenSourceAllowed) else { return url }
             return url + "#" + fragment
         }
         return previewURL(forImageSource: source, hasBaseDirectory: baseDirectory != nil)
@@ -64,6 +64,20 @@ public final class DocumentAssetSchemeHandler: NSObject, WKURLSchemeHandler {
             path = String(scalars[..<cut])
         }
         return path.removingPercentEncoding ?? path
+    }
+
+    /// The longest start of `text` whose UTF-8 fits in `maxUTF8` bytes, whole characters only.
+    nonisolated static func prefix(of text: String, maxUTF8: Int) -> String {
+        guard text.utf8.count > maxUTF8 else { return text }
+        var result = ""
+        var used = 0
+        for character in text {
+            let size = character.utf8.count
+            guard used + size <= maxUTF8 else { break }
+            result.append(character)
+            used += size
+        }
+        return result
     }
 
     /// The longest path, in UTF-8 bytes, carried as written in a `..` URL's fragment.
