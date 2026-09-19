@@ -22,8 +22,8 @@ struct MarkdownRendererTests {
         #expect(!html.contains(#"id="""#))
     }
 
-    /// The fallback numbers count only headings that fell back, so editing a named heading
-    /// elsewhere doesn't move them.
+    /// The fallback numbers count headings that fell back (and any heading titled "Section"),
+    /// so editing other named headings doesn't move them.
     @Test func sectionIDsDontMoveWhenANamedHeadingChanges() {
         let before = headingIDs(MarkdownRenderer.render("# $$\n\n# Intro\n\n# !!!\n"))
         let after = headingIDs(MarkdownRenderer.render("# $$\n\n# Introduction, rewritten\n\n# !!!\n"))
