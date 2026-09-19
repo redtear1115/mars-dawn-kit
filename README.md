@@ -24,6 +24,9 @@ Two things that have caught people out when writing tests here:
 
 ## Command line
 
+Install it with Homebrew: `brew tap redtear1115/tap && brew install marsdawn`.
+Using a coding agent? Add the skill: https://marsdawn.southern-light.dev/cli/skill/
+
 ```sh
 swift run marsdawn open notes.md
 swift run marsdawn open notes.md:120
