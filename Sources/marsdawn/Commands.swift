@@ -104,6 +104,19 @@ func existingFile(_ path: String) throws -> URL {
     return url
 }
 
+/// Resolves a path that must be a directory. The mirror of `existingFile`.
+func existingDirectory(_ path: String) throws -> URL {
+    let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath).standardizedFileURL
+    var isDirectory: ObjCBool = false
+    guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) else {
+        throw CLIFailure(code: .inputNotFound, message: "No such folder: \(url.path)")
+    }
+    guard isDirectory.boolValue else {
+        throw CLIFailure(code: .inputNotFound, message: "Not a folder: \(url.path)")
+    }
+    return url
+}
+
 extension PreviewTheme: ExpressibleByArgument {
     public init?(argument: String) {
         guard let theme = PreviewTheme.all.first(where: { $0.id == argument.lowercased() }) else { return nil }
@@ -129,6 +142,10 @@ extension MarsDawnCommand {
         static let configuration = CommandConfiguration(
             abstract: "Open Markdown files in MarsDawn for review.",
             discussion: """
+            A folder argument opens in the window's sidebar instead of as a document, so \
+            `marsdawn open .` shows the current directory; --folder does the same alongside files. \
+            A window's sidebar shows one folder, so naming two is a usage error, and there is no \
+            -a: VS Code's -a adds a second root, which MarsDawn has no way to do.
             A file argument can name a line: `notes.md:120` opens notes.md and lands on line 120. \
             A column after the line, as in `notes.md:120:8`, is accepted and ignored. An argument \
             that names a file which exists is always the whole filename, so a file called \
@@ -139,24 +156,63 @@ extension MarsDawnCommand {
             """
         )
 
-        @Argument(help: ArgumentHelp("Markdown files to open, each optionally as path:line.", valueName: "file"))
-        var files: [String]
+        @Argument(help: ArgumentHelp("Markdown files to open, each optionally as path:line. A folder opens in the sidebar.", valueName: "path"))
+        var files: [String] = []
 
         @Option(name: .long, help: ArgumentHelp("Line to land on. Needs exactly one file.", valueName: "n"))
         var line: Int?
 
+        @Option(name: .long, parsing: .singleValue,
+                help: ArgumentHelp("Folder to show in the window's sidebar, alongside the files. One only.", valueName: "path"))
+        var folder: [String] = []
+
+        /// Not a feature. People and agents arrive with VS Code's muscle memory, and an error
+        /// naming `--folder` teaches them more than "unknown option '-a'" does.
+        @Flag(name: .customShort("a"), help: .hidden)
+        var vsCodeAdd = false
+
         @OptionGroup var output: OutputOptions
 
         func validate() throws {
-            guard line == nil || files.count == 1 else {
+            if vsCodeAdd {
+                throw ValidationError(Open.noDashA)
+            }
+            guard folder.count <= 1 else {
                 throw ValidationError(
-                    "--line needs exactly one file, but \(files.count) were given. "
+                    "--folder takes one folder, but \(folder.count) were given. A MarsDawn window's "
+                        + "sidebar shows one folder at a time."
+                )
+            }
+            guard !files.isEmpty || !folder.isEmpty else {
+                throw ValidationError("Nothing to open. Give a file, a folder, or --folder <path>.")
+            }
+            let directories = files.filter(Open.isDirectory)
+            if line != nil, let directory = directories.first {
+                throw ValidationError(
+                    "--line needs a file, but \(directory) is a folder. A folder opens in the sidebar "
+                        + "and has no line to land on."
+                )
+            }
+            let fileArguments = files.count - directories.count
+            guard line == nil || fileArguments == 1 else {
+                throw ValidationError(
+                    "--line needs exactly one file, but \(fileArguments) were given. "
                         + "Write the line on each file instead, as path:line."
                 )
             }
             if let line, !RevealRequest.lineRange.contains(line) {
                 throw ValidationError(Open.outOfRange(line))
             }
+        }
+
+        static let noDashA = "MarsDawn has no -a. Use --folder <path> to show a folder in the "
+            + "window's sidebar. It isn't VS Code's -a: a MarsDawn window's sidebar shows one "
+            + "folder, so --folder sets that folder rather than adding a second one."
+
+        static func isDirectory(_ path: String) -> Bool {
+            var isDirectory: ObjCBool = false
+            let expanded = (path as NSString).expandingTildeInPath
+            return FileManager.default.fileExists(atPath: expanded, isDirectory: &isDirectory) && isDirectory.boolValue
         }
 
         static func outOfRange(_ line: Int) -> String {
@@ -171,7 +227,7 @@ extension MarsDawnCommand {
         /// Resolves every argument to a file and the line it asked for. A line the app would have
         /// to guess at is a usage error here, before anything is sent.
         func resolvedTargets(fileExists: (String) -> Bool = Open.fileExists) throws -> [OpenTarget] {
-            try files.map { argument in
+            try files.filter { !Open.isDirectory($0) }.map { argument in
                 let parsed = RevealRequest.parseArgument(argument, fileExists: fileExists)
                 let url = try existingFile(parsed.path)
                 guard let requested = parsed.line ?? line else {
@@ -190,9 +246,29 @@ extension MarsDawnCommand {
             }
         }
 
+        /// The folders to show, from directory arguments and `--folder` alike, in the order
+        /// given and without repeats. A window's sidebar shows one folder, so more than one is
+        /// a usage error rather than a silent choice between them.
+        func resolvedFolders() throws -> [URL] {
+            var seen = Set<String>()
+            var folders: [URL] = []
+            for path in files.filter(Open.isDirectory) + folder {
+                let url = try existingDirectory(path)
+                if seen.insert(url.path).inserted { folders.append(url) }
+            }
+            guard folders.count <= 1 else {
+                throw ValidationError(
+                    "More than one folder was given (\(folders.map(\.lastPathComponent).joined(separator: ", "))). "
+                        + "A MarsDawn window's sidebar shows one folder at a time."
+                )
+            }
+            return folders
+        }
+
         @MainActor
         func run() async throws {
             let targets = try resolvedTargets()
+            let folders = try resolvedFolders()
             let app = try MarsDawnApp.require()
             // Files asking for the same line travel in one event; the line applies to all of them.
             for group in RevealEvent.groups(for: targets) {
@@ -201,19 +277,34 @@ extension MarsDawnCommand {
                 configuration.appleEvent = RevealEvent.openDocuments(urls: group.urls, line: group.line)
                 _ = try await NSWorkspace.shared.open(group.urls, withApplicationAt: app, configuration: configuration)
             }
-            output.report(
-                [
-                    "opened": targets.map { target -> [String: Any] in
-                        guard let line = target.line else { return ["path": target.url.path] }
-                        return ["path": target.url.path, "line": line]
-                    },
-                    "app": app.path,
-                ],
-                text: targets.map { target in
-                    guard let line = target.line else { return "Opened \(target.url.path)" }
-                    return "Opened \(target.url.path) at line \(line)"
-                }.joined(separator: "\n")
-            )
+            // Folders travel on their own, with no reveal line: a folder has no line to land on.
+            if !folders.isEmpty {
+                let configuration = NSWorkspace.OpenConfiguration()
+                configuration.activates = true
+                _ = try await NSWorkspace.shared.open(folders, withApplicationAt: app, configuration: configuration)
+            }
+            var fields: [String: Any] = [
+                "opened": targets.map { target -> [String: Any] in
+                    guard let line = target.line else { return ["path": target.url.path] }
+                    return ["path": target.url.path, "line": line]
+                },
+                "app": app.path,
+            ]
+            // `requested`, not `attached`: this command hands the folder to the app and returns.
+            // Whether the sidebar ends up showing it — or the app has to ask the user for access
+            // first — is decided inside the app, and nothing reports back here. Saying "attached"
+            // would tell an agent a thing this command cannot know.
+            if let folder = folders.first {
+                fields["folder"] = ["path": folder.path, "requested": true]
+            }
+            var lines = targets.map { target -> String in
+                guard let line = target.line else { return "Opened \(target.url.path)" }
+                return "Opened \(target.url.path) at line \(line)"
+            }
+            if let folder = folders.first {
+                lines.append("Asked MarsDawn to show \(folder.path) in the sidebar")
+            }
+            output.report(fields, text: lines.joined(separator: "\n"))
         }
     }
 }
