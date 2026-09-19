@@ -164,6 +164,13 @@ struct TextStatisticsTests {
         #expect(TextStatistics(markdownBody: body).words == 0)
     }
 
+    /// Entities and hidden elements keep the pass linear on untrusted input: half a million
+    /// unfinished entities, and a hidden element that never closes.
+    @Test(.timeLimit(.minutes(1))) func entitiesAndHiddenElementsStayLinear() {
+        #expect(TextStatistics(markdownBody: "<div>\n" + String(repeating: "&a", count: 500_000) + "\n").words > 0)
+        #expect(TextStatistics(markdownBody: "<div hidden>\n" + String(repeating: "<div>x", count: 200_000) + "\n").words == 0)
+    }
+
     @Test func performanceOnALargeDocument() {
         var lines: [String] = []
         for i in 0..<5000 {
