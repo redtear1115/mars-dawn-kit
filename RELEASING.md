@@ -41,6 +41,12 @@ git push origin 0.3.0
 
 Tags are immutable. A mistake gets a new patch tag, never a moved one.
 
+Pushing the tag runs CI against the tagged tree, including a job that builds the CLI and fails if
+`marsdawn --version` doesn't print the tag's own name. Watch that run before you go on to step 3:
+everything after this point -- the checksum, the formula, the bottle -- is built on the assumption
+that the tag is right, and 0.4.0 reached users reporting `0.3.0` because step 1 was skipped and
+nothing between here and `brew install` compared the two.
+
 ## 3. Take the archive's checksum
 
 Download exactly the archive the formula will download — GitHub generates it from the tag, and
