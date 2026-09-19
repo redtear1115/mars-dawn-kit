@@ -6,6 +6,6 @@
 /// string `marsdawn --version` prints, and the Homebrew formula compares it against its own
 /// `version`; see RELEASING.md.
 enum MarsDawnCLI {
-    static let version = "0.3.0"
+    static let version = "0.4.1"
 }
 #endif

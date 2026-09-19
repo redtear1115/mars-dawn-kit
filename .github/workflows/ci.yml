@@ -3,6 +3,10 @@ name: CI
 on:
   push:
     branches: [main]
+    # Releases are tagged with a bare version, no `v` (see RELEASING.md). Building the tag runs
+    # the whole suite against exactly the tree that was tagged, which is the one moment it is
+    # worth doing twice, and it is the only way `version-matches-tag` below can run at all.
+    tags: ['*.*.*']
   pull_request:
 
 permissions: {}
@@ -64,6 +68,52 @@ jobs:
             done
           done
           echo "CLI exports fine in debug and release"
+
+  version-matches-tag:
+    # `marsdawn --version` is how a script decides whether a feature exists, so a build that
+    # reports the wrong number tells every caller something false. 0.4.0 shipped reporting 0.3.0:
+    # the constant in Version.swift was never bumped, and nothing between the commit and the
+    # user's `brew install` compared the two.
+    #
+    # The formula's `test do` does assert it, and the tap's CI runs `brew test`, so the guard
+    # existed -- but it fires after the tag does, and a tag is immutable. By then the only repair
+    # is a new patch version. This runs while the tag is the only thing that exists, before it has
+    # been packaged, checksummed or pointed at by a formula.
+    #
+    # It builds and asks the binary rather than reading the constant out of the source, because
+    # what a user gets is the binary's answer, and reading is what failed the first time.
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: macos-26
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Use Xcode 26
+        run: |
+          set -euo pipefail
+          app=$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)
+          echo "Selecting $app"
+          sudo xcode-select -s "$app"
+      - name: The built CLI must report the tag it was built from
+        # Through the environment, not interpolated into the script: a tag name is attacker-
+        # supplied text as far as a workflow is concerned.
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          swift build --product marsdawn
+          cli="$(swift build --show-bin-path)/marsdawn"
+          reported=$("$cli" --version)
+          echo "tag: $TAG"
+          echo "marsdawn --version: $reported"
+          if [ "$reported" != "$TAG" ]; then
+            echo "::error file=Sources/marsdawn/Version.swift::marsdawn --version reports '$reported' but this tag is '$TAG'. Bump MarsDawnCLI.version to match and cut a new patch tag -- tags are immutable, so this one cannot be moved."
+            exit 1
+          fi
+          echo "The tag and the binary agree."
 
   ios:
     # The core library still supports iOS 17; make sure it keeps building for it.
