@@ -372,6 +372,16 @@ img { max-width: 100%; }
      expression twice (#16). Paper has no screen reader, and the export's PDF carries no
      structure tags for one to use, so it goes; the screen keeps it. */
   .katex-mathml { display: none; }
+  /* Nothing may follow the last line. The last block's bottom margin -- and a margin nested at
+     the end of it, like a loose list's last paragraph, which collapses out through the li and
+     the ul -- made a document ending at the foot of a page overflow it by that margin alone,
+     and WebKit opened a blank page for it (#20). Only the chain of last children, so spacing
+     inside the last block is untouched. */
+  .markdown-body > :last-child,
+  .markdown-body > :last-child > :last-child,
+  .markdown-body > :last-child > :last-child > :last-child,
+  .markdown-body > :last-child > :last-child > :last-child > :last-child,
+  .markdown-body > :last-child > :last-child > :last-child > :last-child > :last-child { margin-bottom: 0; }
   table { display: table; width: auto; overflow: visible; }
   thead { display: table-header-group; }
 
