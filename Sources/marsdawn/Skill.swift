@@ -83,10 +83,6 @@ marsdawn open plan.md:42 --json
   and tells the user, with Undo. Don't run `open` again after every edit.
 - It needs the MarsDawn app. Without it, `open` exits 3 (`app_not_installed`): tell the user once
   and carry on. Don't retry, and don't try to install the app.
-- To show the project in the window's sidebar as well, add `--folder <path>` (marsdawn 0.5.1 and
-  later; one folder). The JSON then includes `"folder": {"path": ..., "requested": true}`.
-  `requested` means marsdawn asked the app. It can't tell whether the sidebar shows the folder
-  (the app may first ask the user for access), so report it as asked, not as done.
 - Never use `open` to make a PDF: that's `export`.
 
 ## Full contract
