@@ -314,4 +314,68 @@ struct OpenCommandTests {
         )
     }
 }
+
+// MARK: - open: folders need an app that can take them (#165)
+
+/// An app that shows an error for a folder must not be sent one, and the CLI must not report
+/// success for it. Whether the app can is read from its own Info.plist, not guessed from a version.
+@MainActor
+@Suite(.serialized)
+struct FolderCapabilityTests {
+    /// A fake app bundle: only the Info.plist the CLI reads. `key` nil leaves the key out.
+    private func fakeApp(key: Any?) throws -> URL {
+        let app = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("marsdawn-fake-\(UUID().uuidString).app", isDirectory: true)
+        let contents = app.appendingPathComponent("Contents", isDirectory: true)
+        try FileManager.default.createDirectory(at: contents, withIntermediateDirectories: true)
+        var info: [String: Any] = ["CFBundleIdentifier": "dev.southern-light.marsdawn.fake"]
+        if let key { info[MarsDawnApp.opensFoldersKey] = key }
+        let data = try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
+        try data.write(to: contents.appendingPathComponent("Info.plist"))
+        return app
+    }
+
+    private func folder() throws -> URL {
+        let url = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("marsdawn-folder-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
+
+    @Test func theAppsOwnInfoPlistDecides() throws {
+        let yes = try fakeApp(key: true), no = try fakeApp(key: false), absent = try fakeApp(key: nil)
+        defer { [yes, no, absent].forEach { try? FileManager.default.removeItem(at: $0) } }
+        #expect(MarsDawnApp.opensFolders(yes), "positive fixture: an app that declares it")
+        #expect(!MarsDawnApp.opensFolders(no))
+        #expect(!MarsDawnApp.opensFolders(absent))
+        #expect(!MarsDawnApp.opensFolders(URL(fileURLWithPath: "/nonexistent/MarsDawn.app")))
+    }
+
+    @Test func foldersAreRefusedByAnAppThatCantTakeThem() throws {
+        let capable = try fakeApp(key: true), incapable = try fakeApp(key: nil), dir = try folder()
+        defer { [capable, incapable, dir].forEach { try? FileManager.default.removeItem(at: $0) } }
+
+        let refusal = try #require(MarsDawnCommand.Open.folderRefusal(folders: [dir], app: incapable))
+        #expect(refusal.code == .appCannotOpenFolders && refusal.code.rawValue == 6)
+        #expect(refusal.code.kind == "app_cannot_open_folders")
+        #expect(refusal.message.contains("Nothing was opened"))
+        // An app that declares it goes ahead; files alone never ask.
+        #expect(MarsDawnCommand.Open.folderRefusal(folders: [dir], app: capable) == nil)
+        #expect(MarsDawnCommand.Open.folderRefusal(folders: [], app: incapable) == nil)
+    }
+
+    /// The whole command, for both spellings: it stops with the refusal, before anything is sent.
+    @Test func openStopsBeforeSendingAnything() async throws {
+        let incapable = try fakeApp(key: nil), dir = try folder()
+        defer { [incapable, dir].forEach { try? FileManager.default.removeItem(at: $0) } }
+        let original = MarsDawnApp.locate
+        defer { MarsDawnApp.locate = original }
+        MarsDawnApp.locate = { incapable }
+        for arguments in [["--folder", dir.path], [dir.path]] {
+            await #expect {
+                try await MarsDawnCommand.Open.parse(arguments).run()
+            } throws: { ($0 as? CLIFailure)?.code == .appCannotOpenFolders }
+        }
+    }
+}
 #endif
