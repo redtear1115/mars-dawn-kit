@@ -53,7 +53,7 @@ struct SkillTests {
 
     @Test func itNamesOnlyOptionsAndCommandsTheCLIHas() {
         let flags = Set(MarsDawnSkill.text.matches(of: /--[a-z][a-z-]*[a-z]/).map { String($0.output) })
-        #expect(flags.contains("--json") && flags.contains("--folder"), "positive fixture: the check sees the skill's flags")
+        #expect(flags.contains("--json") && flags.contains("--force"), "positive fixture: the check sees the skill's flags")
         #expect(Self.unknownFlags(in: MarsDawnSkill.text).isEmpty, "\(Self.unknownFlags(in: MarsDawnSkill.text))")
         #expect(Self.code(in: MarsDawnSkill.text).contains("marsdawn open plan.md:42"), "positive fixture: the check reads the skill's code")
         #expect(Self.unknownCommands(in: MarsDawnSkill.text).isEmpty, "\(Self.unknownCommands(in: MarsDawnSkill.text))")
