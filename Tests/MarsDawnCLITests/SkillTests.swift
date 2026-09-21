@@ -66,10 +66,13 @@ struct SkillTests {
         #expect(Self.unknownCommands(in: "then marsdawn asked the app") == [], "prose isn't a command")
     }
 
-    /// The exit-code table agrees with the codes and kinds the CLI returns.
+    /// The exit-code table agrees with the codes and kinds the CLI returns, and lists every one:
+    /// a hard-coded row count let 0.5.2's exit 6 go missing from the skill.
     @Test func theExitCodeTableMatchesTheCLI() {
         let rows = MarsDawnSkill.text.matches(of: /\| (\d+) \| `([a-z_]+)` \|/)
-        #expect(rows.count == 4, "positive fixture: the four failure rows")
+        let cliCodes = (Int32(1)...Int32(63)).compactMap(CLIFailure.Code.init(rawValue:)).map(\.rawValue)
+        #expect(cliCodes.count >= 5, "positive fixture: the CLI's failure codes")
+        #expect(rows.map { Int32($0.output.1)! } == cliCodes, "one row per failure code, in order")
         for row in rows {
             let code = CLIFailure.Code(rawValue: Int32(row.output.1)!)
             #expect(code?.kind == String(row.output.2), "row \(row.output.1)")

@@ -66,6 +66,7 @@ On failure with `--json` it prints `{"ok": false, "error": <kind>, "message": ..
 | 3 | `app_not_installed` | MarsDawn isn't installed. Only `open` returns this. |
 | 4 | `output_exists` | The PDF already exists. Pass --force to replace it, or -o to write elsewhere. |
 | 5 | `export_failed` | Rendering failed. |
+| 6 | `app_cannot_open_folders` | This MarsDawn can't show a folder, so nothing was opened. Only `open` returns this. |
 | 64 | — | Usage error: a bad option or value. Printed as text on stderr, never as JSON. |
 
 ## Review: open what you wrote
