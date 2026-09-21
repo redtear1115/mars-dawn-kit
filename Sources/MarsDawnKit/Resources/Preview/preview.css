@@ -250,6 +250,12 @@ img { max-width: 100%; }
 }
 /* KaTeX's own 1em above and below would sit on top of the block's margin. */
 .math-block > .katex-display, .math-inline > .katex-display { margin: 0; }
+/* KaTeX anchors every vlist (limits, scripts, fractions) on a zero-width space in a cell set
+   to font-size 1px. When the app zooms the page to 75% or less, WebKit drops text that small,
+   the vlist loses its baseline, and an operator with side limits sinks about 0.9em below them
+   (#144: the same break appears at 100% with that cell at font-size 0). At 2px it survives
+   every zoom the app offers, and at 100% the layout is unchanged. */
+.katex .vlist-s { font-size: 2px; }
 /* An expression left as source: over the length limit, over the per-update count, or one
    KaTeX refused outright. Shown as written, never as markup. */
 .math-skipped, .math-error {
