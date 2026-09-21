@@ -9,7 +9,9 @@ import Testing
 @MainActor
 struct KitLocalizationCoverageTests {
     nonisolated static let reference = "zh-Hant"
-    nonisolated static let others = ["zh-Hans", "ja"]
+    nonisolated static let others = ["zh-Hans", "ja", "de", "fr", "es", "ko"]
+    /// Translations that are the English word itself on purpose, so "equals the key" isn't a fallback.
+    nonisolated static let sameAsEnglish: [String: Set<String>] = ["de": ["Modern"]]
 
     nonisolated private static let tables = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
@@ -41,7 +43,9 @@ struct KitLocalizationCoverageTests {
         for (key, referenceValue) in reference {
             let shipped = try #require(PreviewWebView.moduleLocalizedString(key, localization: localization),
                                        "\(localization) doesn't ship in the resource bundle")
-            #expect(shipped != key, "\(localization): \"\(key)\" falls back to English")
+            if !(Self.sameAsEnglish[localization]?.contains(key) ?? false) {
+                #expect(shipped != key, "\(localization): \"\(key)\" falls back to English")
+            }
             #expect(shipped == table[key], "\(localization): \"\(key)\" ships as \(shipped)")
             #expect(Self.specifiers(shipped) == Self.specifiers(referenceValue), "\(localization): \"\(key)\" format specifiers")
         }

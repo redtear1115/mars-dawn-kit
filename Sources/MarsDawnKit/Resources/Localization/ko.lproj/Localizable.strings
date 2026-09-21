@@ -1,0 +1,35 @@
+/* Kit strings (ko), mars-dawn-kit 0.5.1. Every entry is a machine draft — needs native review (L2, #102).
+   Ships only in a kit release. */
+
+/* machine draft — needs native review */
+"Dawn" = "새벽";
+
+/* machine draft — needs native review */
+"Warm Martian sunrise" = "따뜻한 화성의 일출";
+
+/* machine draft — needs native review */
+"Classic" = "클래식";
+
+/* machine draft — needs native review */
+"Elegant serif on paper" = "종이 위의 우아한 세리프";
+
+/* machine draft — needs native review */
+"Modern" = "모던";
+
+/* machine draft — needs native review */
+"Clean and familiar" = "깔끔하고 친숙한";
+
+/* machine draft — needs native review */
+"Vivid" = "비비드";
+
+/* machine draft — needs native review */
+"Playful, bright and rounded" = "경쾌하고 밝고 둥근";
+
+/* machine draft — needs native review */
+"Web image" = "웹 이미지";
+
+/* machine draft — needs native review */
+"Image not available" = "이미지를 사용할 수 없음";
+
+/* machine draft — needs native review */
+"Not loaded: unencrypted connection (http)" = "불러오지 않음: 암호화되지 않은 연결(http)";

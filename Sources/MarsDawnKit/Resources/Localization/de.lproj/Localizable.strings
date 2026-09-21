@@ -1,0 +1,35 @@
+/* Kit strings (de), mars-dawn-kit 0.5.1. Every entry is a machine draft — needs native review (L2, #102).
+   Ships only in a kit release. */
+
+/* machine draft — needs native review */
+"Dawn" = "Morgenrot";
+
+/* machine draft — needs native review */
+"Warm Martian sunrise" = "Warmer Sonnenaufgang auf dem Mars";
+
+/* machine draft — needs native review */
+"Classic" = "Klassisch";
+
+/* machine draft — needs native review */
+"Elegant serif on paper" = "Elegante Serifenschrift auf Papier";
+
+/* machine draft — needs native review */
+"Modern" = "Modern";
+
+/* machine draft — needs native review */
+"Clean and familiar" = "Klar und vertraut";
+
+/* machine draft — needs native review */
+"Vivid" = "Lebhaft";
+
+/* machine draft — needs native review */
+"Playful, bright and rounded" = "Verspielt, hell und rund";
+
+/* machine draft — needs native review */
+"Web image" = "Webbild";
+
+/* machine draft — needs native review */
+"Image not available" = "Bild nicht verfügbar";
+
+/* machine draft — needs native review */
+"Not loaded: unencrypted connection (http)" = "Nicht geladen: unverschlüsselte Verbindung (http)";
