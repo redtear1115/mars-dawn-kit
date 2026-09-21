@@ -334,6 +334,16 @@ img { max-width: 100%; }
 [data-theme="vivid"] th { background: var(--heading); color: var(--bg); border-color: var(--heading); }
 [data-theme="vivid"] hr { height: 4px; border-radius: 2px; background: linear-gradient(90deg, var(--accent), var(--heading), var(--link)); }
 
+/* ---- Contrast (#152): every theme meets WCAG AA ----
+   Rules separate content, so they reach 3:1 on the page. Dawn's is Mars Rust, kept to a
+   hairline so the page stays calm; Modern's takes the quote bar's grey. */
+[data-theme="dawn"] hr { height: 1px; background: var(--accent); }
+[data-theme="modern"] hr { background: var(--quote); }
+/* Classic is black and white, so a link can't be told from text by colour: it is underlined.
+   Its syntax colours are greys, so keywords and names are told apart by weight. */
+[data-theme="classic"] a { text-decoration: underline; text-underline-offset: 0.15em; text-decoration-thickness: 1px; }
+[data-theme="classic"] .hljs-keyword, [data-theme="classic"] .hljs-title { font-weight: 650; }
+
 /* ---- Print and PDF export: light palette on white paper, paginated ----
    The page tint would stop where the content ends, so the paper stays white;
    code, tables and quotes keep their surface tones. Margins come from NSPrintInfo. */
