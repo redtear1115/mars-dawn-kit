@@ -69,12 +69,12 @@ struct CLIFailure: Error, CustomStringConvertible {
     let message: String
     var description: String { message }
 
-    /// DRAFT wording, for the owner to approve (#165).
+    /// Wording approved by the owner (#165).
     static func appCannotOpenFolders(app: URL) -> CLIFailure {
         CLIFailure(
             code: .appCannotOpenFolders,
             message: "This version of MarsDawn can't show a folder from the command line; that needs "
-                + "MarsDawn 1.1 or later. Nothing was opened. Open the files without the folder, or "
+                + "an update to MarsDawn. Nothing was opened. Open the files without the folder, or "
                 + "use File > Open Folder… in MarsDawn. (App: \(app.path))"
         )
     }
