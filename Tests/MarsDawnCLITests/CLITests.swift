@@ -86,7 +86,7 @@ struct StandaloneToolTests {
     }
 
     /// `open`'s help and its not-installed error send people to the real listing, and the README
-    /// says the same (#56). Fails while the held placeholder is still there.
+    /// says the same (#56).
     @Test func theStoreLinkIsTheRealListing() throws {
         #expect(MarsDawnApp.storeURL.wholeMatch(of: /https:\/\/apps\.apple\.com\/app\/id\d+/) != nil,
                 "replace the placeholder with the listing's Apple ID: \(MarsDawnApp.storeURL)")

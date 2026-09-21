@@ -81,9 +81,9 @@ func cliExitCode(for error: Error) -> Int32 {
 /// Where MarsDawn is installed. Replaceable for tests.
 enum MarsDawnApp {
     /// The app's Mac App Store listing, which `open`'s help and its not-installed error point to.
-    /// **Held until launch (#56):** the Apple ID is App Store Connect's, known once the listing is
-    /// live. `CLITests.theStoreLinkIsTheRealListing` fails until the placeholder is replaced.
-    static let storeURL = "https://apps.apple.com/app/id<Apple ID>"
+    /// **Held until launch (#56):** the listing is only live from launch. The Apple ID is App Store
+    /// Connect's, and the URL has no country, so it opens each visitor's own storefront.
+    static let storeURL = "https://apps.apple.com/app/id6812925073"
 
     static let bundleIdentifier = "dev.southern-light.marsdawn"
 
