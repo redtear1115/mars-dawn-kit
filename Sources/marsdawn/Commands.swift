@@ -15,7 +15,8 @@ struct MarsDawnCommand: AsyncParsableCommand {
         MarsDawn app, so it needs the app, which is not publicly available yet.
         Pass --json for machine-readable results. Exit codes: 0 success, \(CLIFailure.Code.inputNotFound.rawValue) input not found, \
         \(CLIFailure.Code.appNotInstalled.rawValue) MarsDawn not installed (open only), \(CLIFailure.Code.outputExists.rawValue) output exists \
-        (use --force), \(CLIFailure.Code.exportFailed.rawValue) export failed, 64 usage error.
+        (use --force), \(CLIFailure.Code.exportFailed.rawValue) export failed, \(CLIFailure.Code.appCannotOpenFolders.rawValue) this MarsDawn \
+        can't show a folder (open only), 64 usage error.
         """,
         version: MarsDawnCLI.version,
         subcommands: [Open.self, Export.self, Skill.self]
@@ -51,6 +52,7 @@ struct CLIFailure: Error, CustomStringConvertible {
         case appNotInstalled = 3
         case outputExists = 4
         case exportFailed = 5
+        case appCannotOpenFolders = 6
 
         var kind: String {
             switch self {
@@ -58,6 +60,7 @@ struct CLIFailure: Error, CustomStringConvertible {
             case .appNotInstalled: "app_not_installed"
             case .outputExists: "output_exists"
             case .exportFailed: "export_failed"
+            case .appCannotOpenFolders: "app_cannot_open_folders"
             }
         }
     }
@@ -65,6 +68,16 @@ struct CLIFailure: Error, CustomStringConvertible {
     let code: Code
     let message: String
     var description: String { message }
+
+    /// Wording approved by the owner (#165).
+    static func appCannotOpenFolders(app: URL) -> CLIFailure {
+        CLIFailure(
+            code: .appCannotOpenFolders,
+            message: "This version of MarsDawn can't show a folder from the command line; that needs "
+                + "an update to MarsDawn. Nothing was opened. Open the files without the folder, or "
+                + "use File > Open Folder… in MarsDawn. (App: \(app.path))"
+        )
+    }
 
     static func appNotInstalled() -> CLIFailure {
         CLIFailure(code: .appNotInstalled, message: "MarsDawn is not installed. open needs the app, which is not publicly available yet; export works without it.")
@@ -92,6 +105,18 @@ enum MarsDawnApp {
     static func require() throws -> URL {
         guard let url = locate() else { throw CLIFailure.appNotInstalled() }
         return url
+    }
+
+    /// The Info.plist key an app sets once it can take a folder from `open` and show it in the
+    /// sidebar. It names a capability, not a version, so the CLI asks the app it will actually
+    /// launch rather than guessing from a number (#165).
+    static let opensFoldersKey = "MarsDawnOpensFolders"
+
+    /// Whether the app at `url` declares it can take a folder. Replaceable for tests.
+    nonisolated(unsafe) static var opensFolders: (URL) -> Bool = { url in
+        let plist = url.appendingPathComponent("Contents/Info.plist")
+        guard let info = NSDictionary(contentsOf: plist) else { return false }
+        return (info[opensFoldersKey] as? Bool) == true
     }
 }
 
@@ -146,6 +171,8 @@ extension MarsDawnCommand {
             `marsdawn open .` shows the current directory; --folder does the same alongside files. \
             A window's sidebar shows one folder, so naming two is a usage error, and there is no \
             -a: VS Code's -a adds a second root, which MarsDawn has no way to do.
+            Showing a folder needs a MarsDawn that can take one. With an app that can't, open \
+            refuses before opening anything and exits \(CLIFailure.Code.appCannotOpenFolders.rawValue); files on their own open as before.
             A file argument can name a line: `notes.md:120` opens notes.md and lands on line 120. \
             A column after the line, as in `notes.md:120:8`, is accepted and ignored. An argument \
             that names a file which exists is always the whole filename, so a file called \
@@ -270,6 +297,13 @@ extension MarsDawnCommand {
             return folders
         }
 
+        /// The failure `open` must stop with before sending anything, or nil to go ahead: folders
+        /// asked of an app that doesn't declare it can take one. Files alone never ask.
+        static func folderRefusal(folders: [URL], app: URL) -> CLIFailure? {
+            guard !folders.isEmpty, !MarsDawnApp.opensFolders(app) else { return nil }
+            return CLIFailure.appCannotOpenFolders(app: app)
+        }
+
         /// How the app is asked to open things: brought to the front unless `--background`.
         func openConfiguration() -> NSWorkspace.OpenConfiguration {
             let configuration = NSWorkspace.OpenConfiguration()
@@ -282,6 +316,9 @@ extension MarsDawnCommand {
             let targets = try resolvedTargets()
             let folders = try resolvedFolders()
             let app = try MarsDawnApp.require()
+            // Before anything is sent: an app that can't take a folder shows an error dialog for
+            // it (#165), so asking would leave a person with an error and an agent with "ok".
+            if let refusal = Open.folderRefusal(folders: folders, app: app) { throw refusal }
             // Files asking for the same line travel in one event; the line applies to all of them.
             for group in RevealEvent.groups(for: targets) {
                 let configuration = openConfiguration()
