@@ -145,6 +145,7 @@ struct FootnoteTests {
     @Test(arguments: [
         "<script>alert(1)</script>",
         "<link rel=\"stylesheet\" href=\"x.css\"> text",
+        "inline <link rel=\"stylesheet\" href=\"x.css\"> in a sentence",
         "[x](javascript:alert(1)) and <a href=\"javascript:alert(1)\">y</a>",
         "![i](file:///etc/passwd) & \"q\" <b>bold</b>",
     ])
