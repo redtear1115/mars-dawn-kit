@@ -1,35 +1,35 @@
-/* Kit strings (fr), mars-dawn-kit 0.5.1. Every entry is a machine draft — needs native review (L2, #102).
+/* Kit strings (fr), mars-dawn-kit. Every entry is reviewed by the owner's reviewer (Grok, kit #84, 2026-09-22) (L2, #102).
    Ships only in a kit release. */
 
-/* machine draft — needs native review */
+/* reviewed by the owner's reviewer (Grok, kit #84, 2026-09-22) */
 "Dawn" = "Aube";
 
-/* machine draft — needs native review */
-"Warm Martian sunrise" = "Chaud lever de soleil martien";
+/* reviewed by the owner's reviewer (Grok, kit #84, 2026-09-22) */
+"Warm Martian sunrise" = "Lever de soleil martien chaleureux";
 
-/* machine draft — needs native review */
+/* reviewed by the owner's reviewer (Grok, kit #84, 2026-09-22) */
 "Classic" = "Classique";
 
-/* machine draft — needs native review */
+/* reviewed by the owner's reviewer (Grok, kit #84, 2026-09-22) */
 "Elegant serif on paper" = "Empattements élégants sur papier";
 
-/* machine draft — needs native review */
+/* reviewed by the owner's reviewer (Grok, kit #84, 2026-09-22) */
 "Modern" = "Moderne";
 
-/* machine draft — needs native review */
+/* reviewed by the owner's reviewer (Grok, kit #84, 2026-09-22) */
 "Clean and familiar" = "Net et familier";
 
-/* machine draft — needs native review */
+/* reviewed by the owner's reviewer (Grok, kit #84, 2026-09-22) */
 "Vivid" = "Vif";
 
-/* machine draft — needs native review */
+/* reviewed by the owner's reviewer (Grok, kit #84, 2026-09-22) */
 "Playful, bright and rounded" = "Ludique, lumineux et arrondi";
 
-/* machine draft — needs native review */
+/* reviewed by the owner's reviewer (Grok, kit #84, 2026-09-22) */
 "Web image" = "Image web";
 
-/* machine draft — needs native review */
+/* reviewed by the owner's reviewer (Grok, kit #84, 2026-09-22) */
 "Image not available" = "Image non disponible";
 
-/* machine draft — needs native review */
+/* reviewed by the owner's reviewer (Grok, kit #84, 2026-09-22) */
 "Not loaded: unencrypted connection (http)" = "Non chargée : connexion non chiffrée (http)";

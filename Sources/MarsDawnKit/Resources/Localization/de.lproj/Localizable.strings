@@ -1,35 +1,35 @@
-/* Kit strings (de), mars-dawn-kit 0.5.1. Every entry is a machine draft — needs native review (L2, #102).
+/* Kit strings (de), mars-dawn-kit. Every entry is reviewed by the owner's reviewer (Grok, kit #84, 2026-09-22) (L2, #102).
    Ships only in a kit release. */
 
-/* machine draft — needs native review */
+/* reviewed by the owner's reviewer (Grok, kit #84, 2026-09-22) */
 "Dawn" = "Morgenrot";
 
-/* machine draft — needs native review */
+/* reviewed by the owner's reviewer (Grok, kit #84, 2026-09-22) */
 "Warm Martian sunrise" = "Warmer Sonnenaufgang auf dem Mars";
 
-/* machine draft — needs native review */
+/* reviewed by the owner's reviewer (Grok, kit #84, 2026-09-22) */
 "Classic" = "Klassisch";
 
-/* machine draft — needs native review */
+/* reviewed by the owner's reviewer (Grok, kit #84, 2026-09-22) */
 "Elegant serif on paper" = "Elegante Serifenschrift auf Papier";
 
-/* machine draft — needs native review */
+/* reviewed by the owner's reviewer (Grok, kit #84, 2026-09-22) */
 "Modern" = "Modern";
 
-/* machine draft — needs native review */
+/* reviewed by the owner's reviewer (Grok, kit #84, 2026-09-22) */
 "Clean and familiar" = "Klar und vertraut";
 
-/* machine draft — needs native review */
+/* reviewed by the owner's reviewer (Grok, kit #84, 2026-09-22) */
 "Vivid" = "Lebhaft";
 
-/* machine draft — needs native review */
+/* reviewed by the owner's reviewer (Grok, kit #84, 2026-09-22) */
 "Playful, bright and rounded" = "Verspielt, hell und rund";
 
-/* machine draft — needs native review */
+/* reviewed by the owner's reviewer (Grok, kit #84, 2026-09-22) */
 "Web image" = "Webbild";
 
-/* machine draft — needs native review */
+/* reviewed by the owner's reviewer (Grok, kit #84, 2026-09-22) */
 "Image not available" = "Bild nicht verfügbar";
 
-/* machine draft — needs native review */
+/* reviewed by the owner's reviewer (Grok, kit #84, 2026-09-22) */
 "Not loaded: unencrypted connection (http)" = "Nicht geladen: unverschlüsselte Verbindung (http)";
