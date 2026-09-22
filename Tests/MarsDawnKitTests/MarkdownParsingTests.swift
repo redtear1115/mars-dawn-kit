@@ -112,12 +112,24 @@ struct MarkdownParsingWorkerTests {
 }
 
 /// The two-slot gate: FIFO hand-off, cancellation of waiters, exactly-once resumption.
-// Skipped on macOS 15, where the Concurrency runtime kills the process when a closure running on a
-// thread of its own is checked against the main actor (mars-dawn-kit#26). The skip carries its
-// reason, so the log says why. The gate is the same code on both systems and the CLI export step
-// covers it on macOS 15.
-@Suite(.enabled(if: runtimeAnswersExecutorQuestions,
-                "macOS 15's Concurrency runtime kills the test process on a main-actor check from a raw thread (mars-dawn-kit#26); runs on macOS 26"))
+//
+// mars-dawn-kit#26: this suite used to be skipped outright on macOS 15, because
+// `blockingAndAsyncWaitersShareOneQueue` built its own `withCheckedContinuation` plus
+// `Thread.detachNewThread` to stand in for "a blocking caller". A closure passed to `Thread`
+// like that gets compiled isolated to the main actor even though it's `@Sendable`; running it on
+// a thread of its own then makes the Concurrency runtime ask "is this the main actor's queue?"
+// through `dispatch_assert_queue`, which macOS 15 answers by killing the process
+// (`EXC_BREAKPOINT` in `_dispatch_assert_queue_fail`) instead of returning false the way macOS 26
+// does. Every other test here proves the same gate through the product's own thread management
+// (`MarkdownParsing.startWorker`, a plain product `Thread`, not test-authored) and none of them
+// trapped on macOS 15 -- `blockingCallersFillingTheTaskPoolDontStallAsyncCallers` below is the
+// same "a blocking caller sharing a gate with async callers" property, driven by
+// `MarkdownParsing.withDocument(gate:)` instead of a hand-rolled continuation, and it passed. So
+// `blockingAndAsyncWaitersShareOneQueue` now proves "a blocking caller" the same way: by calling
+// the product's synchronous `withDocument(gate:)` directly from inside the `Task`, which blocks
+// that task's thread exactly as a real blocking caller would, without the test standing up a
+// `Thread` of its own. That removes the one trapping construct from every test in this suite, so
+// it no longer needs the OS gate.
 struct WorkerGateTests {
     @Test func cancellingAWaiterReturnsNilPromptlyAndNeverRunsItsBody() async throws {
         let resumes = Counter<UInt64>()
@@ -307,12 +319,12 @@ struct WorkerGateTests {
                     return index
                 }
                 if index.isMultiple(of: 2) {
-                    // Blocking callers wait on threads of their own, not on the task pool.
-                    return await withCheckedContinuation { continuation in
-                        Thread.detachNewThread { @Sendable in
-                            continuation.resume(returning: MarkdownParsing.withDocument("x", options: .default, gate: gate, body))
-                        }
-                    }
+                    // Blocking callers wait on a thread of their own, not on the task pool —
+                    // the product's own worker thread, started inside the synchronous
+                    // `withDocument(gate:)` below (`MarkdownParsing.startWorker`), not a
+                    // `Thread` the test stands up itself. See the suite's doc comment
+                    // (mars-dawn-kit#26).
+                    return Self.blockingParse("x", gate: gate, body)
                 }
                 return await MarkdownParsing.withDocument("x", options: .default, gate: gate, body) ?? -1
             }
