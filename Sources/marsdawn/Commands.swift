@@ -102,27 +102,60 @@ func cliExitCode(for error: Error) -> Int32 {
 enum MarsDawnApp {
     static let bundleIdentifier = "dev.southern-light.marsdawn"
 
+    /// What `resolveOverride` found for `$MARSDAWN_APP_PATH`, once the variable is known to be set.
+    enum OverrideOutcome: Equatable {
+        /// Nothing exists at the override path.
+        case notFound
+        /// A bundle exists there and its `CFBundleIdentifier` is `MarsDawnApp.bundleIdentifier` or a
+        /// `MarsDawnApp.bundleIdentifier.*` copy.
+        case app(URL)
+    }
+
     /// `$MARSDAWN_APP_PATH` only stands in for MarsDawn itself, never for an arbitrary app: whoever
     /// sets it in the agent's environment could already put a fake `marsdawn` first on `PATH`, so
     /// this isn't a security boundary — it only catches an override left pointing at a deleted test
     /// copy or another app by accident. A throwaway verification copy's bundle id (like
-    /// `dev.southern-light.marsdawn.verify-3`) still passes.
-    nonisolated(unsafe) static var locate: () throws -> URL? = {
-        if let override = ProcessInfo.processInfo.environment["MARSDAWN_APP_PATH"] {
-            FileHandle.standardError.write(Data("marsdawn: using $MARSDAWN_APP_PATH override: \(override)\n".utf8))
-            let url = URL(fileURLWithPath: override)
-            guard FileManager.default.fileExists(atPath: override) else { return nil }
-            guard let identifier = bundleIdentifier(at: url) else {
-                throw CLIFailure.appPathOverrideRejected("\(url.path) has no readable CFBundleIdentifier in its Info.plist.")
-            }
-            guard identifier == bundleIdentifier || identifier.hasPrefix("\(bundleIdentifier).") else {
-                throw CLIFailure.appPathOverrideRejected(
-                    "\(url.path)'s bundle id is \(identifier), not \(bundleIdentifier) or a \(bundleIdentifier).* copy."
-                )
-            }
-            return url
+    /// `dev.southern-light.marsdawn.verify-3`) still passes; the bare id with a trailing dot and
+    /// nothing after it does not.
+    ///
+    /// A pure function of its arguments — no global state, no filesystem writes, nothing process-
+    /// wide — so tests call it directly with fixed inputs instead of mutating `ProcessInfo`'s
+    /// environment or a shared `locate` closure. `nil` means `$MARSDAWN_APP_PATH` wasn't set in
+    /// `environment` at all, and the caller should fall back to the normal lookup.
+    static func resolveOverride(
+        environment: [String: String],
+        bundleIdentifier readBundleIdentifier: (URL) -> String?,
+        stderr: (String) -> Void
+    ) throws -> OverrideOutcome? {
+        guard let override = environment["MARSDAWN_APP_PATH"] else { return nil }
+        stderr("marsdawn: using $MARSDAWN_APP_PATH override: \(override)\n")
+        guard FileManager.default.fileExists(atPath: override) else { return .notFound }
+        let url = URL(fileURLWithPath: override)
+        guard let identifier = readBundleIdentifier(url) else {
+            throw CLIFailure.appPathOverrideRejected("\(url.path) has no readable CFBundleIdentifier in its Info.plist.")
         }
-        return NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier)
+        let ownPrefix = "\(bundleIdentifier)."
+        let isOwnCopy = identifier.hasPrefix(ownPrefix) && identifier.count > ownPrefix.count
+        guard identifier == bundleIdentifier || isOwnCopy else {
+            throw CLIFailure.appPathOverrideRejected(
+                "\(url.path)'s bundle id is \(identifier), not \(bundleIdentifier) or a \(ownPrefix)* copy."
+            )
+        }
+        return .app(url)
+    }
+
+    /// Replaceable for tests. Its default calls the pure `resolveOverride` with the process's own
+    /// environment, Info.plist reader and stderr.
+    nonisolated(unsafe) static var locate: () throws -> URL? = {
+        switch try resolveOverride(
+            environment: ProcessInfo.processInfo.environment,
+            bundleIdentifier: bundleIdentifier(at:),
+            stderr: { FileHandle.standardError.write(Data($0.utf8)) }
+        ) {
+        case .app(let url): return url
+        case .notFound: return nil
+        case nil: return NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier)
+        }
     }
 
     static func require() throws -> URL {

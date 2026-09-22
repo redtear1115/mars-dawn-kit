@@ -95,16 +95,127 @@ struct StandaloneToolTests {
 
 // MARK: - $MARSDAWN_APP_PATH only stands in for MarsDawn itself (app #177)
 
+/// `resolveOverride` is a pure function of its arguments (no `ProcessInfo`/`MarsDawnApp.locate`
+/// mutation, no `setenv`, no `dup2` of a real file descriptor), so these tests call it directly
+/// with fixed inputs and can run safely alongside every other suite, including the ones that swap
+/// `MarsDawnApp.locate` itself (`StandaloneToolTests`, `FolderCapabilityTests`).
+///
 /// The override is spoofable by anyone who can already fake `marsdawn` on `PATH`, so this isn't a
 /// security boundary — it only catches an override left pointing at a deleted test copy or another
-/// app by accident. A throwaway verification copy's bundle id must still work.
-@Suite(.serialized)
+/// app by accident. A throwaway verification copy's bundle id must still work; the bare id with a
+/// trailing dot and nothing after it must not.
 struct AppPathOverrideTests {
-    /// A fake app bundle: only the Info.plist the CLI reads. `identifier` nil leaves out
-    /// `CFBundleIdentifier` (and, with `writePlist: false`, the Info.plist entirely).
+    /// An empty file or folder that exists on disk, so `resolveOverride`'s own `fileExists` check
+    /// passes; what's read from it is entirely decided by the stubbed `bundleIdentifier` closure
+    /// below, never by anything actually written here.
+    private func existingPath() throws -> URL {
+        let url = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("marsdawn-override-\(UUID().uuidString)")
+        try Data().write(to: url)
+        return url
+    }
+
+    /// Collects everything written through the `stderr` sink, in call order.
+    private final class StderrSpy {
+        private(set) var lines: [String] = []
+        func write(_ text: String) { lines.append(text) }
+    }
+
+    private func resolve(
+        _ environment: [String: String],
+        identifier: String?,
+        stderr: StderrSpy
+    ) throws -> MarsDawnApp.OverrideOutcome? {
+        try MarsDawnApp.resolveOverride(
+            environment: environment,
+            bundleIdentifier: { _ in identifier },
+            stderr: stderr.write
+        )
+    }
+
+    @Test func aVariableThatIsntSetFallsThroughWithNoNotice() throws {
+        let stderr = StderrSpy()
+        let outcome = try resolve([:], identifier: "dev.southern-light.marsdawn", stderr: stderr)
+        #expect(outcome == nil)
+        #expect(stderr.lines.isEmpty, "nothing was overridden, so nothing should be printed")
+    }
+
+    @Test func aPathThatDoesntExistIsNotFound() throws {
+        let stderr = StderrSpy()
+        let missing = "/definitely/not/here/MarsDawn.app"
+        let outcome = try resolve(["MARSDAWN_APP_PATH": missing], identifier: "dev.southern-light.marsdawn", stderr: stderr)
+        #expect(outcome == .notFound)
+        #expect(stderr.lines.contains { $0.contains("MARSDAWN_APP_PATH") }, "a notice is printed whenever the override is used")
+    }
+
+    @Test func aForeignBundleIdIsRefused() throws {
+        let path = try existingPath()
+        defer { try? FileManager.default.removeItem(at: path) }
+        let stderr = StderrSpy()
+        #expect {
+            _ = try resolve(["MARSDAWN_APP_PATH": path.path], identifier: "com.example.NotMarsDawn", stderr: stderr)
+        } throws: { error in
+            guard let failure = error as? CLIFailure else { return false }
+            return failure.code == .appNotInstalled && failure.message.contains("com.example.NotMarsDawn")
+        }
+        #expect(stderr.lines.contains { $0.contains("MARSDAWN_APP_PATH") }, "a notice is printed whenever the override is used")
+    }
+
+    @Test func aThrowawayVerificationCopyIsAccepted() throws {
+        let path = try existingPath()
+        defer { try? FileManager.default.removeItem(at: path) }
+        let stderr = StderrSpy()
+        let outcome = try resolve(["MARSDAWN_APP_PATH": path.path], identifier: "dev.southern-light.marsdawn.verify-x", stderr: stderr)
+        #expect(outcome == .app(path))
+        #expect(stderr.lines.contains { $0.contains("MARSDAWN_APP_PATH") })
+    }
+
+    @Test func theExactBundleIdIsAccepted() throws {
+        let path = try existingPath()
+        defer { try? FileManager.default.removeItem(at: path) }
+        let stderr = StderrSpy()
+        let outcome = try resolve(["MARSDAWN_APP_PATH": path.path], identifier: "dev.southern-light.marsdawn", stderr: stderr)
+        #expect(outcome == .app(path))
+        #expect(stderr.lines.contains { $0.contains("MARSDAWN_APP_PATH") })
+    }
+
+    /// The bare id with a trailing dot and nothing after it is not a `.*` copy: `hasPrefix` would
+    /// accept it, so the length check has to be there for real.
+    @Test func theBareIdWithATrailingDotIsRefused() throws {
+        let path = try existingPath()
+        defer { try? FileManager.default.removeItem(at: path) }
+        let stderr = StderrSpy()
+        #expect {
+            _ = try resolve(["MARSDAWN_APP_PATH": path.path], identifier: "dev.southern-light.marsdawn.", stderr: stderr)
+        } throws: { error in
+            (error as? CLIFailure)?.code == .appNotInstalled
+        }
+        #expect(stderr.lines.contains { $0.contains("MARSDAWN_APP_PATH") })
+    }
+
+    @Test func aMissingInfoPlistIsRefused() throws {
+        let path = try existingPath()
+        defer { try? FileManager.default.removeItem(at: path) }
+        let stderr = StderrSpy()
+        #expect {
+            _ = try resolve(["MARSDAWN_APP_PATH": path.path], identifier: nil, stderr: stderr)
+        } throws: { error in
+            (error as? CLIFailure)?.code == .appNotInstalled
+        }
+        #expect(stderr.lines.contains { $0.contains("MARSDAWN_APP_PATH") })
+    }
+}
+
+// MARK: - $MARSDAWN_APP_PATH's default `locate` reads the real Info.plist (app #177)
+
+/// `resolveOverride` above is exercised with a stubbed bundle-id reader; this checks the reader
+/// `locate`'s default actually wires in, `MarsDawnApp.bundleIdentifier(at:)`, against a real
+/// Info.plist on disk. No environment or `locate` mutation, so it runs safely alongside every
+/// other suite too.
+struct BundleIdentifierReadingTests {
     private func fakeApp(identifier: String?, writePlist: Bool = true) throws -> URL {
         let app = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
-            .appendingPathComponent("marsdawn-override-\(UUID().uuidString).app", isDirectory: true)
+            .appendingPathComponent("marsdawn-bundle-id-\(UUID().uuidString).app", isDirectory: true)
         let contents = app.appendingPathComponent("Contents", isDirectory: true)
         try FileManager.default.createDirectory(at: contents, withIntermediateDirectories: true)
         if writePlist {
@@ -116,71 +227,22 @@ struct AppPathOverrideTests {
         return app
     }
 
-    /// Runs `body` with `$MARSDAWN_APP_PATH` set to `override`, restoring whatever it was before,
-    /// and returns what `body` returns alongside everything `body` wrote to stderr.
-    private func withOverride<T>(_ override: String, _ body: () throws -> T) rethrows -> (T, stderr: String) {
-        let key = "MARSDAWN_APP_PATH"
-        let previous = ProcessInfo.processInfo.environment[key]
-        setenv(key, override, 1)
-        defer {
-            if let previous { setenv(key, previous, 1) } else { unsetenv(key) }
-        }
-
-        let pipe = Pipe()
-        let saved = dup(STDERR_FILENO)
-        dup2(pipe.fileHandleForWriting.fileDescriptor, STDERR_FILENO)
-        let result = try body()
-        fflush(stderr)
-        dup2(saved, STDERR_FILENO)
-        close(saved)
-        pipe.fileHandleForWriting.closeFile()
-        let text = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-        return (result, text)
-    }
-
-    @Test func aForeignBundleIdIsRefused() throws {
-        let app = try fakeApp(identifier: "com.example.NotMarsDawn")
-        defer { try? FileManager.default.removeItem(at: app) }
-        let (outcome, stderrText) = withOverride(app.path) {
-            Result { try MarsDawnApp.locate() }
-        }
-        guard case .failure(let error) = outcome else {
-            Issue.record("expected the override to be refused, got \(outcome)")
-            return
-        }
-        #expect((error as? CLIFailure)?.code == .appNotInstalled)
-        #expect((error as? CLIFailure)?.message.contains("com.example.NotMarsDawn") == true)
-        #expect(stderrText.contains("MARSDAWN_APP_PATH"), "a notice is printed whenever the override is used")
-    }
-
-    @Test func aThrowawayVerificationCopyIsAccepted() throws {
+    @Test func readsTheRealCFBundleIdentifier() throws {
         let app = try fakeApp(identifier: "dev.southern-light.marsdawn.verify-x")
         defer { try? FileManager.default.removeItem(at: app) }
-        let (url, stderrText) = try withOverride(app.path) { try MarsDawnApp.locate() }
-        #expect(url == app)
-        #expect(stderrText.contains("MARSDAWN_APP_PATH"))
+        #expect(MarsDawnApp.bundleIdentifier(at: app) == "dev.southern-light.marsdawn.verify-x")
     }
 
-    @Test func theExactBundleIdIsAccepted() throws {
-        let app = try fakeApp(identifier: "dev.southern-light.marsdawn")
-        defer { try? FileManager.default.removeItem(at: app) }
-        let (url, stderrText) = try withOverride(app.path) { try MarsDawnApp.locate() }
-        #expect(url == app)
-        #expect(stderrText.contains("MARSDAWN_APP_PATH"))
-    }
-
-    @Test func aMissingInfoPlistIsRefused() throws {
+    @Test func aMissingInfoPlistReadsAsNil() throws {
         let app = try fakeApp(identifier: nil, writePlist: false)
         defer { try? FileManager.default.removeItem(at: app) }
-        let (outcome, stderrText) = withOverride(app.path) {
-            Result { try MarsDawnApp.locate() }
-        }
-        guard case .failure(let error) = outcome else {
-            Issue.record("expected the override to be refused, got \(outcome)")
-            return
-        }
-        #expect((error as? CLIFailure)?.code == .appNotInstalled)
-        #expect(stderrText.contains("MARSDAWN_APP_PATH"))
+        #expect(MarsDawnApp.bundleIdentifier(at: app) == nil)
+    }
+
+    @Test func noCFBundleIdentifierKeyReadsAsNil() throws {
+        let app = try fakeApp(identifier: nil)
+        defer { try? FileManager.default.removeItem(at: app) }
+        #expect(MarsDawnApp.bundleIdentifier(at: app) == nil)
     }
 }
 
