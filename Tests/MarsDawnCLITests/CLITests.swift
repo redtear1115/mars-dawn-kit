@@ -93,6 +93,97 @@ struct StandaloneToolTests {
     }
 }
 
+// MARK: - $MARSDAWN_APP_PATH only stands in for MarsDawn itself (app #177)
+
+/// The override is spoofable by anyone who can already fake `marsdawn` on `PATH`, so this isn't a
+/// security boundary — it only catches an override left pointing at a deleted test copy or another
+/// app by accident. A throwaway verification copy's bundle id must still work.
+@Suite(.serialized)
+struct AppPathOverrideTests {
+    /// A fake app bundle: only the Info.plist the CLI reads. `identifier` nil leaves out
+    /// `CFBundleIdentifier` (and, with `writePlist: false`, the Info.plist entirely).
+    private func fakeApp(identifier: String?, writePlist: Bool = true) throws -> URL {
+        let app = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("marsdawn-override-\(UUID().uuidString).app", isDirectory: true)
+        let contents = app.appendingPathComponent("Contents", isDirectory: true)
+        try FileManager.default.createDirectory(at: contents, withIntermediateDirectories: true)
+        if writePlist {
+            var info: [String: Any] = [:]
+            if let identifier { info["CFBundleIdentifier"] = identifier }
+            let data = try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
+            try data.write(to: contents.appendingPathComponent("Info.plist"))
+        }
+        return app
+    }
+
+    /// Runs `body` with `$MARSDAWN_APP_PATH` set to `override`, restoring whatever it was before,
+    /// and returns what `body` returns alongside everything `body` wrote to stderr.
+    private func withOverride<T>(_ override: String, _ body: () throws -> T) rethrows -> (T, stderr: String) {
+        let key = "MARSDAWN_APP_PATH"
+        let previous = ProcessInfo.processInfo.environment[key]
+        setenv(key, override, 1)
+        defer {
+            if let previous { setenv(key, previous, 1) } else { unsetenv(key) }
+        }
+
+        let pipe = Pipe()
+        let saved = dup(STDERR_FILENO)
+        dup2(pipe.fileHandleForWriting.fileDescriptor, STDERR_FILENO)
+        let result = try body()
+        fflush(stderr)
+        dup2(saved, STDERR_FILENO)
+        close(saved)
+        pipe.fileHandleForWriting.closeFile()
+        let text = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        return (result, text)
+    }
+
+    @Test func aForeignBundleIdIsRefused() throws {
+        let app = try fakeApp(identifier: "com.example.NotMarsDawn")
+        defer { try? FileManager.default.removeItem(at: app) }
+        let (outcome, stderrText) = withOverride(app.path) {
+            Result { try MarsDawnApp.locate() }
+        }
+        guard case .failure(let error) = outcome else {
+            Issue.record("expected the override to be refused, got \(outcome)")
+            return
+        }
+        #expect((error as? CLIFailure)?.code == .appNotInstalled)
+        #expect((error as? CLIFailure)?.message.contains("com.example.NotMarsDawn") == true)
+        #expect(stderrText.contains("MARSDAWN_APP_PATH"), "a notice is printed whenever the override is used")
+    }
+
+    @Test func aThrowawayVerificationCopyIsAccepted() throws {
+        let app = try fakeApp(identifier: "dev.southern-light.marsdawn.verify-x")
+        defer { try? FileManager.default.removeItem(at: app) }
+        let (url, stderrText) = try withOverride(app.path) { try MarsDawnApp.locate() }
+        #expect(url == app)
+        #expect(stderrText.contains("MARSDAWN_APP_PATH"))
+    }
+
+    @Test func theExactBundleIdIsAccepted() throws {
+        let app = try fakeApp(identifier: "dev.southern-light.marsdawn")
+        defer { try? FileManager.default.removeItem(at: app) }
+        let (url, stderrText) = try withOverride(app.path) { try MarsDawnApp.locate() }
+        #expect(url == app)
+        #expect(stderrText.contains("MARSDAWN_APP_PATH"))
+    }
+
+    @Test func aMissingInfoPlistIsRefused() throws {
+        let app = try fakeApp(identifier: nil, writePlist: false)
+        defer { try? FileManager.default.removeItem(at: app) }
+        let (outcome, stderrText) = withOverride(app.path) {
+            Result { try MarsDawnApp.locate() }
+        }
+        guard case .failure(let error) = outcome else {
+            Issue.record("expected the override to be refused, got \(outcome)")
+            return
+        }
+        #expect((error as? CLIFailure)?.code == .appNotInstalled)
+        #expect(stderrText.contains("MARSDAWN_APP_PATH"))
+    }
+}
+
 // MARK: - open: files, lines and the event they travel in
 
 /// Files on disk for one test, deleted with the suite instance.

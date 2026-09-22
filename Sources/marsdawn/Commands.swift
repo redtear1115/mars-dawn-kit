@@ -82,6 +82,13 @@ struct CLIFailure: Error, CustomStringConvertible {
     static func appNotInstalled() -> CLIFailure {
         CLIFailure(code: .appNotInstalled, message: "MarsDawn is not installed. open needs the app, which is not publicly available yet; export works without it.")
     }
+
+    /// `appNotInstalled`, but naming why `$MARSDAWN_APP_PATH` was rejected. Same code and kind
+    /// (`app_not_installed`): nothing that reads the exit code or the JSON `error` field needs to
+    /// change, only the `message`.
+    static func appPathOverrideRejected(_ reason: String) -> CLIFailure {
+        CLIFailure(code: .appNotInstalled, message: "$MARSDAWN_APP_PATH was ignored: \(reason)")
+    }
 }
 
 /// The status `marsdawn` exits with for an error: a `CLIFailure`'s own code, and otherwise
@@ -95,15 +102,31 @@ func cliExitCode(for error: Error) -> Int32 {
 enum MarsDawnApp {
     static let bundleIdentifier = "dev.southern-light.marsdawn"
 
-    nonisolated(unsafe) static var locate: () -> URL? = {
+    /// `$MARSDAWN_APP_PATH` only stands in for MarsDawn itself, never for an arbitrary app: whoever
+    /// sets it in the agent's environment could already put a fake `marsdawn` first on `PATH`, so
+    /// this isn't a security boundary — it only catches an override left pointing at a deleted test
+    /// copy or another app by accident. A throwaway verification copy's bundle id (like
+    /// `dev.southern-light.marsdawn.verify-3`) still passes.
+    nonisolated(unsafe) static var locate: () throws -> URL? = {
         if let override = ProcessInfo.processInfo.environment["MARSDAWN_APP_PATH"] {
-            return FileManager.default.fileExists(atPath: override) ? URL(fileURLWithPath: override) : nil
+            FileHandle.standardError.write(Data("marsdawn: using $MARSDAWN_APP_PATH override: \(override)\n".utf8))
+            let url = URL(fileURLWithPath: override)
+            guard FileManager.default.fileExists(atPath: override) else { return nil }
+            guard let identifier = bundleIdentifier(at: url) else {
+                throw CLIFailure.appPathOverrideRejected("\(url.path) has no readable CFBundleIdentifier in its Info.plist.")
+            }
+            guard identifier == bundleIdentifier || identifier.hasPrefix("\(bundleIdentifier).") else {
+                throw CLIFailure.appPathOverrideRejected(
+                    "\(url.path)'s bundle id is \(identifier), not \(bundleIdentifier) or a \(bundleIdentifier).* copy."
+                )
+            }
+            return url
         }
         return NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier)
     }
 
     static func require() throws -> URL {
-        guard let url = locate() else { throw CLIFailure.appNotInstalled() }
+        guard let url = try locate() else { throw CLIFailure.appNotInstalled() }
         return url
     }
 
@@ -117,6 +140,13 @@ enum MarsDawnApp {
         let plist = url.appendingPathComponent("Contents/Info.plist")
         guard let info = NSDictionary(contentsOf: plist) else { return false }
         return (info[opensFoldersKey] as? Bool) == true
+    }
+
+    /// `CFBundleIdentifier` from a bundle's Info.plist, or nil if it's missing or unreadable.
+    static func bundleIdentifier(at url: URL) -> String? {
+        let plist = url.appendingPathComponent("Contents/Info.plist")
+        guard let info = NSDictionary(contentsOf: plist) else { return nil }
+        return info["CFBundleIdentifier"] as? String
     }
 }
 
