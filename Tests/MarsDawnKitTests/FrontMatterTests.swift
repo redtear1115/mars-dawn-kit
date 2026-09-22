@@ -535,7 +535,8 @@ struct NoFrontMatterGoldenTests {
         "8aab8838d2c76adb638d402b3fb7acb64168c212d614c50ccd6815e02183652b",
         "e8e28504b1b2287b9904056bcefc86eaebc1ba4fdc2b9df0efb1543ab3027613",
         "c628de0d2b717b191214caa8647eb8b9b0012b6add9ba0c36bba50900fafb507",
-        "efe867fb0f419085f0a160145d87cfea804ddbffcb58fd94ab4eba2b8ffc9d45",
+        // Document 7 has a footnote (`Term[^1]`), which #44 renders as one; the rest is as before.
+        "d30e93f36891679d1b1921a878ef038adbe2124ff4013c5200340093ce89184a",
         "eca41a28c3b54d8185c3b06cb60997f4b3de70f63c0c7ce7b2bf6b7c4b7a287b",
         "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
         "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",

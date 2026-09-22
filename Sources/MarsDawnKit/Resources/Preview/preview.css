@@ -63,6 +63,16 @@ strong { font-weight: 650; }
 
 hr { height: 2px; border: 0; background: var(--border); margin: 1.8em 0; }
 
+/* Footnotes (#44): numbered references, and the notes after the body under a rule. The notes
+   carry no data-line, so the section never moves scroll sync. Colours are the theme's own. */
+.footnote-ref { font-size: 0.75em; line-height: 0; }
+.footnote-ref a { padding: 0 0.1em; }
+.footnotes { margin-top: 2.4em; padding-top: 1em; border-top: 1px solid var(--border); font-size: 0.9em; }
+.footnotes ol, .footnotes ul { padding-left: 1.6em; }
+.footnotes-unreferenced { list-style: none; }
+.footnote-backref { margin-left: 0.15em; }
+.footnotes li:target, .footnote-ref a:target { background: color-mix(in srgb, var(--accent) 18%, transparent); border-radius: 3px; }
+
 ul, ol { padding-left: 2em; }
 li + li { margin-top: 0.25em; }
 li > ul, li > ol { margin-bottom: 0; }
@@ -354,7 +364,7 @@ img { max-width: 100%; }
      after it (when that block is short) and keeps the pair on one page. */
   .keep-with-next { break-inside: avoid; page-break-inside: avoid; }
   p, li, blockquote { orphans: 3; widows: 3; }
-  pre, blockquote, tr, img, .mermaid-block, .math-block, .image-placeholder {
+  pre, blockquote, tr, img, .mermaid-block, .math-block, .image-placeholder, .footnotes li {
     break-inside: avoid;
     page-break-inside: avoid;
   }
