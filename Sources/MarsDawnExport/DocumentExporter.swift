@@ -42,7 +42,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         }
     }
 
-    private static let log = Logger(subsystem: "dev.southern-light.marsdawn", category: "Export")
+    private static let log = Logger(subsystem: "dev.southern-light.marsdawn-kit", category: "Export")
     private nonisolated static let signposter = OSSignposter(subsystem: "dev.southern-light.marsdawn", category: "Performance")
     /// Diagrams and images get this long to finish before export gives up.
     private static let contentTimeout: Duration = .seconds(20)

@@ -21,7 +21,7 @@ public final class DocumentAssetSchemeHandler: NSObject, WKURLSchemeHandler {
 
     /// Requests in flight; a stopped request is removed and must not be answered.
     private var activeTasks: [ObjectIdentifier: any WKURLSchemeTask] = [:]
-    private let readQueue = DispatchQueue(label: "dev.southern-light.marsdawn.assets", qos: .userInitiated, attributes: .concurrent)
+    private let readQueue = DispatchQueue(label: "dev.southern-light.marsdawn-kit.assets", qos: .userInitiated, attributes: .concurrent)
 
     override public init() {}
 
