@@ -55,7 +55,10 @@ swift run marsdawn export notes.md -o notes.pdf --theme classic --paper a4
 - `--version` prints the release number and nothing else, so a package manager can compare it against its own. Bumping it is part of cutting a release; see [RELEASING.md](RELEASING.md).
 - `--generate-completion-script bash|zsh|fish` writes a shell completion script to stdout.
 - Exit codes: 2 input not found, 3 MarsDawn not installed (`open` only), 4 output exists, 5 export failed, 6 this MarsDawn can't take a folder (`open` only), 64 usage error.
-- `MARSDAWN_APP_PATH` overrides where the tool looks for the MarsDawn app. It exists for testing.
+- `MARSDAWN_APP_PATH` overrides where the tool looks for the MarsDawn app. It exists for testing, so
+  it's only honoured for a bundle whose `CFBundleIdentifier` is `dev.southern-light.marsdawn` or
+  starts with `dev.southern-light.marsdawn.` (a throwaway verification copy); anything else is
+  refused with exit code 3, and every use prints a notice on stderr.
 
 ## Use as a package
 
