@@ -71,7 +71,7 @@ public final class PreviewSchemeHandler: NSObject, WKURLSchemeHandler {
         return Data(text.utf8)
     }
 
-    private static let log = Logger(subsystem: "dev.southern-light.marsdawn", category: "PreviewScheme")
+    private static let log = Logger(subsystem: "dev.southern-light.marsdawn-kit", category: "PreviewScheme")
 
     /// The bundled Preview folder, or nil if the bundle doesn't have it.
     private let rootURL: URL?

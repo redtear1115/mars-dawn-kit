@@ -12,7 +12,7 @@ import WebKit
 ///   loads, reloads and history moves) refuses to start until a content rule list has been
 ///   applied with `applyContentRuleList(_:)`, so no page loads without the network rules.
 open class PreviewWKWebView: WKWebView {
-    private static let log = Logger(subsystem: "dev.southern-light.marsdawn", category: "PreviewWebView")
+    private static let log = Logger(subsystem: "dev.southern-light.marsdawn-kit", category: "PreviewWebView")
 
     /// Context menu items that load content or reload the page.
     ///

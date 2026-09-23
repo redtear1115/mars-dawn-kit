@@ -18,7 +18,7 @@ import PDFKit
 /// `bfrange`) leaves the PDF as it is, and so does a result PDFKit can't open with the same page
 /// count: it never trades a wrong text layer for a broken file.
 enum ToUnicodeRepair {
-    private static let log = Logger(subsystem: "dev.southern-light.marsdawn", category: "ToUnicodeRepair")
+    private static let log = Logger(subsystem: "dev.southern-light.marsdawn-kit", category: "ToUnicodeRepair")
 
     enum Outcome: Equatable {
         /// The PDF was left exactly as it was, for the reason given.
