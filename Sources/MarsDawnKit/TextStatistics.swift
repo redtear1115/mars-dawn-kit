@@ -44,14 +44,28 @@ public struct TextStatistics: Sendable, Equatable {
     /// Markdown markers and URLs, an over-count, but they stay close to what the editor
     /// shows and are the only answer available without a tree. `lines` is the same either
     /// way, and nothing here can fail or return nothing.
+    ///
+    /// Footnotes (#44) are read the way the page shows them: a reference's `[^label]` is not
+    /// counted, and each definition's text is counted once, as the note it becomes.
     public init(markdownBody: String) {
-        let readableText = MarkdownParsing.withDocument(markdownBody) { outcome -> String? in
+        var generator = SystemRandomNumberGenerator()
+        let footnotes = FootnoteExtractor.extract(from: markdownBody, using: &generator, placeholders: false)
+        guard let body = Self.readableText(footnotes.markdown) else {
+            self.init(readableText: markdownBody, sourceLines: markdownBody)
+            return
+        }
+        let notes = (footnotes.notes.map(\.markdown) + footnotes.unreferenced).map { Self.readableText($0) ?? $0 }
+        self.init(readableText: ([body] + notes).joined(separator: "\n"), sourceLines: markdownBody)
+    }
+
+    /// What a page shows of `markdown`, or nil when the parsing worker refuses it.
+    private static func readableText(_ markdown: String) -> String? {
+        MarkdownParsing.withDocument(markdown) { outcome -> String? in
             guard case .document(let document) = outcome else { return nil }
             var visitor = ReadableTextVisitor()
             visitor.visit(document)
             return visitor.output
         }
-        self.init(readableText: readableText ?? markdownBody, sourceLines: markdownBody)
     }
 
     private init(readableText: String, sourceLines: String) {

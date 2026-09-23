@@ -27,16 +27,21 @@ public enum MarkdownRenderer {
         /// The summary of the front-matter block. Rendered as escaped text; the app passes a
         /// localised string.
         public var frontMatterLabel: String
+        /// The accessible name of a footnote's way back to where it was referenced, followed by
+        /// the footnote's number (#44). The app passes a localised string.
+        public var footnoteBackLabel: String
 
         public init(
             maxBytes: Int? = nil,
             maxNodes: Int = ParseLimits.defaultMaxNodes,
             frontMatterLabel: String = "Document info",
+            footnoteBackLabel: String = "Back to reference",
             resolveImageSource: @escaping @Sendable (String) -> String = { $0 }
         ) {
             self.maxBytes = maxBytes
             self.maxNodes = maxNodes
             self.frontMatterLabel = frontMatterLabel
+            self.footnoteBackLabel = footnoteBackLabel
             self.resolveImageSource = resolveImageSource
         }
 
@@ -113,6 +118,8 @@ public enum MarkdownRenderer {
         let parsedBody: String
         /// The expressions `parsedBody`'s placeholders stand for.
         let math: MathExtractor.Extraction
+        /// The footnotes taken out of the body after the math (#44).
+        let footnotes: FootnoteExtraction
         let bodyLineOffset: Int
 
         init(_ markdown: String, options: Options) {
@@ -125,7 +132,9 @@ public enum MarkdownRenderer {
                 self.body = markdown
             }
             math = MathExtractor.extract(from: self.body)
-            parsedBody = math.markdown
+            // After the math, so `$[^1]$` stays TeX.
+            footnotes = FootnoteExtractor.extract(from: math.markdown)
+            parsedBody = footnotes.markdown
             bodyLineOffset = offset
         }
     }
@@ -140,8 +149,9 @@ public enum MarkdownRenderer {
     private static func renderResult(_ outcome: ParseOutcome, split: SplitSource, options: Options) -> RenderResult {
         switch outcome {
         case .document(let document):
-            var visitor = HTMLVisitor(options: options, lineOffset: split.bodyLineOffset, math: split.math)
-            return RenderResult(html: split.frontMatterHTML + visitor.visit(document), fallback: nil)
+            var visitor = HTMLVisitor(options: options, lineOffset: split.bodyLineOffset, math: split.math, footnotes: split.footnotes)
+            let body = visitor.visit(document)
+            return RenderResult(html: split.frontMatterHTML + body + footnotesHTML(split, options: options), fallback: nil)
         case .tooDeep(let depth):
             return sourceFallback(split, reason: .tooDeep(depth: depth))
         case .tooLarge:
@@ -150,6 +160,59 @@ public enum MarkdownRenderer {
         case .tooComplex:
             return sourceFallback(split, reason: .tooComplex)
         }
+    }
+
+    /// The footnotes section after the body, or "" when there are none (#44). It carries no
+    /// `data-line`: its notes stand at the end, not where they were written, and the preview's
+    /// scroll sync reads only lines that rise down the page.
+    ///
+    /// Every `id` and `href` here is made of numbers: `fn:N`, `fnref:N` and `fnref:N:k` for the
+    /// k-th reference. A label is never written out, and `slugify` never makes a `:`, so no
+    /// heading can take one of these. Each note is rendered by this renderer, with the same
+    /// escaping and raw-HTML rules as the body, and without `data-line` or heading `id`s.
+    private static func footnotesHTML(_ split: SplitSource, options: Options) -> String {
+        let footnotes = split.footnotes
+        guard !footnotes.isEmpty else { return "" }
+        var html = "<section class=\"footnotes\">\n"
+        if !footnotes.notes.isEmpty {
+            html += "<ol>\n"
+            for note in footnotes.notes {
+                var backlinks = ""
+                for occurrence in 1...max(note.referenceCount, 1) {
+                    let target = occurrence == 1 ? "fnref:\(note.number)" : "fnref:\(note.number):\(occurrence)"
+                    let label = escapeAttribute(options.footnoteBackLabel + " \(note.number)")
+                    let mark = occurrence == 1 ? "\u{21A9}" : "\u{21A9}<sup>\(occurrence)</sup>"
+                    backlinks += " <a href=\"#\(target)\" class=\"footnote-backref\" aria-label=\"\(label)\">\(mark)</a>"
+                }
+                html += "<li id=\"fn:\(note.number)\">" + noteHTML(note.markdown, split: split, options: options, appending: backlinks) + "</li>\n"
+            }
+            html += "</ol>\n"
+        }
+        if !footnotes.unreferenced.isEmpty {
+            html += "<ul class=\"footnotes-unreferenced\">\n"
+            for markdown in footnotes.unreferenced {
+                html += "<li>" + noteHTML(markdown, split: split, options: options, appending: "") + "</li>\n"
+            }
+            html += "</ul>\n"
+        }
+        return html + "</section>\n"
+    }
+
+    /// One note's Markdown as HTML, with `appending` (its backlinks) inside its last paragraph.
+    /// A note too deep or too large for the renderer is its escaped text, like the body.
+    private static func noteHTML(_ markdown: String, split: SplitSource, options: Options, appending: String) -> String {
+        let rendered = MarkdownParsing.withDocument(markdown, options: options.parseLimits) { outcome -> String in
+            guard case .document(let document) = outcome else {
+                return "<p>" + escapeHTML(markdown) + "</p>\n"
+            }
+            var visitor = HTMLVisitor(options: options, lineOffset: 0, math: split.math, footnotes: split.footnotes, inNote: true)
+            return visitor.visit(document)
+        }
+        guard !appending.isEmpty else { return rendered }
+        if rendered.hasSuffix("</p>\n") {
+            return String(rendered.dropLast("</p>\n".count)) + appending + "</p>\n"
+        }
+        return rendered + appending
     }
 
     /// The one fallback for every document that isn't rendered; only the reason differs.
@@ -223,15 +286,22 @@ private struct HTMLVisitor: MarkupVisitor {
     let lineOffset: Int
     /// The math taken out of the body before it was parsed.
     let math: MathExtractor.Extraction
+    /// The footnotes taken out of the body before it was parsed.
+    let footnotes: FootnoteExtraction
+    /// Rendering a footnote's own text: no `data-line`, no heading `id` (#44).
+    let inNote: Bool
     /// Every heading's `id`, in document order, worked out before any heading is written.
     private var headingIDs: [String] = []
     private var headingIndex = 0
     private var tightListStack: [Bool] = []
 
-    init(options: MarkdownRenderer.Options, lineOffset: Int, math: MathExtractor.Extraction) {
+    init(options: MarkdownRenderer.Options, lineOffset: Int, math: MathExtractor.Extraction,
+         footnotes: FootnoteExtraction, inNote: Bool = false) {
         self.options = options
         self.lineOffset = lineOffset
         self.math = math
+        self.footnotes = footnotes
+        self.inNote = inNote
     }
 
     mutating func defaultVisit(_ markup: any Markup) -> String {
@@ -247,7 +317,7 @@ private struct HTMLVisitor: MarkupVisitor {
     }
 
     private func lineAttribute(_ markup: any Markup) -> String {
-        guard let line = markup.range?.lowerBound.line else { return "" }
+        guard !inNote, let line = markup.range?.lowerBound.line else { return "" }
         return " data-line=\"\(line + lineOffset)\""
     }
 
@@ -285,6 +355,7 @@ private struct HTMLVisitor: MarkupVisitor {
         let level = min(max(heading.level, 1), 6)
         let id = headingIndex < headingIDs.count ? headingIDs[headingIndex] : "section-\(headingIndex)"
         headingIndex += 1
+        if inNote { return "<h\(level)>\(visitChildren(heading))</h\(level)>\n" }
         return "<h\(level) id=\"\(escapeAttribute(id))\"\(lineAttribute(heading))>\(visitChildren(heading))</h\(level)>\n"
     }
 
@@ -370,14 +441,32 @@ private struct HTMLVisitor: MarkupVisitor {
     /// that looks like a placeholder but isn't one of this render's comes back as text and is
     /// escaped like the rest.
     mutating func visitText(_ text: Text) -> String {
-        guard math.expressionCount > 0 else { return escapeHTML(text.string) }
+        guard math.expressionCount > 0 else { return textWithFootnotes(text.string) }
         var html = ""
         for segment in math.segments(in: text.string) {
             switch segment {
             case .text(let string):
-                html += escapeHTML(string)
+                html += textWithFootnotes(string)
             case .math(let tex, let display):
                 html += MarkdownRenderer.mathHTML(tex: tex, display: display, lineAttribute: nil)
+            }
+        }
+        return html
+    }
+
+    /// Escaped text with this render's footnote references expanded (#44). A placeholder that
+    /// isn't one of this render's comes back as text, escaped like the rest.
+    private func textWithFootnotes(_ string: String) -> String {
+        guard !footnotes.references.isEmpty else { return escapeHTML(string) }
+        var html = ""
+        for segment in footnotes.segments(in: string) {
+            switch segment {
+            case .text(let text):
+                html += escapeHTML(text)
+            case .reference(let number, let occurrence):
+                // Unique everywhere: each note is rendered once, and each reference is the k-th of its note.
+                let id = occurrence == 1 ? "fnref:\(number)" : "fnref:\(number):\(occurrence)"
+                html += "<sup class=\"footnote-ref\"><a href=\"#fn:\(number)\" id=\"\(id)\">\(number)</a></sup>"
             }
         }
         return html
@@ -472,6 +561,7 @@ private struct HTMLVisitor: MarkupVisitor {
     /// drops everything else — the delimiters, and the U+E000/U+E001 of any placeholder that
     /// isn't this render's and so comes back as text.
     private func slugSource(_ text: String) -> String {
+        let text = footnotes.sourceBack(text)
         guard math.expressionCount > 0 else { return text }
         return math.segments(in: text).reduce(into: "") { result, segment in
             switch segment {
