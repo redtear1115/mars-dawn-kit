@@ -1,0 +1,35 @@
+/* Kit strings (ko), mars-dawn-kit. Every entry is reviewed by the owner's reviewer (Grok, kit #84, 2026-09-22) (L2, #102).
+   Ships only in a kit release. */
+
+/* reviewed by the owner's reviewer (Grok, kit #84, 2026-09-22) */
+"Dawn" = "새벽";
+
+/* reviewed by the owner's reviewer (Grok, kit #84, 2026-09-22) */
+"Warm Martian sunrise" = "따뜻한 화성의 일출";
+
+/* reviewed by the owner's reviewer (Grok, kit #84, 2026-09-22) */
+"Classic" = "클래식";
+
+/* reviewed by the owner's reviewer (Grok, kit #84, 2026-09-22) */
+"Elegant serif on paper" = "종이 위의 우아한 세리프";
+
+/* reviewed by the owner's reviewer (Grok, kit #84, 2026-09-22) */
+"Modern" = "모던";
+
+/* reviewed by the owner's reviewer (Grok, kit #84, 2026-09-22) */
+"Clean and familiar" = "깔끔하고 친숙한";
+
+/* reviewed by the owner's reviewer (Grok, kit #84, 2026-09-22) */
+"Vivid" = "비비드";
+
+/* reviewed by the owner's reviewer (Grok, kit #84, 2026-09-22) */
+"Playful, bright and rounded" = "경쾌하고 밝고 둥근";
+
+/* reviewed by the owner's reviewer (Grok, kit #84, 2026-09-22) */
+"Web image" = "웹 이미지";
+
+/* reviewed by the owner's reviewer (Grok, kit #84, 2026-09-22) */
+"Image not available" = "이미지를 표시할 수 없음";
+
+/* reviewed by the owner's reviewer (Grok, kit #84, 2026-09-22) */
+"Not loaded: unencrypted connection (http)" = "불러오지 않음: 암호화되지 않은 연결(http)";

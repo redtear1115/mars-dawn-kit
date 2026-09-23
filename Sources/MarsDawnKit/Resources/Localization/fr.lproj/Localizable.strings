@@ -1,0 +1,35 @@
+/* Kit strings (fr), mars-dawn-kit. Every entry is reviewed by the owner's reviewer (Grok, kit #84, 2026-09-22) (L2, #102).
+   Ships only in a kit release. */
+
+/* reviewed by the owner's reviewer (Grok, kit #84, 2026-09-22) */
+"Dawn" = "Aube";
+
+/* reviewed by the owner's reviewer (Grok, kit #84, 2026-09-22) */
+"Warm Martian sunrise" = "Lever de soleil martien chaleureux";
+
+/* reviewed by the owner's reviewer (Grok, kit #84, 2026-09-22) */
+"Classic" = "Classique";
+
+/* reviewed by the owner's reviewer (Grok, kit #84, 2026-09-22) */
+"Elegant serif on paper" = "Empattements élégants sur papier";
+
+/* reviewed by the owner's reviewer (Grok, kit #84, 2026-09-22) */
+"Modern" = "Moderne";
+
+/* reviewed by the owner's reviewer (Grok, kit #84, 2026-09-22) */
+"Clean and familiar" = "Net et familier";
+
+/* reviewed by the owner's reviewer (Grok, kit #84, 2026-09-22) */
+"Vivid" = "Vif";
+
+/* reviewed by the owner's reviewer (Grok, kit #84, 2026-09-22) */
+"Playful, bright and rounded" = "Ludique, lumineux et arrondi";
+
+/* reviewed by the owner's reviewer (Grok, kit #84, 2026-09-22) */
+"Web image" = "Image web";
+
+/* reviewed by the owner's reviewer (Grok, kit #84, 2026-09-22) */
+"Image not available" = "Image non disponible";
+
+/* reviewed by the owner's reviewer (Grok, kit #84, 2026-09-22) */
+"Not loaded: unencrypted connection (http)" = "Non chargée : connexion non chiffrée (http)";
