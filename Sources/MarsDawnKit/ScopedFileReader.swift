@@ -32,7 +32,7 @@ struct ScopedFileReader: Sendable {
     /// The path the kernel reports for an open descriptor, as bytes (`F_GETPATH`).
     typealias DescriptorPath = @Sendable (Int32) -> [UInt8]?
 
-    private static let log = Logger(subsystem: "dev.southern-light.marsdawn", category: "ScopedFileReader")
+    private static let log = Logger(subsystem: "dev.southern-light.marsdawn-kit", category: "ScopedFileReader")
     private static let slash = UInt8(ascii: "/")
 
     /// macOS system symlinks at the top of the file system. A path whose first component is

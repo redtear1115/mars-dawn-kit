@@ -12,9 +12,10 @@ import WebKit
 /// Always uses the light palette of the given theme.
 ///
 /// Timing for the benchmark harness: intervals "template", "render", "push", "waitForContent"
-/// and "paginate" in subsystem dev.southern-light.marsdawn, category Performance (the app side
-/// uses the same subsystem/category, so one `log stream --signpost` or `xcrun xctrace record
-/// --template 'os_signpost'` captures both processes). "render" and "push" share their names
+/// and "paginate" in subsystem dev.southern-light.marsdawn-kit, category Performance (the app's
+/// own signposts use dev.southern-light.marsdawn, category Performance; a predicate of
+/// `subsystem BEGINSWITH "dev.southern-light.marsdawn"`, or `xcrun xctrace record --template
+/// 'os_signpost'`, captures both processes). "render" and "push" share their names
 /// with the app's preview signposts, but are distinct intervals here. Names and arguments:
 ///   - "template": the offscreen page's navigation, from `load(_:)` to `didFinish`/failure.
 ///   - "render": the `MarkdownRenderer.renderResult` call that turns Markdown into HTML.
@@ -42,8 +43,8 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         }
     }
 
-    private static let log = Logger(subsystem: "dev.southern-light.marsdawn", category: "Export")
-    private nonisolated static let signposter = OSSignposter(subsystem: "dev.southern-light.marsdawn", category: "Performance")
+    private static let log = Logger(subsystem: "dev.southern-light.marsdawn-kit", category: "Export")
+    private nonisolated static let signposter = OSSignposter(subsystem: "dev.southern-light.marsdawn-kit", category: "Performance")
     /// Diagrams and images get this long to finish before export gives up.
     private static let contentTimeout: Duration = .seconds(20)
     /// Side and top/bottom page margins in points (about 16 mm and 18 mm).

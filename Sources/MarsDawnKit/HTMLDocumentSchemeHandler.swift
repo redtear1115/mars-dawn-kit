@@ -114,7 +114,7 @@ public final class HTMLDocumentSchemeHandler: NSObject, WKURLSchemeHandler {
 
     // MARK: State
 
-    private static let log = Logger(subsystem: "dev.southern-light.marsdawn", category: "HTMLDocument")
+    private static let log = Logger(subsystem: "dev.southern-light.marsdawn-kit", category: "HTMLDocument")
 
     /// One `beginLoad`: its token, scope and budgets.
     @MainActor
@@ -159,7 +159,7 @@ public final class HTMLDocumentSchemeHandler: NSObject, WKURLSchemeHandler {
     private var activeTasks: [RequestID: any WKURLSchemeTask] = [:]
     private var waitingReads: [QueuedRead] = []
     private var runningReads = 0
-    private let readQueue = DispatchQueue(label: "dev.southern-light.marsdawn.html-document", qos: .userInitiated, attributes: .concurrent)
+    private let readQueue = DispatchQueue(label: "dev.southern-light.marsdawn-kit.html-document", qos: .userInitiated, attributes: .concurrent)
 
     /// What happened to a request, for the test-only request log.
     enum LogOutcome: Equatable, Sendable {
