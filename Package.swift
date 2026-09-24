@@ -11,6 +11,10 @@ let package = Package(
         .library(name: "MarsDawnKit", targets: ["MarsDawnKit"]),
         .library(name: "MarsDawnExport", targets: ["MarsDawnExport"]),
         .executable(name: "marsdawn", targets: ["marsdawn"]),
+        // PLAN #69 slice 0 (feasibility spike, never merged, never released): a tiny standalone
+        // receiver that proves a signed, sandboxed MarsDawn copy can post a Darwin notification
+        // that this separate, unsandboxed process receives.
+        .executable(name: "spike69notify", targets: ["spike69notify"]),
     ],
     dependencies: [
         .package(url: "https://github.com/swiftlang/swift-markdown.git", from: "0.8.0"),
@@ -52,5 +56,7 @@ let package = Package(
             resources: [.copy("MermaidCorpus")]
         ),
         .testTarget(name: "MarsDawnCLITests", dependencies: ["marsdawn"]),
+        // PLAN #69 slice 0 (feasibility spike, never merged): see spike69notify above.
+        .executableTarget(name: "spike69notify"),
     ]
 )
