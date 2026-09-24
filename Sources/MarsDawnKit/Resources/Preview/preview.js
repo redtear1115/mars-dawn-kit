@@ -189,6 +189,30 @@
     return rendered;
   }
 
+  // A displayed error message is capped; PDF export reads the uncapped `data-error` instead.
+  const mermaidErrorMessageLimit = 2000;
+  function truncateMessage(text) {
+    return text.length > mermaidErrorMessageLimit ? text.slice(0, mermaidErrorMessageLimit) + "…" : text;
+  }
+
+  // Mermaid numbers "line N" in its own message from the diagram's own first content line
+  // (the line right after the opening fence), not the document. The block's own `data-line`
+  // (set by MarkdownRenderer) is the fence's document line, so document line = fence line + N.
+  // Rewriting the number in place keeps Mermaid's own wording ("Parse error on line 5:")
+  // instead of adding new copy; when the fence's line isn't known, or the message doesn't
+  // name a line, the message is returned unchanged and `docLine` is null.
+  function mapMermaidLineToDocument(raw, fenceLineAttr) {
+    const fenceLine = Number(fenceLineAttr);
+    const match = /\bline\s+(\d+)\b/i.exec(raw);
+    if (!match || !Number.isFinite(fenceLine)) return { text: raw, docLine: null };
+    const docLine = fenceLine + Number(match[1]);
+    const rewritten = match[0].replace(match[1], String(docLine));
+    return {
+      text: raw.slice(0, match.index) + rewritten + raw.slice(match.index + match[0].length),
+      docLine,
+    };
+  }
+
   async function renderMermaid(block, placeholderSVG) {
     const source = block.querySelector(".mermaid-source")?.textContent ?? "";
     const target = document.createElement("div");
@@ -222,9 +246,11 @@
       if (!block.isConnected) return;
       // An invalid diagram never blanks the page or loses its source: the source stays
       // visible (unless an older rendering of it is still on screen while editing) and the
-      // message sits under it as ordinary, selectable text.
-      const message = String(err?.message ?? err).split("\n")[0];
+      // full message sits under it as ordinary, selectable text (redtear1115/mars-dawn#226).
+      const raw = String(err?.message ?? err);
+      const { text: message, docLine } = mapMermaidLineToDocument(raw, block.getAttribute("data-line"));
       block.classList.add("error");
+      // PDF export reads this back (DocumentExporter.diagramErrors) and keeps it uncapped.
       block.setAttribute("data-error", message);
       let note = block.querySelector(".mermaid-error");
       if (!note) {
@@ -233,7 +259,12 @@
         note.setAttribute("role", "note");
         block.appendChild(note);
       }
-      note.textContent = message;
+      note.textContent = truncateMessage(message);
+      if (docLine !== null) {
+        note.setAttribute("data-doc-line", String(docLine));
+      } else {
+        note.removeAttribute("data-doc-line");
+      }
       if (!placeholderSVG) block.classList.remove("rendered");
     } finally {
       document.getElementById(`d${id}`)?.remove();

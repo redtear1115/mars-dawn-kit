@@ -239,6 +239,11 @@ img { max-width: 100%; }
   font: 12px var(--font-mono);
   color: var(--hl-keyword);
   text-align: left;
+  /* The full parse message is multiple lines, including a "^" marker under the offending
+     column (redtear1115/mars-dawn#226): keep line breaks and column alignment, and scroll
+     horizontally rather than wrap and lose them. */
+  white-space: pre;
+  overflow-x: auto;
 }
 .mermaid-error::before { content: "Mermaid: "; }
 
