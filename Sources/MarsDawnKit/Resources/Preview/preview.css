@@ -239,6 +239,11 @@ img { max-width: 100%; }
   font: 12px var(--font-mono);
   color: var(--hl-keyword);
   text-align: left;
+  /* The full parse message is multiple lines, including a "^" marker under the offending
+     column (redtear1115/mars-dawn#226): keep line breaks and column alignment, and scroll
+     horizontally rather than wrap and lose them. */
+  white-space: pre;
+  overflow-x: auto;
 }
 .mermaid-error::before { content: "Mermaid: "; }
 
@@ -386,6 +391,11 @@ img { max-width: 100%; }
   }
   /* Long code may still need to split; wrap instead of clipping at the page edge. */
   pre { overflow: visible; white-space: pre-wrap; overflow-wrap: anywhere; }
+  /* On screen, `pre` (preview.css above) keeps the "^" column aligned and scrolls sideways.
+     Paper has no scrollbar, so the same `pre` clipped the "Expecting …" line at the page edge
+     (redtear1115/mars-dawn#226, verifier round 1): wrap instead, so the whole message prints,
+     even though a wrapped line no longer lines the "^" up under its column. */
+  .mermaid-error { white-space: pre-wrap; overflow-wrap: anywhere; overflow: visible; }
   /* Paper has no scrollbar, and TeX has no line breaking, so an expression wider than the
      column can only be cut. Cut it at the column, not at the paper's edge: `hidden` keeps
      the block's own width at 100%, so an over-wide expression can't widen the page box and

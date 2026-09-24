@@ -61,6 +61,9 @@ struct PreviewMermaidErrorTests {
             noteRole: note ? note.getAttribute("role") : null,
             noteElements: note ? note.children.length : -1,
             prefix: note ? getComputedStyle(note, "::before").content : null,
+            docLine: note ? note.getAttribute("data-doc-line") : null,
+            dataError: block.getAttribute("data-error"),
+            fenceLine: block.getAttribute("data-line"),
           };
         })()
         """, in: webView) as? [String: Any] ?? [:]
@@ -101,6 +104,96 @@ struct PreviewMermaidErrorTests {
         #expect(bad["noteElements"] as? Int == 0)
         #expect(try await value("document.querySelectorAll('#content .mermaid-error img, #content .mermaid-error b').length",
                                 in: webView) as? Int == 0)
+    }
+
+    /// redtear1115/mars-dawn#226: the note shows every line Mermaid gives back, not just the
+    /// first, and "line N" (which Mermaid counts from the diagram's own first content line) is
+    /// rewritten to the document's line number, which the fixture below fixes at a known value
+    /// so the mapping can be checked exactly, not just "some number".
+    @Test func theFullMessageIsShownWithTheDocumentLine() async throws {
+        let webView = try await loadedPreview()
+        // document(): "Before…\n\n```mermaid\n<first>```\n\nAfter…\n\n```mermaid\n<second>```\n"
+        // puts the opening fence on line 3, so the diagram's own line 1 ("flowchart LR") is
+        // document line 4, and its line 2 (the invalid line) is document line 5.
+        try await render(document(invalid, valid), in: webView)
+
+        let bad = try await blockState(0, in: webView)
+        #expect(bad["fenceLine"] as? String == "3")
+        let note = try #require(bad["note"] as? String)
+        // Every line Mermaid sent, not only the first: the offending source line, the `^`
+        // column marker, and the "Expecting …" line the old code dropped.
+        #expect(note.contains("this is not valid"), "the offending source line is kept")
+        #expect(note.contains("^"), "the column marker is kept")
+        #expect(note.contains("Expecting"), "the expectation line is kept")
+        #expect(note.hasPrefix("Parse error on line 5:"), "line 2 in the diagram is line 5 in the document")
+        #expect(!note.contains("line 2"), "the diagram-relative number isn't left in the shown text")
+        #expect(bad["docLine"] as? String == "5", "the mapped line is exposed for a future click-to-reveal")
+
+        // The PDF exporter's data-error keeps the same full, mapped message.
+        #expect(bad["dataError"] as? String == note)
+    }
+
+    /// A message with no "line N" (or a block with no known document line) is shown as Mermaid
+    /// sent it, and carries no doc-line attribute for the app to act on.
+    @Test func aMessageWithoutALineNumberIsUnmappedButStillShown() async throws {
+        let webView = try await loadedPreview()
+        // Fewer than the minimum nodes for most Mermaid diagram types raises a message with no
+        // "line N" in it (an empty flowchart parses fine but renders nothing useful, so use a
+        // diagram type mermaid rejects outright without a line reference).
+        let noLineNumber = "this-is-not-a-known-diagram-type\n"
+        try await render(document(noLineNumber, valid), in: webView)
+
+        let bad = try await blockState(0, in: webView)
+        #expect(bad["error"] as? Bool == true)
+        let note = try #require(bad["note"] as? String)
+        #expect(!note.isEmpty)
+        #expect(bad["docLine"] == nil || bad["docLine"] is NSNull, "no line to map, so no data-doc-line")
+    }
+
+    /// verifier round 1, defect 1: editing above a broken diagram moves its `data-line` (via
+    /// `copyLineNumbers`, when `update()` reuses the block because `blockKey` ignores line
+    /// numbers), but the diagram itself is unchanged, so `renderMermaid` never reruns. The
+    /// mapped line has to move with the block's `data-line` anyway, without re-rendering.
+    @Test func theMappedLineFollowsAnEditAboveTheDiagramWithoutRerendering() async throws {
+        let webView = try await loadedPreview()
+        try await render(document(invalid, valid), in: webView)
+        let before = try await blockState(0, in: webView)
+        #expect(before["fenceLine"] as? String == "3")
+        #expect(before["docLine"] as? String == "5")
+
+        // The same update() path the app uses for every keystroke: two new lines above the
+        // fixture push its fence from document line 3 to 5, and the invalid line from 5 to 7.
+        try await render("New line.\n\n" + document(invalid, valid), in: webView)
+        let after = try await blockState(0, in: webView)
+        #expect(after["fenceLine"] as? String == "5", "the block was reused, and its own data-line moved")
+        #expect(after["docLine"] as? String == "7", "the note's mapped line moves with it")
+        let note = try #require(after["note"] as? String)
+        #expect(note.hasPrefix("Parse error on line 7:"))
+        #expect(!note.contains("line 5"), "the stale mapped line isn't left behind")
+        #expect(after["dataError"] as? String == note)
+    }
+
+    /// verifier round 1, defect 2: a fence with no `data-line` at all (MarkdownRenderer gives
+    /// none inside a footnote's own text) must not be mapped to line 0. `Number(null)` and
+    /// `Number("")` are both `0`, which `Number.isFinite` accepts, so the bug showed up as a
+    /// wrong but present `data-doc-line`, not as a crash — this checks for its absence.
+    @Test func aFenceWithNoKnownLineGetsNoMappedLine() async throws {
+        let webView = try await loadedPreview()
+        // Every continuation line, including the diagram's own, needs the footnote's 4-space
+        // indent, or it falls out of the footnote and back onto the document's own lines.
+        let indentedFence = "    ```mermaid\n"
+            + invalid.split(separator: "\n", omittingEmptySubsequences: false).dropLast()
+                .map { "    \($0)\n" }.joined()
+            + "    ```\n"
+        let markdown = "Used[^m].\n\n[^m]: See below.\n\n\(indentedFence)"
+        try await render(markdown, in: webView)
+
+        let bad = try await blockState(0, in: webView)
+        #expect(bad["error"] as? Bool == true)
+        #expect(bad["fenceLine"] == nil || bad["fenceLine"] is NSNull, "the fence in a footnote carries no data-line")
+        #expect(bad["docLine"] == nil || bad["docLine"] is NSNull, "so there's nothing to map it to")
+        let note = try #require(bad["note"] as? String)
+        #expect(note.hasPrefix("Parse error on line 2:"), "shown exactly as Mermaid sent it, unmapped")
     }
 
     /// Mermaid draws a temporary element for each render; a failed one must not leave it (or
