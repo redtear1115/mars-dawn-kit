@@ -8,7 +8,7 @@ import Foundation
 /// The line rides inside the open-documents event itself rather than in a second message, so it
 /// arrives with the files on a cold launch and on an already-running app, and the sandbox
 /// extension that lets the app read those files travels with it. The app also handles
-/// `marsdawn://open?path=…&line=N` links from version 1.0.3, but only for Markdown files inside
+/// `marsdawn://open?path=…&line=N` links from version 1.0.0, but only for Markdown files inside
 /// folders already open in its sidebar, because a link carries no sandbox extension; `open`
 /// never sends one.
 ///
