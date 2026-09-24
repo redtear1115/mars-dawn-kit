@@ -1,3 +1,27 @@
+highlight.js 11.12.0
+https://github.com/highlightjs/highlight.js
+
+Vendored from the npm package @highlightjs/cdn-assets@11.12.0, the project's prebuilt
+browser distribution
+https://registry.npmjs.org/@highlightjs/cdn-assets/-/cdn-assets-11.12.0.tgz
+(registry integrity
+sha512-KvOKXODaiFmId9xaq3xc5xCL66wVLUuOngDbO9B/kewbFTqdGbn2nJxNhN3H5R1cgDTVj6R8vH0zgiNDEGjpDw==,
+tarball SHA-256 b8a006d30f45afe783072569f3d69c5b60c0e7b9ca28cd474e12f2584e2a3bd9).
+highlight.min.js is the package's highlight.min.js, verbatim (it defines the global `hljs`).
+Its banner reads `Highlight.js v11.12.0 (git: f7f7d3803b)` and it reports
+`versionString="11.12.0"`.
+
+This record was written after the fact (redtear1115/mars-dawn-kit#90): the file has not
+changed since the kit's first commit, and it is byte-identical to that package's
+highlight.min.js. The licence below is the package's LICENSE, also byte-identical.
+Replacing highlight.min.js means redoing this record; VendoredHighlightJSTests fails until
+the record matches the file.
+
+SHA-256 of each vendored file, relative to this folder:
+  8ab71eb09c51f501e5e25157d9cff100e46cc29bcbfc744d0b746d451fca7f53  highlight.min.js
+
+The package's licence follows.
+
 BSD 3-Clause License
 
 Copyright (c) 2006, Ivan Sagalaev.
