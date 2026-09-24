@@ -306,7 +306,8 @@ extension MarsDawnCommand {
         /// `--folder`, once both the app and this build support it. 0 skips waiting, and skips
         /// sending the token at all — the byte-identical, pre-slice-B `requested`-only path.
         @Option(name: .long, help: ArgumentHelp(
-            "Seconds to wait for MarsDawn's report on --folder (0–30, 0 to skip). Ignored without --folder.",
+            "Seconds to wait for MarsDawn's report on --folder (0–30, 0 to skip). Only takes effect "
+                + "with --folder; a value outside 0–30 is a usage error either way.",
             valueName: "seconds"
         ))
         var wait = 2

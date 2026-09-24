@@ -321,13 +321,44 @@ struct WaitOptionTests {
         #expect(WaitRangeFailure.exitCode == 64)
     }
 
-    /// A negative `--wait` is also out of range, but ArgumentParser itself refuses `-1` as an
-    /// option value (it reads as another flag, not a value) before `run()` is ever reached — a
-    /// usage error too, and this time ArgumentParser's own `ValidationError` machinery gives it
-    /// `64` directly, the same number `WaitRangeFailure` uses. Documented here so the gap isn't
-    /// mistaken for untested.
-    @Test func aNegativeWaitIsRefusedByArgumentParserItself() throws {
+    /// A negative `--wait` is also out of range, but written with a space (`--wait -1`) it never
+    /// reaches `run()`, or even `validate()`: ArgumentParser itself refuses `-1` as an option value
+    /// (it reads as another flag, not a value) while parsing. Still a usage error, still exit 64,
+    /// but through ArgumentParser's own plain-text parse failure, which never carries
+    /// `WaitRangeFailure`'s `wait_out_of_range` JSON kind at all (#102 review: README, `Skill.swift`
+    /// and `skill/SKILL.md` all say this precisely; `--wait=-1`, the equals form, does reach
+    /// `WaitRangeFailure` normally, tested below).
+    @Test func aNegativeWaitWrittenWithASpaceIsRefusedByArgumentParserItselfWithNoJSONKind() throws {
         #expect(throws: (any Error).self) { try MarsDawnCommand.Open.parse(["--wait", "-1", "/tmp/x.md"]) }
+        do {
+            _ = try MarsDawnCommand.parseAsRoot(["open", "/tmp/x.md", "--wait", "-1"])
+            Issue.record("expected a usage error")
+        } catch {
+            #expect(MarsDawnCommand.exitCode(for: error).rawValue == 64)
+            #expect(!MarsDawnCommand.fullMessage(for: error).contains("wait_out_of_range"))
+        }
+    }
+
+    /// The equals form isn't ambiguous with another flag, so a negative `--wait` written that way
+    /// reaches `WaitRangeFailure` normally, with its own `wait_out_of_range` JSON kind.
+    @Test func aNegativeWaitWrittenWithEqualsReachesWaitRangeFailure() async throws {
+        let parsed = try MarsDawnCommand.Open.parse(["--wait=-1", "/tmp/x.md"])
+        #expect(parsed.wait == -1)
+        let code = await exitCode { _ = try await MarsDawnCommand.Open.parse(["--wait=-1", "/tmp/x.md"]).run() }
+        #expect(code == 64)
+    }
+
+    /// A value too large to be an `Int` at all is also ArgumentParser's own parse failure, not
+    /// `WaitRangeFailure` — still 64, still no `wait_out_of_range`, same as the negative-with-a-space
+    /// case above.
+    @Test func aWaitValueTooLargeToBeANumberHasNoJSONKindEither() throws {
+        do {
+            _ = try MarsDawnCommand.parseAsRoot(["open", "/tmp/x.md", "--wait", "99999999999999999999"])
+            Issue.record("expected a usage error")
+        } catch {
+            #expect(MarsDawnCommand.exitCode(for: error).rawValue == 64)
+            #expect(!MarsDawnCommand.fullMessage(for: error).contains("wait_out_of_range"))
+        }
     }
 
     @Test func theMessageNamesTheRange() {
@@ -335,6 +366,15 @@ struct WaitOptionTests {
         #expect(failure.message.contains("0"))
         #expect(failure.message.contains("30"))
         #expect(failure.message.contains("42"))
+    }
+
+    /// #102 review: `--help` said `--wait` is "Ignored without --folder", but a bad value is a
+    /// usage error whether or not `--folder` is given (`outOfRangeIsExitCode64` above uses no
+    /// `--folder` at all). The help text must not claim otherwise.
+    @Test func helpDoesNotClaimBadValuesAreIgnoredWithoutFolder() {
+        let help = MarsDawnCommand.helpMessage(for: MarsDawnCommand.Open.self)
+        #expect(help.contains("--wait"))
+        #expect(!help.contains("Ignored without --folder"))
     }
 }
 
