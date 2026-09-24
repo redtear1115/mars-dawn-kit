@@ -71,6 +71,20 @@ marsdawn open plan.md:42 --json
   and carry on. Don't retry, and don't try to install the app.
 - Never use `open` to make a PDF: that's `export`.
 
+### Showing a folder
+
+`marsdawn open . --folder . --json` (or a folder path as an argument) also asks MarsDawn to show
+that folder in the window's sidebar, alongside any files. With a MarsDawn that reports back, the
+`folder` object in `--json` carries a `status` once the wait ends: `attached`, `needsUser` (see
+`waitingFor`: `confirmation` or `folderChoice`, meaning the user has to act — don't retry, just
+tell them), `declined`, `failed`, `attachedDifferentFolder`, `full`, `unavailable`, or `unknown`
+(the app didn't answer in time; try again with a longer `--wait`, or treat it as "don't know").
+`--wait <seconds>` sets how long to wait, 0–30, default 2; a value outside that range is a usage
+error, but reported as exit code 2 with `error: wait_out_of_range`, not the usual 64, so don't
+lump it in with other bad-option errors. `--wait 0`, or an older MarsDawn that doesn't report
+back, skips waiting: the `folder` object only carries `path` and `requested: true`, same as
+before this existed.
+
 ## Full contract
 
 Every field, schema and code: https://marsdawn.southern-light.dev/cli/agents/
