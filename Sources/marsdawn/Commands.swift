@@ -100,15 +100,20 @@ func cliExitCode(for error: Error) -> Int32 {
     return MarsDawnCommand.exitCode(for: error).rawValue
 }
 
-/// `--wait` outside 0–30 (plan L4). A separate type from `CLIFailure`: the plan gives this its
-/// own exit code, 2, distinct from ArgumentParser's usual 64 for a bad option value — and 2 is
-/// already `CLIFailure.Code.inputNotFound`'s number, so this doesn't claim that kind's meaning,
-/// only the same number the plan asks for.
+/// `--wait` outside 0–30 (plan L4). A separate type from `CLIFailure`: this is a usage error, so
+/// it exits `64`, the codebase's own convention for one (every other `Open` validation error, such
+/// as `--line` out of range, throws ArgumentParser's `ValidationError` and gets `64` the same way).
+/// The plan's draft said exit `2`, but `2` is already `CLIFailure.Code.inputNotFound`'s number for
+/// an unrelated failure, so a bad `--wait` can't reuse it without two different failures sharing one
+/// code. Kept as its own type rather than a `ValidationError`, both because `run()` must throw it
+/// as the very first thing it does — before resolving targets, folders or the app — and
+/// `validate()` runs too early for that, and because it carries a stable machine-readable
+/// `wait_out_of_range` kind for `--json`, which a plain `ValidationError` doesn't support.
 struct WaitRangeFailure: Error, CustomStringConvertible {
     let value: Int
     var message: String { "--wait must be between 0 and 30 seconds, but \(value) was given." }
     var description: String { message }
-    static let exitCode: Int32 = 2
+    static let exitCode: Int32 = 64
     static let kind = "wait_out_of_range"
 }
 
@@ -321,9 +326,10 @@ extension MarsDawnCommand {
                 )
             }
             // Not here: ArgumentParser wraps whatever `validate()` throws in its own internal
-            // `CommandError`, which would swallow `WaitRangeFailure`'s own exit code (2) behind
-            // its generic fallback (1). `run()` throws it directly instead, as the first thing it
-            // does, before anything is sent — the same shape `CLIFailure` already uses.
+            // `CommandError`, which would swallow `WaitRangeFailure`'s own JSON `error` kind behind
+            // its generic text-only error formatting. `run()` throws it directly instead, as the
+            // first thing it does, before anything is sent — the same shape `CLIFailure` already
+            // uses.
             guard !files.isEmpty || !folder.isEmpty else {
                 throw ValidationError("Nothing to open. Give a file, a folder, or --folder <path>.")
             }

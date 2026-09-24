@@ -80,8 +80,8 @@ that folder in the window's sidebar, alongside any files. With a MarsDawn that r
 tell them), `declined`, `failed`, `attachedDifferentFolder`, `full`, `unavailable`, or `unknown`
 (the app didn't answer in time; try again with a longer `--wait`, or treat it as "don't know").
 `--wait <seconds>` sets how long to wait, 0–30, default 2; a value outside that range is a usage
-error, but reported as exit code 2 with `error: wait_out_of_range`, not the usual 64, so don't
-lump it in with other bad-option errors. `--wait 0`, or an older MarsDawn that doesn't report
+error, exit 64, with `error: wait_out_of_range` in `--json` to tell it apart from other bad-option
+errors. `--wait 0`, or an older MarsDawn that doesn't report
 back, skips waiting: the `folder` object only carries `path` and `requested: true`, same as
 before this existed.
 

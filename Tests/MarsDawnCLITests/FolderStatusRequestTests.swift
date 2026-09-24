@@ -287,7 +287,7 @@ struct FolderStatusRequestGateTests {
     }
 }
 
-// MARK: - `--wait` validation (exit 2)
+// MARK: - `--wait` validation (exit 64)
 
 @MainActor
 struct WaitOptionTests {
@@ -311,20 +311,21 @@ struct WaitOptionTests {
     /// `run()` throws `WaitRangeFailure` directly, as the very first thing it does — before
     /// resolving targets, folders or the app — so nothing is sent for an out-of-range `--wait`.
     /// (Not `validate()`: ArgumentParser wraps whatever that throws in its own internal
-    /// `CommandError`, which loses `WaitRangeFailure`'s own exit code behind its generic
-    /// fallback. See the comment on the `--wait` check in `Commands.swift`.)
-    @Test func outOfRangeIsExitCodeTwo() async throws {
+    /// `CommandError`, which loses `WaitRangeFailure`'s own JSON `error` kind behind its generic
+    /// text-only formatting. See the comment on the `--wait` check in `Commands.swift`.)
+    @Test func outOfRangeIsExitCode64() async throws {
         for value in [31, 100] {
             let code = await exitCode { _ = try await MarsDawnCommand.Open.parse(["--wait", "\(value)", "/tmp/x.md"]).run() }
             #expect(code == WaitRangeFailure.exitCode, "value \(value)")
         }
-        #expect(WaitRangeFailure.exitCode == 2)
+        #expect(WaitRangeFailure.exitCode == 64)
     }
 
     /// A negative `--wait` is also out of range, but ArgumentParser itself refuses `-1` as an
-    /// option value (it reads as another flag, not a value) before `run()` is ever reached —
-    /// still a usage error, just ArgumentParser's own 64 rather than `WaitRangeFailure`'s 2.
-    /// Documented here so the gap isn't mistaken for untested.
+    /// option value (it reads as another flag, not a value) before `run()` is ever reached — a
+    /// usage error too, and this time ArgumentParser's own `ValidationError` machinery gives it
+    /// `64` directly, the same number `WaitRangeFailure` uses. Documented here so the gap isn't
+    /// mistaken for untested.
     @Test func aNegativeWaitIsRefusedByArgumentParserItself() throws {
         #expect(throws: (any Error).self) { try MarsDawnCommand.Open.parse(["--wait", "-1", "/tmp/x.md"]) }
     }

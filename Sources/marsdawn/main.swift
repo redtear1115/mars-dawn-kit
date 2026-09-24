@@ -25,9 +25,9 @@ func finish(_ error: Error?) -> Never {
         } else {
             FileHandle.standardError.write(Data("marsdawn: \(failure.message)\n".utf8))
         }
-        exit(WaitRangeFailure.exitCode)
+        exit(WaitRangeFailure.exitCode) // 64, ArgumentParser's own usage-error code.
     }
-    // Usage errors, --help and --version keep ArgumentParser's own output and exit codes.
+    // Other usage errors, --help and --version keep ArgumentParser's own output and exit codes.
     MarsDawnCommand.exit(withError: error)
 }
 
