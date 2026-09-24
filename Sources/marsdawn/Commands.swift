@@ -91,11 +91,25 @@ struct CLIFailure: Error, CustomStringConvertible {
     }
 }
 
-/// The status `marsdawn` exits with for an error: a `CLIFailure`'s own code, and otherwise
-/// ArgumentParser's — 64 for a usage error, 0 for `--help` and `--version`.
+/// The status `marsdawn` exits with for an error: a `CLIFailure`'s own code, `WaitRangeFailure`'s
+/// own code, and otherwise ArgumentParser's — 64 for a usage error, 0 for `--help` and
+/// `--version`.
 func cliExitCode(for error: Error) -> Int32 {
     if let failure = error as? CLIFailure { return failure.code.rawValue }
+    if error is WaitRangeFailure { return WaitRangeFailure.exitCode }
     return MarsDawnCommand.exitCode(for: error).rawValue
+}
+
+/// `--wait` outside 0–30 (plan L4). A separate type from `CLIFailure`: the plan gives this its
+/// own exit code, 2, distinct from ArgumentParser's usual 64 for a bad option value — and 2 is
+/// already `CLIFailure.Code.inputNotFound`'s number, so this doesn't claim that kind's meaning,
+/// only the same number the plan asks for.
+struct WaitRangeFailure: Error, CustomStringConvertible {
+    let value: Int
+    var message: String { "--wait must be between 0 and 30 seconds, but \(value) was given." }
+    var description: String { message }
+    static let exitCode: Int32 = 2
+    static let kind = "wait_out_of_range"
 }
 
 /// Where MarsDawn is installed. Replaceable for tests.
@@ -175,6 +189,18 @@ enum MarsDawnApp {
         return (info[opensFoldersKey] as? Bool) == true
     }
 
+    /// The Info.plist key an app sets once it posts back whether a folder actually attached
+    /// (PLAN #69 slice B). Gated the same way as `opensFoldersKey`: a capability, read from the
+    /// app the CLI will actually launch.
+    static let reportsFolderStatusKey = "MarsDawnReportsFolderStatus"
+
+    /// Whether the app at `url` declares it reports folder status. Replaceable for tests.
+    nonisolated(unsafe) static var reportsFolderStatus: (URL) -> Bool = { url in
+        let plist = url.appendingPathComponent("Contents/Info.plist")
+        guard let info = NSDictionary(contentsOf: plist) else { return false }
+        return (info[reportsFolderStatusKey] as? Bool) == true
+    }
+
     /// `CFBundleIdentifier` from a bundle's Info.plist, or nil if it's missing or unreadable.
     static func bundleIdentifier(at url: URL) -> String? {
         let plist = url.appendingPathComponent("Contents/Info.plist")
@@ -236,6 +262,11 @@ extension MarsDawnCommand {
             -a: VS Code's -a adds a second root, which MarsDawn has no way to do.
             Showing a folder needs a MarsDawn that can take one. With an app that can't, open \
             refuses before opening anything and exits \(CLIFailure.Code.appCannotOpenFolders.rawValue); files on their own open as before.
+            With an app that also reports back, --folder's JSON result carries a "status" once the \
+            wait ends: "attached", "needsUser" (see "waitingFor"), "declined", "failed", \
+            "attachedDifferentFolder", "full", "unavailable" or "unknown". --wait sets how long to \
+            wait for it, in seconds (0–30, default 2); --wait 0, or an app that doesn't report back, \
+            skips waiting and reports nothing beyond "requested": true, exactly as before this existed.
             A file argument can name a line: `notes.md:120` opens notes.md and lands on line 120. \
             A column after the line, as in `notes.md:120:8`, is accepted and ignored. An argument \
             that names a file which exists is always the whole filename, so a file called \
@@ -266,7 +297,18 @@ extension MarsDawnCommand {
         @Flag(name: .long, help: "Open without bringing MarsDawn to the front.")
         var background = false
 
+        /// PLAN #69 slice B: how long to wait for the app's own report of what happened to
+        /// `--folder`, once both the app and this build support it. 0 skips waiting, and skips
+        /// sending the token at all — the byte-identical, pre-slice-B `requested`-only path.
+        @Option(name: .long, help: ArgumentHelp(
+            "Seconds to wait for MarsDawn's report on --folder (0–30, 0 to skip). Ignored without --folder.",
+            valueName: "seconds"
+        ))
+        var wait = 2
+
         @OptionGroup var output: OutputOptions
+
+        static let waitRange = 0...30
 
         func validate() throws {
             if vsCodeAdd {
@@ -278,6 +320,10 @@ extension MarsDawnCommand {
                         + "sidebar shows one folder at a time."
                 )
             }
+            // Not here: ArgumentParser wraps whatever `validate()` throws in its own internal
+            // `CommandError`, which would swallow `WaitRangeFailure`'s own exit code (2) behind
+            // its generic fallback (1). `run()` throws it directly instead, as the first thing it
+            // does, before anything is sent — the same shape `CLIFailure` already uses.
             guard !files.isEmpty || !folder.isEmpty else {
                 throw ValidationError("Nothing to open. Give a file, a folder, or --folder <path>.")
             }
@@ -376,6 +422,7 @@ extension MarsDawnCommand {
 
         @MainActor
         func run() async throws {
+            guard Open.waitRange.contains(wait) else { throw WaitRangeFailure(value: wait) }
             let targets = try resolvedTargets()
             let folders = try resolvedFolders()
             let app = try MarsDawnApp.require()
@@ -389,9 +436,17 @@ extension MarsDawnCommand {
                 _ = try await NSWorkspace.shared.open(group.urls, withApplicationAt: app, configuration: configuration)
             }
             // Folders travel on their own, with no reveal line: a folder has no line to land on.
-            if !folders.isEmpty {
+            // PLAN #69 slice B: with an app that reports back and --wait > 0, a one-time token
+            // rides this event and we wait for its answer; otherwise this sends exactly what
+            // `open --folder` always has.
+            var folderStatus: FolderStatusRequest.Result?
+            if let folder = folders.first {
                 let configuration = openConfiguration()
-                _ = try await NSWorkspace.shared.open(folders, withApplicationAt: app, configuration: configuration)
+                let capable = MarsDawnApp.reportsFolderStatus(app)
+                folderStatus = try await FolderStatusRequest.send(
+                    folder: folder, app: app, wait: wait, capable: capable, configuration: configuration,
+                    opener: FolderStatusEnvironment.opener, notifier: FolderStatusEnvironment.notifier
+                )
             }
             var fields: [String: Any] = [
                 "opened": targets.map { target -> [String: Any] in
@@ -402,19 +457,48 @@ extension MarsDawnCommand {
             ]
             // `requested`, not `attached`: this command hands the folder to the app and returns.
             // Whether the sidebar ends up showing it — or the app has to ask the user for access
-            // first — is decided inside the app, and nothing reports back here. Saying "attached"
-            // would tell an agent a thing this command cannot know.
+            // first — is decided inside the app. With an app and a --wait that ask for it, `status`
+            // (and, for `needsUser`, `waitingFor`) carries the app's own answer; otherwise this
+            // stays exactly what it always reported.
             if let folder = folders.first {
-                fields["folder"] = ["path": folder.path, "requested": true]
+                fields["folder"] = Open.folderFields(path: folder.path, result: folderStatus)
             }
             var lines = targets.map { target -> String in
                 guard let line = target.line else { return "Opened \(target.url.path)" }
                 return "Opened \(target.url.path) at line \(line)"
             }
             if let folder = folders.first {
-                lines.append("Asked MarsDawn to show \(folder.path) in the sidebar")
+                lines.append(Open.folderLine(path: folder.path, result: folderStatus))
             }
             output.report(fields, text: lines.joined(separator: "\n"))
+        }
+
+        /// The `"folder"` object in `--json`: always `path` and `requested: true`; `status` (and,
+        /// for `needsUser`, `waitingFor`) only when `result` carries one. Shared by `run()` and by
+        /// tests, so a test that checks the token never reaches this exercises the exact code
+        /// that ships, not a copy of it.
+        static func folderFields(path: String, result: FolderStatusRequest.Result?) -> [String: Any] {
+            var fields: [String: Any] = ["path": path, "requested": true]
+            if let status = result?.status {
+                fields["status"] = status.rawValue
+                if let waitingFor = result?.waitingFor {
+                    fields["waitingFor"] = waitingFor.rawValue
+                }
+            }
+            return fields
+        }
+
+        /// The matching text line for `folderFields`.
+        static func folderLine(path: String, result: FolderStatusRequest.Result?) -> String {
+            var line = "Asked MarsDawn to show \(path) in the sidebar"
+            if let status = result?.status {
+                line += " (\(status.rawValue)"
+                if let waitingFor = result?.waitingFor {
+                    line += ", waiting for \(waitingFor.rawValue)"
+                }
+                line += ")"
+            }
+            return line
         }
     }
 }

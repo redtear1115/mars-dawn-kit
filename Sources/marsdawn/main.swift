@@ -19,6 +19,14 @@ func finish(_ error: Error?) -> Never {
         }
         exit(cliExitCode(for: failure))
     }
+    if let failure = error as? WaitRangeFailure {
+        if wantsJSON {
+            printJSON(["ok": false, "error": WaitRangeFailure.kind, "message": failure.message])
+        } else {
+            FileHandle.standardError.write(Data("marsdawn: \(failure.message)\n".utf8))
+        }
+        exit(WaitRangeFailure.exitCode)
+    }
     // Usage errors, --help and --version keep ArgumentParser's own output and exit codes.
     MarsDawnCommand.exit(withError: error)
 }
