@@ -376,6 +376,29 @@ struct OpenCommandTests {
         #expect(try command.resolvedFolders().map(\.path) == [dir.standardizedFileURL.path])
     }
 
+    /// #104 review: this used to be a usage error (any directory argument alongside `--line`
+    /// triggered "--line needs a file, but ... is a folder", even with a real file argument doing
+    /// the line's job). The #104 fix to that message only fires when there's no file at all
+    /// (`fileArguments == 0`), so a file argument, a directory argument, and `--line` together are
+    /// now accepted — matching what `<file> --folder <dir> --line <n>` already did on main. Declared
+    /// intended: a directory argument and `--folder` are the same kind of thing, and there is no
+    /// reason `--line` should treat them differently once a real file is present to take the line.
+    @Test func aFileAndADirectoryArgumentTogetherAcceptLineOnTheFile() throws {
+        let dir = try makeFolder()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let a = files.path("a.md")
+        let command = try MarsDawnCommand.Open.parse([a, dir.path, "--line", "3"])
+        let resolved = try command.resolvedTargets()
+        #expect(resolved.map(\.url.lastPathComponent) == ["a.md"])
+        #expect(resolved.map(\.line) == [3])
+        #expect(try command.resolvedFolders().map(\.path) == [dir.standardizedFileURL.path])
+        // Matches the --folder spelling of the same request.
+        let viaFolder = try MarsDawnCommand.Open.parse([a, "--folder", dir.path, "--line", "3"])
+        let resolvedViaFolder = try viaFolder.resolvedTargets()
+        #expect(resolvedViaFolder.map(\.url.lastPathComponent) == resolved.map(\.url.lastPathComponent))
+        #expect(resolvedViaFolder.map(\.line) == resolved.map(\.line))
+    }
+
     /// The same folder named twice is one folder, not two: asking for it as an argument and
     /// again with --folder is a reasonable thing for a script to do.
     @Test func thesameFolderNamedTwiceIsOneFolder() throws {
@@ -458,6 +481,22 @@ struct OpenCommandTests {
         // A file passed where a folder belongs is named as such, not reported as missing.
         #expect(exitCode { _ = try MarsDawnCommand.Open.parse(["--folder", files.path("a.md")]).resolvedFolders() }
             == CLIFailure.Code.inputNotFound.rawValue)
+    }
+
+    /// #104 review: with a real folder and a second, nonexistent one, this used to be exit 2
+    /// (`input_not_found`, from `resolvedFolders()` hitting the missing one while resolving each
+    /// candidate in turn) and is now exit 64 ("More than one folder was given"), because
+    /// `validate()`'s new multiplicity check runs before either folder's existence is checked.
+    /// Declared intended: two folders is a usage error regardless of whether either one exists —
+    /// telling the person to pick one is more useful than telling them one of the two is missing,
+    /// and it matches `--folder <dir1> --folder <dir2>`, which was already a usage error (64) before
+    /// existence was ever checked, on main.
+    @Test func twoFoldersIsAUsageErrorEvenWhenOneDoesntExist() throws {
+        let dir = try makeFolder()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let exit = exitCode { _ = try MarsDawnCommand.parseAsRoot(["open", dir.path, "--folder", "/definitely/not/here"]) }
+        #expect(exit == 64)
+        #expect(exit != CLIFailure.Code.inputNotFound.rawValue)
     }
 
     @Test func aMissingFileIsReportedBeforeTheAppIsLookedFor() {
