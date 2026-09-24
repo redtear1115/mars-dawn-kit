@@ -108,11 +108,39 @@
   }
 
   // Identity of a block ignoring source line numbers, which shift on every edit above it.
+  //
+  // Reads the block's own serialized markup and folds it into a short hash in one linear pass,
+  // instead of cloning the subtree, walking it to strip every nested "data-line" attribute, then
+  // re-serializing the clone (mars-dawn#190: three O(block size) passes over a freshly allocated
+  // parallel DOM tree, paid by *every* incoming block on *every* update — a long table or code
+  // fence's whole markup, not just what changed). The clone's `outerHTML` string became the Map
+  // key too, so a big block also made every pool lookup hash a big string; hashing here keeps the
+  // key a fixed, small size regardless of the block's content.
+  //
+  // "data-line" is skipped by scanning past its digits, the same identity the old clone-and-strip
+  // achieved, without touching the DOM.
   function blockKey(el) {
-    const clone = el.cloneNode(true);
-    clone.removeAttribute("data-line");
-    clone.querySelectorAll("[data-line]").forEach((n) => n.removeAttribute("data-line"));
-    return clone.outerHTML;
+    const html = el.outerHTML;
+    let h1 = 0x811c9dc5;
+    let h2 = (0x1000193 ^ html.length) >>> 0;
+    let i = 0;
+    while (i < html.length) {
+      // The leading-space check keeps this from misreading literal text that merely contains
+      // the substring "data-line=\"" (e.g. inside a code span; `escapeHTML` doesn't escape
+      // quotes) as the attribute: real attributes are always preceded by exactly one space in
+      // serialized HTML, so a text run would need that same coincidental space too, on top of
+      // matching every other byte of the eventual hash, to ever collide with a different block.
+      if (i > 0 && html.charCodeAt(i - 1) === 0x20 && html.charCodeAt(i) === 0x64 /* 'd' */ && html.startsWith('data-line="', i)) {
+        i += 11; // length of 'data-line="'
+        while (i < html.length && html.charCodeAt(i) !== 0x22 /* '"' */) i++;
+        continue;
+      }
+      const c = html.charCodeAt(i);
+      h1 = Math.imul(h1 ^ c, 0x01000193) >>> 0;
+      h2 = Math.imul(h2 + c, 0x85ebca6b) >>> 0;
+      i++;
+    }
+    return `${h1.toString(36)}:${h2.toString(36)}`;
   }
 
   function copyLineNumbers(from, to) {

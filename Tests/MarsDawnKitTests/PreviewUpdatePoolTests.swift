@@ -148,5 +148,61 @@ struct PreviewUpdatePoolTests {
         try await settle(webView)
         try await expectMatchesFresh(webView, versions.last!, "seed \(seed)")
     }
+
+    // MARK: #190 — the pool key stopped cloning, walking and re-serializing each block
+
+    /// A block whose own *text* contains something that looks like the attribute `blockKey` skips
+    /// (`escapeHTML` doesn't escape quotes, so a code span's rendered text keeps a literal `"`).
+    /// This must still reuse across a pure line-number shift and still tell two such blocks with
+    /// different digits apart — `blockKey`'s string scan must not mistake this text for the real
+    /// attribute it's built to ignore.
+    @Test func aBlockWhoseTextLooksLikeTheSkippedAttributeStillIdentifiesCorrectly() async throws {
+        let webView = try await loadedPreview()
+        let lookalike = "`data-line=\"123\"`"
+        let body = "\(lookalike)\n\nsecond paragraph\n"
+        try await push(body, to: webView)
+        try await settle(webView)
+        // Shift every line down: the lookalike block must still be the same element (reused),
+        // just renumbered — exactly what a real "data-line" attribute gets.
+        let shifted = "above\n\n\(lookalike)\n\nsecond paragraph\n"
+        try await push(shifted, to: webView)
+        try await settle(webView)
+        try await expectMatchesFresh(webView, shifted, "line-shifted lookalike block")
+
+        // A different lookalike (different digits after the same fake attribute) must not be
+        // treated as the same block — it needs its own render, not the first one's stale content.
+        let differentDigits = "above\n\n`data-line=\"456\"`\n\nsecond paragraph\n"
+        try await push(differentDigits, to: webView)
+        try await settle(webView)
+        try await expectMatchesFresh(webView, differentDigits, "different lookalike digits")
+    }
+
+    /// The regression #190 measured: a many-block document where only one block actually changes
+    /// still had to clone, strip and re-serialize *every* block's markup to find that out, and the
+    /// cost scaled with the *document's* size, not the edit's. This pushes an update that changes
+    /// one block out of many and asserts the page is exactly right (the correctness half); the
+    /// timing is printed, not budgeted — CI hardware varies too much to pin an absolute number —
+    /// but it's the number to compare against a checkout of `blockKey`'s old `cloneNode(true)`
+    /// form if this ever needs re-measuring by hand.
+    @Test func onlyOneChangedBlockAmongManyStaysCheapToIdentify() async throws {
+        let webView = try await loadedPreview()
+        let blockCount = 400
+        func document(changing index: Int, to text: String) -> String {
+            (0..<blockCount).map { $0 == index ? text : "Paragraph \($0) stays exactly the same across the update, padded so its markup isn't trivial: `code(\($0))`, *emphasis \($0)*." }
+                .joined(separator: "\n\n") + "\n"
+        }
+        try await push(document(changing: -1, to: ""), to: webView)
+        try await settle(webView)
+        let changedIndex = blockCount / 2
+        let second = document(changing: changedIndex, to: "Paragraph \(changedIndex) is now different.")
+        let html = MarkdownRenderer.render(second)
+        let script = PreviewWebView.updateScript(html: html, lineCount: LineIndex(second).lineCount)
+        let started = ContinuousClock.now
+        _ = try await webView.evaluateJavaScript(script)
+        let elapsed = ContinuousClock.now - started
+        try await settle(webView)
+        try await expectMatchesFresh(webView, second, "one changed block among \(blockCount)")
+        print("pool update, one changed block of \(blockCount): \(elapsed)")
+    }
 }
 #endif
