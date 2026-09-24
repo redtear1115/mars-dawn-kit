@@ -35,15 +35,21 @@ Using a coding agent? Add the skill: https://marsdawn.southern-light.dev/cli/ski
 ```sh
 swift run marsdawn open notes.md
 swift run marsdawn open notes.md:120
+swift run marsdawn open .
+swift run marsdawn open notes.md --folder .
 swift run marsdawn export notes.md -o notes.pdf --theme classic --paper a4
 ```
 
-- `open <paths…> [--line N] [--folder DIR] [--background] [--wait N] [--json]` opens files in the MarsDawn app.
+- `open <paths…> [--line N] [--folder DIR] [--background] [--wait N] [--json]` opens files in the MarsDawn app, and folders in its sidebar.
   - **It needs the MarsDawn app, from the [Mac App Store](https://apps.apple.com/app/id6812925073).** Without the app, `open` exits with code 3. `export` needs no app.
   - A file argument can name a line: `notes.md:120` lands on line 120, and a column after it (`notes.md:120:8`) is accepted and ignored. An argument that names a file which exists is always the whole filename, so a file called `weird:12` still opens as itself.
   - `--line N` says the same thing for a single file, and is the way to ask for a line on a path that itself ends in a colon and digits. With more than one file it is a usage error.
   - Lines run from 1 to 999999999. Anything else is a usage error, and nothing is sent.
   - The line travels inside the same open-documents Apple Event that carries the files, so it arrives whether MarsDawn is already running or not. There is no URL scheme.
+  - A **folder** argument opens in the window's sidebar instead of as a document: `marsdawn open .` shows the current directory. `--folder DIR` does the same alongside files, so `marsdawn open notes.md --folder .` opens the document and shows its project.
+  - A MarsDawn window's sidebar shows **one** folder, so naming two is a usage error, and so is `--folder` twice, even for the same folder. Naming the same folder as an argument and again with `--folder` is not: it's one folder.
+  - There is no `-a`. VS Code's `-a` adds a second root to a window; MarsDawn has one folder per window, so `--folder` sets that folder rather than adding to it. Passing `-a` fails with a message saying so.
+  - `--line` needs a file. A folder has no line to land on, so asking for one is a usage error.
   - **Folders need an app that can take them.** A folder argument or `--folder DIR` asks MarsDawn to show that folder in the window's sidebar, but only an app that declares it can (`MarsDawnOpensFolders` in its Info.plist) is sent one. MarsDawn 1.0.0, the App Store release, does. With an app that doesn't, `open` refuses folders before sending anything and exits 6, and files on their own open as usual. The usage rules still apply: one folder, `--line` needs a file, and there is no `-a`.
   - **An app that also reports back tells you what happened to the folder.** With an app that declares `MarsDawnReportsFolderStatus` in its Info.plist, and `--wait` greater than 0, `open --folder` waits for the app's own answer instead of only reporting that it asked. `--wait N` sets how long to wait, in seconds, `0`–`30` (default `2`); a value ArgumentParser can parse as a number but outside that range is a usage error, exit `64`, with `error: "wait_out_of_range"` in `--json`. Write a negative value as `--wait=-1`, not `--wait -1`: with a space, ArgumentParser reads it as another flag and gives its own plain usage error instead — still exit `64`, but no `wait_out_of_range`; a value too large to be a number at all gets the same plain error. `--wait 0`, or an app that doesn't report back, skips waiting entirely and sends exactly what `open --folder` always has — no extra network or Apple Event traffic, byte-identical to before this existed.
   - `--background` opens without bringing MarsDawn to the front, for an agent that opens files while you work elsewhere. Without it, MarsDawn comes to the front, as before. The `--json` result is the same either way.
