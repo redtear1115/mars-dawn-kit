@@ -56,7 +56,24 @@ public struct FrontMatter: Sendable {
     /// marks. Every index it returns sits at a line boundary, which is also a `Character`
     /// boundary.
     public static func split(_ text: String) -> (frontMatter: FrontMatter?, body: Substring, bodyLineOffset: Int) {
-        let noFrontMatter = (frontMatter: FrontMatter?.none, body: text[...], bodyLineOffset: 0)
+        let result = search(text)
+        return (result.frontMatter, result.body, result.bodyLineOffset)
+    }
+
+    /// Front matter that hasn't closed within this many lines of the opening delimiter isn't
+    /// front matter: `search` gives up rather than scanning on to the end of the document. Real
+    /// front matter (Jekyll, Hugo, Pandoc) is a short metadata block, well under this; what this
+    /// guards against is an editor mid-retype of the closing line in a large document, where
+    /// every keystroke otherwise costs a full-document scan (#97).
+    static let maxUnclosedSearchLines = 1000
+
+    /// `split`'s search, plus how many lines the loop examined. A separate function, returning
+    /// the count as an ordinary value rather than through shared mutable state, so a test can
+    /// read it without racing every other test's concurrent calls into `split` (#97).
+    static func search(
+        _ text: String
+    ) -> (frontMatter: FrontMatter?, body: Substring, bodyLineOffset: Int, linesScanned: Int) {
+        let noFrontMatter = (frontMatter: FrontMatter?.none, body: text[...], bodyLineOffset: 0, linesScanned: 0)
         let utf8 = text.utf8
         var lines = LineScanner(utf8)
         guard let opening = lines.next() else { return noFrontMatter }
@@ -68,7 +85,9 @@ public struct FrontMatter: Sendable {
         guard utf8[delimiter].elementsEqual("---".utf8) else { return noFrontMatter }
 
         var inner: [Range<String.Index>] = []
+        var scanned = 0
         while let line = lines.next() {
+            scanned += 1
             let content = utf8[line.content]
             if content.elementsEqual("---".utf8) || content.elementsEqual("...".utf8) {
                 // A block with nothing but blank lines carries no information, so it stays
@@ -87,11 +106,14 @@ public struct FrontMatter: Sendable {
                     lines: innerLines,
                     parsedPairs: parsePairs(innerLines)
                 )
-                return (frontMatter, text[line.end...], closingLine)
+                return (frontMatter, text[line.end...], closingLine, scanned)
             }
             inner.append(line.content)
+            if inner.count >= maxUnclosedSearchLines {
+                return (nil, text[...], 0, scanned)
+            }
         }
-        return noFrontMatter
+        return (nil, text[...], 0, scanned)
     }
 
     /// Parses one `key: value` line, or returns `nil`.
