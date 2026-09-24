@@ -575,3 +575,61 @@ struct NoFrontMatterGoldenTests {
         }
     }
 }
+
+/// #97: `split` must not scan to the end of a large document to prove an opened front matter
+/// block never closes. These assert on `FrontMatter.search`'s `linesScanned`, an ordinary
+/// returned value, rather than on wall-clock time (and rather than shared mutable state, which
+/// would race against every other test's concurrent calls into `split`).
+struct FrontMatterUnclosedScanBoundTests {
+    /// Well within the bound: a document this size closing its front matter must still behave
+    /// exactly as it did before the bound existed.
+    @Test func closedFrontMatterWellWithinTheBoundIsUnchanged() throws {
+        let innerLines = (0..<200).map { "k\($0): v\($0)" }
+        let text = "---\n" + innerLines.map { $0 + "\n" }.joined() + "---\n# Body\n"
+        let split = FrontMatter.split(text)
+        let frontMatter = try #require(split.frontMatter)
+        #expect(frontMatter.lines == innerLines)
+        #expect(frontMatter.pairs?.map(\.key) == innerLines.indices.map { "k\($0)" })
+        #expect(split.body == "# Body\n")
+        #expect(split.bodyLineOffset == innerLines.count + 2)
+        #expect(FrontMatter.search(text).linesScanned == innerLines.count + 1)
+    }
+
+    /// The closing delimiter sitting on the very last line the search is still willing to look
+    /// at (see the bound arithmetic in `search`) must still be found.
+    @Test func closingDelimiterRightAtTheBoundIsStillFound() throws {
+        let max = FrontMatter.maxUnclosedSearchLines
+        let innerLines = (0..<(max - 1)).map { "line \($0)" }
+        let text = "---\n" + innerLines.map { $0 + "\n" }.joined() + "---\n# Body\n"
+        let split = FrontMatter.split(text)
+        let frontMatter = try #require(split.frontMatter)
+        #expect(frontMatter.lines == innerLines)
+        #expect(split.body == "# Body\n")
+    }
+
+    /// One line further out than the case above: the search has already given up by the time it
+    /// would reach this closer, so the document is (deliberately) treated as having no front
+    /// matter, exactly as it is today for a front matter block that never closes at all.
+    @Test func closingDelimiterOneLinePastTheBoundIsNotFound() {
+        let max = FrontMatter.maxUnclosedSearchLines
+        let innerLines = (0..<max).map { "line \($0)" }
+        let text = "---\n" + innerLines.map { $0 + "\n" }.joined() + "---\n# Body\n"
+        let split = FrontMatter.split(text)
+        #expect(split.frontMatter == nil)
+        #expect(split.body == text[...])
+    }
+
+    /// The app's reported case: a large document whose front matter never closes (the closing
+    /// line is being retyped). The search must stop after `maxUnclosedSearchLines` lines, not
+    /// scan on to the end of a huge document.
+    @Test func unclosedFrontMatterOnALargeDocumentIsBounded() {
+        let lineCount = 200_000
+        let text = "---\n" + String(repeating: "not a delimiter\n", count: lineCount)
+        let result = FrontMatter.search(text)
+        #expect(result.frontMatter == nil)
+        #expect(result.body == text[...])
+        // Bounded: the search looked at only a small, fixed slice of the document, not
+        // something that scales with its 200,000 lines.
+        #expect(result.linesScanned <= FrontMatter.maxUnclosedSearchLines)
+    }
+}
