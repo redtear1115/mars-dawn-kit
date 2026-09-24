@@ -189,30 +189,6 @@
     return rendered;
   }
 
-  // A displayed error message is capped; PDF export reads the uncapped `data-error` instead.
-  const mermaidErrorMessageLimit = 2000;
-  function truncateMessage(text) {
-    return text.length > mermaidErrorMessageLimit ? text.slice(0, mermaidErrorMessageLimit) + "…" : text;
-  }
-
-  // Mermaid numbers "line N" in its own message from the diagram's own first content line
-  // (the line right after the opening fence), not the document. The block's own `data-line`
-  // (set by MarkdownRenderer) is the fence's document line, so document line = fence line + N.
-  // Rewriting the number in place keeps Mermaid's own wording ("Parse error on line 5:")
-  // instead of adding new copy; when the fence's line isn't known, or the message doesn't
-  // name a line, the message is returned unchanged and `docLine` is null.
-  function mapMermaidLineToDocument(raw, fenceLineAttr) {
-    const fenceLine = Number(fenceLineAttr);
-    const match = /\bline\s+(\d+)\b/i.exec(raw);
-    if (!match || !Number.isFinite(fenceLine)) return { text: raw, docLine: null };
-    const docLine = fenceLine + Number(match[1]);
-    const rewritten = match[0].replace(match[1], String(docLine));
-    return {
-      text: raw.slice(0, match.index) + rewritten + raw.slice(match.index + match[0].length),
-      docLine,
-    };
-  }
-
   async function renderMermaid(block, placeholderSVG) {
     const source = block.querySelector(".mermaid-source")?.textContent ?? "";
     const target = document.createElement("div");
@@ -241,6 +217,7 @@
       block.classList.add("rendered");
       block.classList.remove("stale", "error");
       block.removeAttribute("data-error");
+      block.removeAttribute("data-raw-error");
       block.querySelector(".mermaid-error")?.remove();
     } catch (err) {
       if (!block.isConnected) return;
@@ -250,6 +227,9 @@
       const raw = String(err?.message ?? err);
       const { text: message, docLine } = mapMermaidLineToDocument(raw, block.getAttribute("data-line"));
       block.classList.add("error");
+      // Kept unmapped so `remapMermaidError` can redo the mapping after an edit above this
+      // block moves its `data-line`, without re-rendering the diagram.
+      block.setAttribute("data-raw-error", raw);
       // PDF export reads this back (DocumentExporter.diagramErrors) and keeps it uncapped.
       block.setAttribute("data-error", message);
       let note = block.querySelector(".mermaid-error");
@@ -268,6 +248,57 @@
       if (!placeholderSVG) block.classList.remove("rendered");
     } finally {
       document.getElementById(`d${id}`)?.remove();
+    }
+  }
+
+  // A displayed error message is capped; PDF export reads the uncapped `data-error` instead.
+  const mermaidErrorMessageLimit = 2000;
+  function truncateMessage(text) {
+    return text.length > mermaidErrorMessageLimit ? text.slice(0, mermaidErrorMessageLimit) + "…" : text;
+  }
+
+  // Mermaid numbers "line N" in its own message from the diagram's own first content line
+  // (the line right after the opening fence), not the document. The block's own `data-line`
+  // (set by MarkdownRenderer) is the fence's document line, so document line = fence line + N.
+  // Rewriting the number in place keeps Mermaid's own wording ("Parse error on line 5:")
+  // instead of adding new copy; when the fence's line isn't known, or the message doesn't
+  // name a line, the message is returned unchanged and `docLine` is null.
+  //
+  // `fenceLineAttr` is `block.getAttribute("data-line")`, which is `null` (the attribute is
+  // absent, e.g. a fence inside a footnote — MarkdownRenderer never gives one a line) or ""
+  // for a genuinely unknown line. `Number(null)` and `Number("")` are both `0`, which passes
+  // `Number.isFinite`, so both are treated as "no line" explicitly rather than as line 0
+  // (verifier round 1, defect 2).
+  function mapMermaidLineToDocument(raw, fenceLineAttr) {
+    const match = /\bline\s+(\d+)\b/i.exec(raw);
+    const fenceLine = fenceLineAttr === null || fenceLineAttr === "" ? NaN : Number(fenceLineAttr);
+    if (!match || !Number.isFinite(fenceLine)) return { text: raw, docLine: null };
+    const docLine = fenceLine + Number(match[1]);
+    const rewritten = match[0].replace(match[1], String(docLine));
+    return {
+      text: raw.slice(0, match.index) + rewritten + raw.slice(match.index + match[0].length),
+      docLine,
+    };
+  }
+
+  // Re-derives the shown message and `data-doc-line` from the raw, unmapped Mermaid message
+  // (`data-raw-error`) and the block's current `data-line`, without re-rendering the diagram.
+  // `update()` calls this on every reused block after `copyLineNumbers` moves `data-line` to
+  // match an edit above it (verifier round 1, defect 1): the diagram itself didn't change, so
+  // `renderMermaid` never reruns, but the note's line number has to move with the block's.
+  // A block with no stored raw message (never errored, or already fixed) is untouched.
+  function remapMermaidError(block) {
+    const raw = block.getAttribute("data-raw-error");
+    if (raw === null) return;
+    const { text: message, docLine } = mapMermaidLineToDocument(raw, block.getAttribute("data-line"));
+    block.setAttribute("data-error", message);
+    const note = block.querySelector(".mermaid-error");
+    if (!note) return;
+    note.textContent = truncateMessage(message);
+    if (docLine !== null) {
+      note.setAttribute("data-doc-line", String(docLine));
+    } else {
+      note.removeAttribute("data-doc-line");
     }
   }
 
@@ -584,6 +615,12 @@
       if (reusable && reusable.length) {
         const existing = reusable.shift();
         copyLineNumbers(el, existing);
+        // The block is reused as-is (its diagram doesn't re-render), but an edit above it can
+        // still have moved its `data-line`, which a stored error's mapped line has to follow.
+        const reusedBlocks = existing.classList.contains("mermaid-block")
+          ? [existing]
+          : existing.querySelectorAll(".mermaid-block");
+        for (const block of reusedBlocks) remapMermaidError(block);
         fragment.appendChild(existing);
       } else {
         el._mdKey = key;
