@@ -334,14 +334,34 @@ extension MarsDawnCommand {
             guard !files.isEmpty || !folder.isEmpty else {
                 throw ValidationError("Nothing to open. Give a file, a folder, or --folder <path>.")
             }
-            let directories = files.filter(Open.isDirectory)
-            if line != nil, let directory = directories.first {
+            // A folder may arrive as a directory argument, as --folder, or both; more than one is
+            // a usage error either way (#104). Checked here, in validate(), rather than only in
+            // run()'s resolvedFolders(): ArgumentParser knows which subcommand's usage to print
+            // for an error thrown from validate(), so `open`'s own usage line prints instead of
+            // the top-level `Usage: marsdawn <subcommand>`. This doesn't call resolvedFolders()
+            // itself: that also checks the folder exists, throwing a plain CLIFailure, and
+            // ArgumentParser wraps whatever validate() throws in its own ParserError, which would
+            // hide CLIFailure's exit code and JSON `error` kind behind ArgumentParser's own
+            // (`aFolderThatIsntThereOrIsntAFolderIsReported` still exercises that path, via
+            // run()). This only dedups syntactically, with no filesystem access, so a genuinely
+            // missing folder still surfaces from resolvedFolders() in run(), as before.
+            let folderCandidates = Open.distinctFolderCandidates(files: files, folder: folder)
+            guard folderCandidates.count <= 1 else {
                 throw ValidationError(
-                    "--line needs a file, but \(directory) is a folder. A folder opens in the sidebar "
+                    "More than one folder was given (\(folderCandidates.map { URL(fileURLWithPath: $0).lastPathComponent }.joined(separator: ", "))). "
+                        + "A MarsDawn window's sidebar shows one folder at a time."
+                )
+            }
+            let directories = files.filter(Open.isDirectory)
+            let fileArguments = files.count - directories.count
+            // A folder with no line to land on, named whichever way it arrived: a directory
+            // argument, or --folder with no file argument at all (#104).
+            if line != nil, fileArguments == 0, let onlyFolder = directories.first ?? folder.first {
+                throw ValidationError(
+                    "--line needs a file, but \(onlyFolder) is a folder. A folder opens in the sidebar "
                         + "and has no line to land on."
                 )
             }
-            let fileArguments = files.count - directories.count
             guard line == nil || fileArguments == 1 else {
                 throw ValidationError(
                     "--line needs exactly one file, but \(fileArguments) were given. "
@@ -372,6 +392,22 @@ extension MarsDawnCommand {
             FileManager.default.fileExists(atPath: (path as NSString).expandingTildeInPath)
         }
 
+        /// The distinct folder candidates named by directory arguments and `--folder` together, in
+        /// the order given and without repeats — the same source list `resolvedFolders()` resolves,
+        /// but deduped by the path's own syntax only, with no filesystem access (`standardizedFileURL`
+        /// normalizes "." and ".." without touching disk or requiring the path to exist). Used by
+        /// `validate()` (#104) to catch "more than one folder" purely as a usage error, and by
+        /// `resolvedFolders()`, which still resolves and checks existence for each one.
+        static func distinctFolderCandidates(files: [String], folder: [String]) -> [String] {
+            var seen = Set<String>()
+            var candidates: [String] = []
+            for path in files.filter(Open.isDirectory) + folder {
+                let key = URL(fileURLWithPath: (path as NSString).expandingTildeInPath).standardizedFileURL.path
+                if seen.insert(key).inserted { candidates.append(path) }
+            }
+            return candidates
+        }
+
         /// Resolves every argument to a file and the line it asked for. A line the app would have
         /// to guess at is a usage error here, before anything is sent.
         func resolvedTargets(fileExists: (String) -> Bool = Open.fileExists) throws -> [OpenTarget] {
@@ -400,7 +436,7 @@ extension MarsDawnCommand {
         func resolvedFolders() throws -> [URL] {
             var seen = Set<String>()
             var folders: [URL] = []
-            for path in files.filter(Open.isDirectory) + folder {
+            for path in Open.distinctFolderCandidates(files: files, folder: folder) {
                 let url = try existingDirectory(path)
                 if seen.insert(url.path).inserted { folders.append(url) }
             }

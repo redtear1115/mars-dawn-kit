@@ -391,6 +391,48 @@ struct OpenCommandTests {
         #expect(exitCode { _ = try MarsDawnCommand.parseAsRoot(["open", "--folder", one.path, "--folder", two.path]) } == 64)
     }
 
+    /// #104: two folders, given either as two directory arguments or as a directory argument plus
+    /// `--folder`, must print `open`'s own usage line rather than the top-level
+    /// `Usage: marsdawn <subcommand>`. The bug was that the duplicate check lived only in
+    /// `resolvedFolders()`, called from `run()`, where ArgumentParser has already lost the
+    /// subcommand context by the time the error reaches it; `--folder <dir1> --folder <dir2>`
+    /// (caught earlier, in `validate()`'s `folder.count` check) already printed correctly, which
+    /// is why that case alone didn't catch this.
+    @Test func twoFoldersPrintOpensOwnUsageLine() throws {
+        let one = try makeFolder(), two = try makeFolder()
+        defer { try? FileManager.default.removeItem(at: one); try? FileManager.default.removeItem(at: two) }
+        for arguments in [["open", one.path, two.path], ["open", one.path, "--folder", two.path]] {
+            do {
+                _ = try MarsDawnCommand.parseAsRoot(arguments)
+                Issue.record("expected a usage error for \(arguments)")
+                continue
+            } catch {
+                let message = MarsDawnCommand.fullMessage(for: error)
+                #expect(message.contains("Usage: marsdawn open"), "\(arguments): \(message)")
+                #expect(!message.contains("Usage: marsdawn <subcommand>"), "\(arguments): \(message)")
+            }
+        }
+    }
+
+    /// #104: `--folder <dir> --line <n>`, with no other file argument, must name the folder the
+    /// same way `<dir> --line <n>` (the folder as a positional argument) already does — not fall
+    /// through to the generic "--line needs exactly one file, but 0 were given" wording, which
+    /// never says a folder was involved.
+    @Test func lineOnAFolderGivenViaDashDashFolderNamesTheFolder() throws {
+        let dir = try makeFolder()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        do {
+            _ = try MarsDawnCommand.parseAsRoot(["open", "--folder", dir.path, "--line", "3"])
+            Issue.record("expected a usage error")
+        } catch {
+            let message = MarsDawnCommand.fullMessage(for: error)
+            #expect(message.contains(dir.path), "\(message)")
+            #expect(message.contains("is a folder"), "\(message)")
+            #expect(!message.contains("0 were given"), "\(message)")
+        }
+        #expect(exitCode { _ = try MarsDawnCommand.parseAsRoot(["open", "--folder", dir.path, "--line", "3"]) } == 64)
+    }
+
     @Test func aLineCannotBeAskedForOnAFolder() throws {
         let dir = try makeFolder()
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -421,6 +463,53 @@ struct OpenCommandTests {
     @Test func aMissingFileIsReportedBeforeTheAppIsLookedFor() {
         #expect(exitCode { _ = try MarsDawnCommand.Open.parse(["/definitely/not/here.md:3"]).resolvedTargets() }
             == CLIFailure.Code.inputNotFound.rawValue)
+    }
+
+    // MARK: - `--json`'s `folder` field (#103)
+    //
+    // The skill (`Skill.swift` / `skill/SKILL.md`) and the README both teach agents that
+    // `open --folder <path> --json` returns `"folder": {"path": ..., "requested": true}`. Nothing
+    // in the suite pinned that shape before this. `Open.folderFields(path:result:)` is the exact,
+    // pure code `run()` uses to build the `"folder"` JSON object (`result: nil` is what an app that
+    // hasn't answered, or doesn't report back at all, gives — today's whole story before slice B's
+    // `--wait`), so these tests pin it without launching anything.
+
+    @Test func aFolderGivesPathAndRequestedTrueWithNoOtherFields() throws {
+        let dir = try makeFolder()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let folder = MarsDawnCommand.Open.folderFields(path: dir.path, result: nil)
+        #expect(folder["path"] as? String == dir.path)
+        #expect(folder["requested"] as? Bool == true)
+        #expect(folder.count == 2, "no extra fields: \(folder)")
+    }
+
+    @Test func theFolderLineNamesThePathAndAsksToShowIt() throws {
+        let dir = try makeFolder()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        #expect(MarsDawnCommand.Open.folderLine(path: dir.path, result: nil)
+            == "Asked MarsDawn to show \(dir.path) in the sidebar")
+    }
+
+    /// The same folder given as a positional argument and again with `--folder` resolves to one
+    /// folder (`resolvedFolders()`'s own dedup, tested separately in
+    /// `thesameFolderNamedTwiceIsOneFolder`), so `run()` only ever builds one `folder` object for
+    /// it, not two — pinned here at the point `resolvedFolders()` hands off to `folderFields`.
+    @Test func theSameFolderNamedTwiceGivesOneFolderObject() throws {
+        let dir = try makeFolder()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let resolved = try MarsDawnCommand.Open.parse([dir.path, "--folder", dir.path]).resolvedFolders()
+        #expect(resolved.count == 1)
+        let folder = MarsDawnCommand.Open.folderFields(path: resolved[0].path, result: nil)
+        #expect(folder["path"] as? String == dir.standardizedFileURL.path)
+    }
+
+    /// Red-control shape: the field name and the `requested` key are exactly what the skill and
+    /// README promise. Renaming either, or dropping `requested`, must fail this test.
+    @Test func theFolderFieldShapeIsPathAndRequestedOnly() throws {
+        let dir = try makeFolder()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let folder = MarsDawnCommand.Open.folderFields(path: dir.path, result: nil)
+        #expect(Set(folder.keys) == ["path", "requested"])
     }
 
     @Test func theEventCarriesTheFileListAndTheLineTwice() throws {
