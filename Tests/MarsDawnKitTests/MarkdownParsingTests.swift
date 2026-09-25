@@ -115,21 +115,36 @@ struct MarkdownParsingWorkerTests {
 //
 // mars-dawn-kit#26: this suite used to be skipped outright on macOS 15, because
 // `blockingAndAsyncWaitersShareOneQueue` built its own `withCheckedContinuation` plus
-// `Thread.detachNewThread` to stand in for "a blocking caller". A closure passed to `Thread`
-// like that gets compiled isolated to the main actor even though it's `@Sendable`; running it on
-// a thread of its own then makes the Concurrency runtime ask "is this the main actor's queue?"
-// through `dispatch_assert_queue`, which macOS 15 answers by killing the process
-// (`EXC_BREAKPOINT` in `_dispatch_assert_queue_fail`) instead of returning false the way macOS 26
-// does. Every other test here proves the same gate through the product's own thread management
-// (`MarkdownParsing.startWorker`, a plain product `Thread`, not test-authored) and none of them
-// trapped on macOS 15 -- `blockingCallersFillingTheTaskPoolDontStallAsyncCallers` below is the
-// same "a blocking caller sharing a gate with async callers" property, driven by
-// `MarkdownParsing.withDocument(gate:)` instead of a hand-rolled continuation, and it passed. So
-// `blockingAndAsyncWaitersShareOneQueue` now proves "a blocking caller" the same way: by calling
-// the product's synchronous `withDocument(gate:)` directly from inside the `Task`, which blocks
-// that task's thread exactly as a real blocking caller would, without the test standing up a
-// `Thread` of its own. That removes the one trapping construct from every test in this suite, so
-// it no longer needs the OS gate.
+// `Thread.detachNewThread { @Sendable in … }` to stand in for "a blocking caller". The trap
+// wasn't the shape of that construct -- it's the same shape `blockingCallerOnItsOwnThread`
+// below still uses -- it was the closure's *isolation*. This target's tools version (6.2)
+// defaults every closure without its own isolation to the main actor unless the declaration
+// it's written inside is itself `nonisolated`, and the old closure was written directly inside
+// an ordinary (non-`nonisolated`) async test method, so it inherited that default. Running a
+// main-actor-isolated closure on a thread of its own makes the Concurrency runtime ask "is this
+// the main actor's queue?" through `dispatch_assert_queue`, which macOS 15 answers by killing
+// the process (`EXC_BREAKPOINT` in `_dispatch_assert_queue_fail`) instead of returning false the
+// way macOS 26 does.
+//
+// Round 1 of the fix routed the blocking caller through the product's synchronous
+// `withDocument(gate:)` called directly inside a `Task.detached` -- no `Thread` at all, so no
+// isolation to get wrong. That traded one bug for another: a `Task.detached` body runs on the
+// cooperative thread pool, and the synchronous `withDocument(gate:)` blocks that pool thread
+// (inside `gate.acquireBlocking()`) until a slot and a worker are free. With
+// `LIBDISPATCH_COOPERATIVE_POOL_STRICT=1`, which stops the pool from growing to cover blocked
+// threads, four such callers can consume the whole pool -- and this test's bodies only unblock
+// when the *test's own* async code runs `latch.open()`, which needs a pool thread too. That's a
+// real deadlock, not merely a slow pass.
+//
+// So the blocking caller goes back to a `Thread` of its own -- off the cooperative pool
+// entirely, exactly like a real synchronous caller -- but through `blockingCallerOnItsOwnThread`,
+// which is `nonisolated`. A closure written inside a `nonisolated` function has nothing to
+// inherit the target's default isolation from, so it comes out `nonisolated` too, and the
+// `dispatch_assert_queue` check the old closure hit never fires. (Confirmed on this Mac by
+// demangling the closure's symbol in the built test binary: no `MainActor` segment, versus the
+// old closure's `...ScMYcc`. The suite's `.timeLimit` below is the backstop if that's ever wrong
+// on some future toolchain: a regression fails instead of hanging CI.)
+@Suite(.timeLimit(.minutes(1)))
 struct WorkerGateTests {
     @Test func cancellingAWaiterReturnsNilPromptlyAndNeverRunsItsBody() async throws {
         let resumes = Counter<UInt64>()
@@ -319,12 +334,10 @@ struct WorkerGateTests {
                     return index
                 }
                 if index.isMultiple(of: 2) {
-                    // Blocking callers wait on a thread of their own, not on the task pool —
-                    // the product's own worker thread, started inside the synchronous
-                    // `withDocument(gate:)` below (`MarkdownParsing.startWorker`), not a
-                    // `Thread` the test stands up itself. See the suite's doc comment
-                    // (mars-dawn-kit#26).
-                    return Self.blockingParse("x", gate: gate, body)
+                    // A genuinely blocking caller: a thread of its own, off the cooperative
+                    // pool this `Task.detached` body runs on, not a synchronous call made from
+                    // inside the pool (mars-dawn-kit#26 -- see the suite's doc comment).
+                    return await Self.blockingCallerOnItsOwnThread(gate: gate, body: body)
                 }
                 return await MarkdownParsing.withDocument("x", options: .default, gate: gate, body) ?? -1
             }
@@ -337,6 +350,24 @@ struct WorkerGateTests {
         #expect(values == Array(0..<8))
         #expect(active.state.withLock { $0.peak } == 2)
         #expect(gate.snapshot == (available: 2, queued: 0))
+    }
+
+    /// Calls the product's synchronous `MarkdownParsing.withDocument(gate:)` -- which blocks
+    /// until a slot and a worker are free -- on a `Thread` of its own, then bridges the result
+    /// back to the caller's task through a continuation. `nonisolated` so the `Thread` closure
+    /// built inside it has no enclosing isolation to inherit (see the suite's doc comment,
+    /// mars-dawn-kit#26): without this, this target's default main-actor isolation (swift-tools
+    /// 6.2) reaches the closure, and macOS 15 kills the process the moment that closure runs on
+    /// a thread of its own and the runtime checks which executor it's on.
+    nonisolated private static func blockingCallerOnItsOwnThread(
+        gate: WorkerGate, body: @escaping @Sendable (ParseOutcome) -> Int
+    ) async -> Int {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Int, Never>) in
+            let thread = Thread {
+                continuation.resume(returning: MarkdownParsing.withDocument("x", options: .default, gate: gate, body))
+            }
+            thread.start()
+        }
     }
 }
 
