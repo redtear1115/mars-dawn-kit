@@ -88,8 +88,18 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         public let line: Int?
     }
 
-    /// Mermaid diagrams that failed to render in the prepared page.
-    public private(set) var diagramErrors: [DiagramError] = []
+    /// Mermaid diagrams that failed to render in the prepared page, as their error messages.
+    ///
+    /// Kept as `[String]` — this is a public package and `export --json`'s `diagramErrors` is a
+    /// published schema (marsdawn-mcp, mars-dawn-website) with `additionalProperties: false`, so
+    /// neither this property's type nor that JSON field can change shape without breaking
+    /// existing readers. `diagramErrorDetails` below carries the same failures with their
+    /// document line, in the same order, additively.
+    public private(set) var diagramErrors: [String] = []
+
+    /// The same failures as `diagramErrors`, in the same order, each with its document line when
+    /// known (mars-dawn-kit#114). Additive: `diagramErrors` is unchanged.
+    public private(set) var diagramErrorDetails: [DiagramError] = []
 
     /// Loads the page and renders `markdown` into it, waiting for diagrams, images and fonts.
     ///
@@ -172,9 +182,10 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
             }))
             """#
         )
-        diagramErrors = (errorsJSON as? String).flatMap {
+        diagramErrorDetails = (errorsJSON as? String).flatMap {
             try? JSONDecoder().decode([DiagramError].self, from: Data($0.utf8))
         } ?? []
+        diagramErrors = diagramErrorDetails.map(\.message)
         _ = try? await webView.evaluateJavaScript(Self.keepHeadingsWithNextScript)
     }
 
@@ -296,7 +307,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         printInfo: NSPrintInfo,
         window: NSWindow?,
         configure: (NSPrintInfo, NSPrintOperation) -> Void = { _, _ in }
-    ) async throws -> (completed: Bool, diagramErrors: [DiagramError]) {
+    ) async throws -> (completed: Bool, diagramErrors: [String], diagramErrorDetails: [DiagramError]) {
         // Lay out at the printable width, so measured block heights match the printed pages.
         let printableWidth = printInfo.paperSize.width - 2 * pageMargins.width
         let exporter = DocumentExporter(
@@ -325,7 +336,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
            let url = operation.printInfo.dictionary()[NSPrintInfo.AttributeKey.jobSavingURL] as? URL {
             ToUnicodeRepair.repairFile(at: url, source: markdown)
         }
-        return (completed, exporter.diagramErrors)
+        return (completed, exporter.diagramErrors, exporter.diagramErrorDetails)
     }
 
     public enum Paper: String, CaseIterable, Sendable {
@@ -342,7 +353,10 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
     public struct PDFResult: Sendable {
         public let url: URL
         public let pageCount: Int
-        public let diagramErrors: [DiagramError]
+        public let diagramErrors: [String]
+        /// Additive (mars-dawn-kit#114): the same failures as `diagramErrors`, in the same
+        /// order, each with its document line when known.
+        public let diagramErrorDetails: [DiagramError]
     }
 
     /// Exports `markdown` straight to a PDF file, with no panels. Needs a running AppKit event loop.
@@ -373,7 +387,10 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
             operation.showsProgressPanel = false
         }
         guard result.completed, let document = PDFDocument(url: url) else { throw ExportError.printFailed }
-        return PDFResult(url: url, pageCount: document.pageCount, diagramErrors: result.diagramErrors)
+        return PDFResult(
+            url: url, pageCount: document.pageCount,
+            diagramErrors: result.diagramErrors, diagramErrorDetails: result.diagramErrorDetails
+        )
     }
 
     private var hostWindow: NSWindow?

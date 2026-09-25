@@ -51,9 +51,10 @@ On success it exits 0 and prints one JSON line:
 - `pages`: Number of pages in the PDF.
 - `theme`: Theme used for the export.
 - `paper`: Paper size used for the export.
-- `diagramErrors`: One `{message, line}` per Mermaid diagram that failed to render. `line` is the
-  Markdown document's line number for the diagram, omitted when it can't be determined. The PDF
-  is still written.
+- `diagramErrors`: One message per Mermaid diagram that failed to render. The PDF is still written.
+- `diagramErrorDetails`: The same failures as `diagramErrors`, in the same order, each as
+  `{message, line}`. `line` is the Markdown document's line number for the diagram, omitted when
+  it can't be determined.
 
 If `diagramErrors` isn't empty, the PDF was still written: tell the user which diagrams failed.
 

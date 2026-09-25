@@ -631,8 +631,8 @@ extension MarsDawnCommand {
             }
 
             var text = "Exported \(destination.path) (\(result.pageCount) page\(result.pageCount == 1 ? "" : "s"))"
-            for error in result.diagramErrors {
-                text += "\nwarning: Mermaid diagram failed to render: \(error.message)"
+            for message in result.diagramErrors {
+                text += "\nwarning: Mermaid diagram failed to render: \(message)"
             }
             options.report(
                 [
@@ -640,7 +640,8 @@ extension MarsDawnCommand {
                     "pages": result.pageCount,
                     "theme": resolvedTheme().id,
                     "paper": paper.rawValue,
-                    "diagramErrors": result.diagramErrors.map { error -> [String: Any] in
+                    "diagramErrors": result.diagramErrors,
+                    "diagramErrorDetails": result.diagramErrorDetails.map { error -> [String: Any] in
                         var entry: [String: Any] = ["message": error.message]
                         if let line = error.line { entry["line"] = line }
                         return entry
