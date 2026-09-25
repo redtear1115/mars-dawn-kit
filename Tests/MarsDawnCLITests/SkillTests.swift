@@ -7,6 +7,29 @@ import Testing
 /// `marsdawn skill` (#60): the agent skill printed by the CLI it describes, so it can never name an
 /// option the installed version lacks.
 struct SkillTests {
+    /// Swift Testing makes a fresh `SkillTests` instance per test, so this runs before every one
+    /// of them and poisons `SkillInstaller.defaultDirectory` (#120 verifier round 2): any test
+    /// that reaches it without first installing its own override — the point of the seam in the
+    /// first place — fails loudly instead of silently writing into the real `~/.claude`. The one
+    /// test that legitimately exercises the default (`withoutDirItWritesTheDefaultDirectory`)
+    /// installs its own override before calling `install(dir: nil, …)`, same as every other test
+    /// here installs its own fakes for `MarsDawnApp.locate` elsewhere in this target.
+    init() {
+        SkillInstaller.defaultDirectory = {
+            Issue.record("SkillInstaller.defaultDirectory was called with no test override in place — this would have touched the real ~/.claude/skills/marsdawn")
+            return URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+                .appendingPathComponent("marsdawn-skill-install-UNGUARDED-\(UUID().uuidString)", isDirectory: true)
+        }
+    }
+
+    /// Fails the test if `path` is anywhere under the real home directory — belt and suspenders
+    /// alongside the `init()` poisoning above, for the one test that legitimately calls the
+    /// default-directory seam.
+    static func assertNeverTheRealHome(_ path: String, sourceLocation: SourceLocation = #_sourceLocation) {
+        let realHome = FileManager.default.homeDirectoryForCurrentUser.standardizedFileURL.path
+        #expect(!path.hasPrefix(realHome + "/"), "must never resolve inside the real home directory during tests: \(path)", sourceLocation: sourceLocation)
+    }
+
     /// Everything the CLI's own help lists, across the command and its subcommands.
     static let helpText = [
         MarsDawnCommand.helpMessage(),
@@ -206,15 +229,74 @@ struct SkillTests {
         #expect(try Data(contentsOf: target) == Data((MarsDawnSkill.text + "\n").utf8))
     }
 
+    /// Verifier round 2, claim (1): the target being anything other than a plain file — most
+    /// concretely a folder — must refuse unconditionally, `--force` included, and must never
+    /// delete it. `--force` means "replace the differing SKILL.md I asked about," not "delete
+    /// whatever's in the way."
+    @Test func aDirectoryAtTheTargetIsRefusedEvenWithForce() throws {
+        let root = try Self.tempRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let dir = root.appendingPathComponent("skill")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let target = dir.appendingPathComponent("SKILL.md")
+        try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+        let canary = target.appendingPathComponent("dont-delete-me.txt")
+        try Data("precious".utf8).write(to: canary)
+
+        for force in [false, true] {
+            #expect {
+                _ = try SkillInstaller.install(dir: dir.path, force: force)
+            } throws: { ($0 as? SkillInstallFailure)?.kind == .notAFile }
+        }
+        var isDirectory: ObjCBool = false
+        #expect(FileManager.default.fileExists(atPath: target.path, isDirectory: &isDirectory) && isDirectory.boolValue, "the folder must still be there")
+        #expect(try Data(contentsOf: canary) == Data("precious".utf8), "must never delete what's inside it")
+    }
+
+    /// Verifier round 2, claim (2): a plain file already at the target that can't be read (here,
+    /// no read permission) must be treated as differing — refused without `--force`, not silently
+    /// overwritten and reported "installed".
+    @Test func anUnreadableFileIsRefusedWithoutForceAndReplacedWithForce() throws {
+        let root = try Self.tempRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let dir = root.appendingPathComponent("skill")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let target = dir.appendingPathComponent("SKILL.md")
+        let original = Data("# my own notes, unreadable on purpose\n".utf8)
+        try original.write(to: target)
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: target.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: target.path) }
+
+        #expect {
+            _ = try SkillInstaller.install(dir: dir.path, force: false)
+        } throws: { ($0 as? SkillInstallFailure)?.kind == .unreadable }
+        // Still unreadable and untouched: restore permission only to check its size didn't change,
+        // never its content changed underneath us (that would defeat the point of this test).
+        try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: target.path)
+        #expect(try Data(contentsOf: target) == original, "a refused install must not touch the existing file")
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: target.path)
+
+        let result = try SkillInstaller.install(dir: dir.path, force: true)
+        #expect(result.action == .replaced)
+        try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: target.path)
+        #expect(try Data(contentsOf: target) == Data((MarsDawnSkill.text + "\n").utf8))
+    }
+
     @Test func dirWritesToThatFolderInsteadOfTheDefault() throws {
         let root = try Self.tempRoot()
         defer { try? FileManager.default.removeItem(at: root) }
         let dir = root.appendingPathComponent("agents/other")
+        // A fake "default" of our own, under the same scratch root, just to prove --dir never
+        // touches it — never the poisoned seam `init()` installs, and never the real one.
+        let fakeDefault = root.appendingPathComponent(".claude/skills/marsdawn", isDirectory: true)
+        let original = SkillInstaller.defaultDirectory
+        defer { SkillInstaller.defaultDirectory = original }
+        SkillInstaller.defaultDirectory = { fakeDefault }
 
         let result = try SkillInstaller.install(dir: dir.path, force: false)
 
         #expect(result.path == dir.appendingPathComponent("SKILL.md").path)
-        #expect(!FileManager.default.fileExists(atPath: SkillInstaller.defaultDirectory().path), "must not also write the default location")
+        #expect(!FileManager.default.fileExists(atPath: fakeDefault.appendingPathComponent("SKILL.md").path), "must not also write the default location")
     }
 
     @Test func withoutDirItWritesTheDefaultDirectory() throws {
@@ -228,6 +310,7 @@ struct SkillTests {
         let result = try SkillInstaller.install(dir: nil, force: false)
 
         #expect(result.path == fakeHome.appendingPathComponent("SKILL.md").path)
+        Self.assertNeverTheRealHome(result.path)
     }
 
     /// A symlink at the target path is only ever written through when its resolved destination

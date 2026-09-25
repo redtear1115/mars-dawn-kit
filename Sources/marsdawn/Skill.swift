@@ -200,40 +200,96 @@ enum SkillInstaller {
         var action: Action
     }
 
+    /// A short name for a `lstat` file type, for a refusal message.
+    static func describe(_ type: FileAttributeType?) -> String {
+        switch type {
+        case .typeDirectory: "a folder"
+        case .typeSymbolicLink: "a symlink"
+        case .typeSocket: "a socket"
+        case .typeCharacterSpecial: "a character device"
+        case .typeBlockSpecial: "a block device"
+        default: "not a plain file"
+        }
+    }
+
     /// Installs `MarsDawnSkill.text` at `<dir ?? defaultDirectory()>/SKILL.md`, atomically (a temp
-    /// file next to the target, then a rename, so a reader never sees a half-written file).
+    /// file next to the target, in the same folder so the final rename can't cross a filesystem,
+    /// then a rename, so a reader never sees a half-written file — and a rename that fails leaves
+    /// only the temp file behind, never a half-written `SKILL.md`, because nothing ever writes to
+    /// `target` directly).
     static func install(dir: String?, force: Bool, fileManager: FileManager = .default) throws -> Installed {
         let directory = dir.map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath).standardizedFileURL } ?? defaultDirectory()
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         let resolvedDirectory = directory.resolvingSymlinksInPath().standardizedFileURL
         let target = directory.appendingPathComponent("SKILL.md")
 
-        // Refuse before touching anything if the target is a symlink that escapes the folder it's
-        // meant to stay in — never followed to overwrite something elsewhere on the disk.
-        if let attributes = try? fileManager.attributesOfItem(atPath: target.path),
-           (attributes[.type] as? FileAttributeType) == .typeSymbolicLink {
-            let resolvedTarget = target.resolvingSymlinksInPath().standardizedFileURL
-            guard resolvedTarget.path.hasPrefix(resolvedDirectory.path + "/") else {
+        // What's at the target, `lstat`-style (the symlink itself, never what it points to).
+        // `targetIsAFile` stays false when nothing is there, the common case. Everything below
+        // this either refuses unconditionally — a symlink escaping the folder, or anything that
+        // isn't a plain file — or falls through to the existing-content comparison; `--force` only
+        // ever overrides *that* comparison, never these: it means "replace the differing SKILL.md
+        // I asked about," never "delete whatever's in the way."
+        var targetIsAFile = false
+        if let attributes = try? fileManager.attributesOfItem(atPath: target.path) {
+            let type = attributes[.type] as? FileAttributeType
+            switch type {
+            case .typeSymbolicLink:
+                // Refuse before touching anything if the symlink escapes the folder it's meant to
+                // stay in — never followed to overwrite something elsewhere on the disk.
+                let resolvedTarget = target.resolvingSymlinksInPath().standardizedFileURL
+                guard resolvedTarget.path.hasPrefix(resolvedDirectory.path + "/") else {
+                    throw SkillInstallFailure(
+                        kind: .unsafeSymlink,
+                        message: "\(target.path) is a symlink to \(resolvedTarget.path), outside \(resolvedDirectory.path). "
+                            + "Refusing to write through it. Remove or repoint the symlink, then run --install again."
+                    )
+                }
+                // Inside the folder is safe from the escape check above, but what it resolves to
+                // still has to be a plain file (or nothing — a dangling symlink is fine to
+                // replace), for the same reason a folder at the target path is refused below.
+                if let resolvedAttributes = try? fileManager.attributesOfItem(atPath: resolvedTarget.path) {
+                    let resolvedType = resolvedAttributes[.type] as? FileAttributeType
+                    guard resolvedType == .typeRegular else {
+                        throw SkillInstallFailure(
+                            kind: .notAFile,
+                            message: "\(target.path) is a symlink to \(resolvedTarget.path), which is \(describe(resolvedType)), not a file. "
+                                + "Refusing to write there, --force included: that isn't replacing a SKILL.md."
+                        )
+                    }
+                    targetIsAFile = true
+                }
+            case .typeRegular:
+                targetIsAFile = true
+            default:
+                // A folder, a FIFO, a socket, a device — never deleted to make room for the skill.
                 throw SkillInstallFailure(
-                    kind: .unsafeSymlink,
-                    message: "\(target.path) is a symlink to \(resolvedTarget.path), outside \(resolvedDirectory.path). "
-                        + "Refusing to write through it. Remove or repoint the symlink, then run --install again."
+                    kind: .notAFile,
+                    message: "\(target.path) is \(describe(type)), not a file. Refusing to write there, --force included: "
+                        + "that isn't replacing a SKILL.md. Move or remove it yourself, then run --install again."
                 )
             }
         }
 
         let newData = Data((MarsDawnSkill.text + "\n").utf8)
-        let existingData = try? Data(contentsOf: target)
-        if let existingData {
-            if existingData == newData {
+        if targetIsAFile {
+            let existingData = try? Data(contentsOf: target)
+            if let existingData, existingData == newData {
                 return Installed(path: target.path, action: .unchanged)
             }
             guard force else {
-                let hint = versionHint(in: String(decoding: existingData, as: UTF8.self)).map { " (\($0))" } ?? ""
+                if let existingData {
+                    let hint = versionHint(in: String(decoding: existingData, as: UTF8.self)).map { " (\($0))" } ?? ""
+                    throw SkillInstallFailure(
+                        kind: .differs,
+                        message: "\(target.path) already exists and differs from this version's skill\(hint). "
+                            + "Pass --force to replace it, or --dir to install somewhere else."
+                    )
+                }
                 throw SkillInstallFailure(
-                    kind: .differs,
-                    message: "\(target.path) already exists and differs from this version's skill\(hint). "
-                        + "Pass --force to replace it, or --dir to install somewhere else."
+                    kind: .unreadable,
+                    message: "\(target.path) already exists, but couldn't be read to compare against this version's "
+                        + "skill (permission denied, most likely). Treating it as different: check its permissions, "
+                        + "or pass --force to replace it without comparing."
                 )
             }
         }
@@ -244,10 +300,10 @@ enum SkillInstaller {
         // `removeItem` on `target` removes the symlink itself, not what it points to, the same as
         // `rm`; harmless when nothing is there yet. Plain `moveItem` after that (not
         // `replaceItemAt`, which resolves symlinks while building its backup and then fails
-        // looking for the target through it) is an atomic rename either way.
+        // looking for the target through it) is an atomic rename, same directory, either way.
         try? fileManager.removeItem(at: target)
         try fileManager.moveItem(at: temporary, to: target)
-        return Installed(path: target.path, action: existingData == nil ? .installed : .replaced)
+        return Installed(path: target.path, action: targetIsAFile ? .replaced : .installed)
     }
 
     /// A version-looking mention (`marsdawn 0.5.1`, say) near the top of an existing file, for the

@@ -119,16 +119,26 @@ struct WaitRangeFailure: Error, CustomStringConvertible {
 }
 
 /// `skill --install` refuses to write, for a reason the person can fix rather than a runtime
-/// failure: a different `SKILL.md` already at the target without `--force`, or the target being a
-/// symlink that escapes the folder it's meant to stay in. A usage error like `WaitRangeFailure`
-/// (#120): it exits `64`, not one of `CLIFailure.Code`'s runtime codes, and carries its own
-/// machine-readable `kind` for `--json`.
+/// failure: a different `SKILL.md` already at the target without `--force`, the target being a
+/// symlink that escapes the folder it's meant to stay in, the target being something other than a
+/// plain file (a folder, a FIFO, …), or an existing file that can't even be read to compare. A
+/// usage error like `WaitRangeFailure` (#120): it exits `64`, not one of `CLIFailure.Code`'s
+/// runtime codes, and carries its own machine-readable `kind` for `--json`.
 struct SkillInstallFailure: Error, CustomStringConvertible {
     enum Kind: String {
         /// A `SKILL.md` is already at the target and its bytes differ from this version's.
         case differs = "skill_differs"
         /// The target path is a symlink whose resolved destination is outside the target folder.
         case unsafeSymlink = "skill_unsafe_symlink"
+        /// Something is at the target path (or at what a safe symlink there resolves to) that
+        /// isn't a plain file — a folder, a FIFO, a socket, a device. Refused unconditionally,
+        /// `--force` included: replacing a folder isn't "replacing a file", and `--force` only
+        /// ever means "yes, overwrite the differing SKILL.md I asked about."
+        case notAFile = "skill_target_not_a_file"
+        /// A plain file is already at the target, but it couldn't be read to compare against this
+        /// version's skill (permission denied, most likely). Treated as differing: refused without
+        /// `--force`, same as bytes that don't match, rather than guessed at and silently replaced.
+        case unreadable = "skill_unreadable"
     }
 
     let kind: Kind
