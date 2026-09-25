@@ -1,11 +1,26 @@
 #if os(macOS)
 import ArgumentParser
+import Darwin
 import Foundation
 import Testing
 @testable import marsdawn
 
 /// `marsdawn skill` (#60): the agent skill printed by the CLI it describes, so it can never name an
 /// option the installed version lacks.
+///
+/// `.serialized` (#120 verifier round 3): several tests here mutate `SkillInstaller.defaultDirectory`
+/// and `$HOME` — shared, process-wide state — and restore it afterward; without `.serialized`,
+/// Swift Testing's default parallel execution could interleave two of them and have one test
+/// restore the other's override, or observe it mid-change. `.timeLimit` is a backstop for the
+/// same round: the previous attempt at this fix (raw `dup2` of the process's real stdout,
+/// concurrently, across tests) didn't just flake, it *hung* — the verifier caught
+/// `nonJSONTextNamesTheAction` blocked forever in a pipe read waiting for an EOF that would never
+/// come, because another test held a second write end of the same pipe open. That specific bug is
+/// fixed by not touching fd 1 at all any more (see `MarsDawnCommand.Skill.run`'s injectable
+/// `write` parameter, and `itPrintsTheSkillAndNothingElse` / `jsonReportsPathAndEachAction` /
+/// `nonJSONTextNamesTheAction` / `aDifferingInstallExitsSixtyFour` below), but a time limit means
+/// any *other* hang here fails loudly instead of blocking a whole run.
+@Suite(.serialized, .timeLimit(.minutes(1)))
 struct SkillTests {
     /// Swift Testing makes a fresh `SkillTests` instance per test, so this runs before every one
     /// of them and poisons `SkillInstaller.defaultDirectory` (#120 verifier round 2): any test
@@ -113,36 +128,32 @@ struct SkillTests {
         #expect(data == Data((MarsDawnSkill.text + "\n").utf8))
     }
 
+    /// No raw stdout redirection (#120 verifier round 3 — see the suite's own doc comment above):
+    /// `MarsDawnCommand.Skill.run(…)`'s `write` parameter is captured directly, a plain local
+    /// closure over a local array, nothing shared or global. `print`'s own "\n" terminator is what
+    /// would land on real stdout; `write` itself is called with just the text, so the expectation
+    /// compares against `MarsDawnSkill.text` with no appended newline.
     @Test func itPrintsTheSkillAndNothingElse() throws {
-        let pipe = Pipe()
-        let saved = dup(STDOUT_FILENO)
-        dup2(pipe.fileHandleForWriting.fileDescriptor, STDOUT_FILENO)
-        try MarsDawnCommand.Skill.parse([]).run()
-        fflush(stdout)
-        dup2(saved, STDOUT_FILENO)
-        close(saved)
-        pipe.fileHandleForWriting.closeFile()
-        let out = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-        #expect(out == MarsDawnSkill.text + "\n")
+        var captured: [String] = []
+        try MarsDawnCommand.Skill.run(install: false, dir: nil, force: false, json: false) { captured.append($0) }
+        #expect(captured == [MarsDawnSkill.text])
     }
 
     // MARK: - --install (#120)
 
-    /// Redirects stdout for `body`, always restoring it even if `body` throws, and returns what
-    /// was written.
-    static func captureStdout(_ body: () throws -> Void) throws -> String {
-        let pipe = Pipe()
-        let saved = dup(STDOUT_FILENO)
-        dup2(pipe.fileHandleForWriting.fileDescriptor, STDOUT_FILENO)
-        var caught: Error?
-        do { try body() } catch { caught = error }
-        fflush(stdout)
-        dup2(saved, STDOUT_FILENO)
-        close(saved)
-        pipe.fileHandleForWriting.closeFile()
-        let out = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-        if let caught { throw caught }
-        return out
+    /// Runs `MarsDawnCommand.Skill.run` with `arguments` parsed first (so parsing/validation
+    /// still goes through the same path a real invocation would), capturing what it writes via a
+    /// local closure over a local array — never a shared global, so this is safe under Swift
+    /// Testing's default parallel execution regardless of what else is running at the same time
+    /// (#120 verifier round 3; see the suite's own doc comment for what the previous, fd-based
+    /// version of this actually did: a deadlock, not just a flake).
+    static func runSkillCapturingOutput(_ arguments: [String]) throws -> [String] {
+        let command = try MarsDawnCommand.Skill.parse(arguments)
+        var captured: [String] = []
+        try MarsDawnCommand.Skill.run(install: command.install, dir: command.dir, force: command.force, json: command.output.json) {
+            captured.append($0)
+        }
+        return captured
     }
 
     /// A fresh, empty folder under a per-test temporary root, never `~/.claude` — #120's tests
@@ -215,6 +226,11 @@ struct SkillTests {
         #expect(try Data(contentsOf: target) == original, "a refused install must not touch the existing file")
     }
 
+    /// Also the "target exists and the replace succeeds" case the atomic `rename(2)` swap needs
+    /// covered (verifier round 3): this goes through exactly the same `install` call as every
+    /// other successful replace here, so it's covered by the same code path as
+    /// `aSymlinkInsideTheTargetFolderIsReplacedNormally` and the `--force` half of
+    /// `anUnreadableFileIsRefusedWithoutForceAndReplacedWithForce`.
     @Test func forceReplacesADifferingFile() throws {
         let root = try Self.tempRoot()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -227,6 +243,33 @@ struct SkillTests {
 
         #expect(result.action == .replaced)
         #expect(try Data(contentsOf: target) == Data((MarsDawnSkill.text + "\n").utf8))
+    }
+
+    /// Verifier round 3: a failed `rename(2)` must never lose what was at `target` — that's the
+    /// whole point of using `rename(2)` instead of deleting `target` and then moving the
+    /// replacement in. `UF_IMMUTABLE` (`chflags`) makes the kernel refuse to rename *over* an
+    /// existing file without touching it first, which is exactly the shape of failure that
+    /// matters here: the temp file still gets written into the same directory (that write isn't
+    /// blocked by the flag — it's a new path, not `target`), and then the swap itself fails.
+    @Test func aFailedRenameNeverLosesTheExistingFile() throws {
+        let root = try Self.tempRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let dir = root.appendingPathComponent("skill")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let target = dir.appendingPathComponent("SKILL.md")
+        let original = Data("stale, and about to be made immutable\n".utf8)
+        try original.write(to: target)
+        #expect(chflags(target.path, UInt32(UF_IMMUTABLE)) == 0, "positive fixture: the immutable flag was actually set")
+        defer { chflags(target.path, 0) } // always clear it, even if an assertion below fails
+
+        #expect(throws: (any Error).self) {
+            _ = try SkillInstaller.install(dir: dir.path, force: true)
+        }
+
+        chflags(target.path, 0) // must be clear again to read it back
+        #expect(try Data(contentsOf: target) == original, "a failed rename must leave the original file exactly as it was")
+        let leftovers = try FileManager.default.contentsOfDirectory(atPath: dir.path).filter { $0.hasSuffix(".tmp") }
+        #expect(leftovers.isEmpty, "the temp file must be cleaned up even when the rename it was for fails")
     }
 
     /// Verifier round 2, claim (1): the target being anything other than a plain file — most
@@ -353,25 +396,22 @@ struct SkillTests {
         defer { try? FileManager.default.removeItem(at: root) }
         let dir = root.appendingPathComponent("skill")
 
-        let installedOut = try Self.captureStdout {
-            try MarsDawnCommand.Skill.parse(["--install", "--dir", dir.path, "--json"]).run()
-        }
-        let installed = try #require(try JSONSerialization.jsonObject(with: Data(installedOut.utf8)) as? [String: Any])
+        let installedOut = try Self.runSkillCapturingOutput(["--install", "--dir", dir.path, "--json"])
+        #expect(installedOut.count == 1)
+        let installed = try #require(try JSONSerialization.jsonObject(with: Data(installedOut[0].utf8)) as? [String: Any])
         #expect(installed["ok"] as? Bool == true)
         #expect(installed["action"] as? String == "installed")
         #expect(installed["path"] as? String == dir.appendingPathComponent("SKILL.md").path)
 
-        let unchangedOut = try Self.captureStdout {
-            try MarsDawnCommand.Skill.parse(["--install", "--dir", dir.path, "--json"]).run()
-        }
-        let unchanged = try #require(try JSONSerialization.jsonObject(with: Data(unchangedOut.utf8)) as? [String: Any])
+        let unchangedOut = try Self.runSkillCapturingOutput(["--install", "--dir", dir.path, "--json"])
+        #expect(unchangedOut.count == 1)
+        let unchanged = try #require(try JSONSerialization.jsonObject(with: Data(unchangedOut[0].utf8)) as? [String: Any])
         #expect(unchanged["action"] as? String == "unchanged")
 
         try Data("stale\n".utf8).write(to: dir.appendingPathComponent("SKILL.md"))
-        let replacedOut = try Self.captureStdout {
-            try MarsDawnCommand.Skill.parse(["--install", "--dir", dir.path, "--force", "--json"]).run()
-        }
-        let replaced = try #require(try JSONSerialization.jsonObject(with: Data(replacedOut.utf8)) as? [String: Any])
+        let replacedOut = try Self.runSkillCapturingOutput(["--install", "--dir", dir.path, "--force", "--json"])
+        #expect(replacedOut.count == 1)
+        let replaced = try #require(try JSONSerialization.jsonObject(with: Data(replacedOut[0].utf8)) as? [String: Any])
         #expect(replaced["action"] as? String == "replaced")
     }
 
@@ -381,15 +421,13 @@ struct SkillTests {
         let dir = root.appendingPathComponent("skill")
         let target = dir.appendingPathComponent("SKILL.md")
 
-        let installedOut = try Self.captureStdout {
-            try MarsDawnCommand.Skill.parse(["--install", "--dir", dir.path]).run()
-        }
-        #expect(installedOut.contains("Installed") && installedOut.contains(target.path))
+        let installedOut = try Self.runSkillCapturingOutput(["--install", "--dir", dir.path])
+        #expect(installedOut.count == 1)
+        #expect(installedOut[0].contains("Installed") && installedOut[0].contains(target.path))
 
-        let unchangedOut = try Self.captureStdout {
-            try MarsDawnCommand.Skill.parse(["--install", "--dir", dir.path]).run()
-        }
-        #expect(unchangedOut.contains("Already installed") && unchangedOut.contains(target.path))
+        let unchangedOut = try Self.runSkillCapturingOutput(["--install", "--dir", dir.path])
+        #expect(unchangedOut.count == 1)
+        #expect(unchangedOut[0].contains("Already installed") && unchangedOut[0].contains(target.path))
     }
 
     /// Errors from `run()` exit `64`, `SkillInstallFailure`'s own code, not one of
@@ -402,9 +440,7 @@ struct SkillTests {
         try Data("stale\n".utf8).write(to: dir.appendingPathComponent("SKILL.md"))
 
         do {
-            _ = try Self.captureStdout {
-                try MarsDawnCommand.Skill.parse(["--install", "--dir", dir.path]).run()
-            }
+            _ = try Self.runSkillCapturingOutput(["--install", "--dir", dir.path])
             Issue.record("expected a SkillInstallFailure")
         } catch {
             #expect(cliExitCode(for: error) == 64)
@@ -419,6 +455,34 @@ struct SkillTests {
         #expect(SkillInstaller.versionHint(in: "---\nname: marsdawn\n---\ninstalled by marsdawn 0.4.2\n") == "marsdawn 0.4.2")
         #expect(SkillInstaller.versionHint(in: MarsDawnSkill.text) == nil)
         #expect(SkillInstaller.versionHint(in: "nothing here") == nil)
+    }
+
+    /// Verifier round 3: `homeDirectoryForCurrentUser` ignores `$HOME`, so `productionDefaultDirectory`
+    /// reads `$HOME` itself first — a run under a temp `$HOME` (this test's own fake one, restored
+    /// in the `defer`) never falls through to the real home. Calls `productionDefaultDirectory`
+    /// directly, bypassing the mutable `defaultDirectory` seam (poisoned by `init()` above) on
+    /// purpose: this checks the `$HOME` logic itself, and building a `URL` touches no filesystem.
+    @Test func productionDefaultDirectoryHonoursHOME() {
+        let originalHOME = ProcessInfo.processInfo.environment["HOME"]
+        let fakeHome = "/tmp/marsdawn-fake-home-\(UUID().uuidString)"
+        setenv("HOME", fakeHome, 1)
+        defer {
+            if let originalHOME { setenv("HOME", originalHOME, 1) } else { unsetenv("HOME") }
+        }
+
+        #expect(SkillInstaller.productionDefaultDirectory().path == "\(fakeHome)/.claude/skills/marsdawn")
+    }
+
+    /// Unset `$HOME` falls back to `homeDirectoryForCurrentUser`, not to some other default.
+    @Test func productionDefaultDirectoryFallsBackWithoutHOME() {
+        let originalHOME = ProcessInfo.processInfo.environment["HOME"]
+        unsetenv("HOME")
+        defer {
+            if let originalHOME { setenv("HOME", originalHOME, 1) }
+        }
+
+        let expected = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude/skills/marsdawn", isDirectory: true)
+        #expect(SkillInstaller.productionDefaultDirectory().path == expected.path)
     }
 }
 #endif

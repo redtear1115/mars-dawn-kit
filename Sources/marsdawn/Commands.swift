@@ -40,9 +40,13 @@ struct OutputOptions: ParsableArguments {
     }
 }
 
-func printJSON(_ object: [String: Any]) {
+func jsonString(_ object: [String: Any]) -> String {
     let data = (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes])) ?? Data("{}".utf8)
-    print(String(decoding: data, as: UTF8.self))
+    return String(decoding: data, as: UTF8.self)
+}
+
+func printJSON(_ object: [String: Any]) {
+    print(jsonString(object))
 }
 
 /// A failure with a stable exit code and a machine-readable kind.
