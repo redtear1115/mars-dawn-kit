@@ -204,17 +204,35 @@ struct ScopedFileReader: Sendable {
         }
     }
 
+    /// The calling thread's dataless-materialization policy: `getiopolicy_np` / `setiopolicy_np`
+    /// on `IOPOL_TYPE_VFS_MATERIALIZE_DATALESS_FILES`, thread scope. Both return -1 on failure.
+    /// Tests inject a replacement to make a call fail; everything else uses `.thread`.
+    struct DatalessPolicy: Sendable {
+        var get: @Sendable () -> Int32
+        var set: @Sendable (Int32) -> Int32
+
+        static let thread = DatalessPolicy(
+            get: { getiopolicy_np(IOPOL_TYPE_VFS_MATERIALIZE_DATALESS_FILES, IOPOL_SCOPE_THREAD) },
+            set: { setiopolicy_np(IOPOL_TYPE_VFS_MATERIALIZE_DATALESS_FILES, IOPOL_SCOPE_THREAD, $0) }
+        )
+    }
+
     /// Runs `body` with this thread set not to materialize dataless files, so reading one fails
-    /// quickly instead of waiting for a download. The previous policy is restored afterwards.
-    static func withDatalessFilesNotMaterialized<T>(_ body: () throws(Failure) -> T) throws(Failure) -> T {
-        let previous = getiopolicy_np(IOPOL_TYPE_VFS_MATERIALIZE_DATALESS_FILES, IOPOL_SCOPE_THREAD)
-        let changed = setiopolicy_np(IOPOL_TYPE_VFS_MATERIALIZE_DATALESS_FILES, IOPOL_SCOPE_THREAD, IOPOL_MATERIALIZE_DATALESS_FILES_OFF) == 0
+    /// quickly instead of waiting for a download. Afterwards the previous policy is restored, or,
+    /// if it couldn't be read, `IOPOL_MATERIALIZE_DATALESS_FILES_DEFAULT` (follow the process
+    /// policy), so a failed read never leaves the thread with materialization off.
+    static func withDatalessFilesNotMaterialized<T>(
+        policy: DatalessPolicy = .thread,
+        _ body: () throws(Failure) -> T
+    ) throws(Failure) -> T {
+        let previous = policy.get()
+        let changed = policy.set(IOPOL_MATERIALIZE_DATALESS_FILES_OFF) == 0
         if !changed {
             log.error("Couldn't turn off dataless file materialization: \(errno, privacy: .public)")
         }
         defer {
-            if changed, previous >= 0 {
-                setiopolicy_np(IOPOL_TYPE_VFS_MATERIALIZE_DATALESS_FILES, IOPOL_SCOPE_THREAD, previous)
+            if changed {
+                _ = policy.set(previous >= 0 ? previous : IOPOL_MATERIALIZE_DATALESS_FILES_DEFAULT)
             }
         }
         return try body()
