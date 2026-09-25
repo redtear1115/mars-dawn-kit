@@ -78,8 +78,18 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         webView.navigationDelegate = self
     }
 
-    /// Mermaid diagrams that failed to render in the prepared page, as their error messages.
-    public private(set) var diagramErrors: [String] = []
+    /// A Mermaid diagram that failed to render: its error message and, when known, the
+    /// document line the diagram's fence starts on (mars-dawn-kit#114).
+    public struct DiagramError: Sendable, Decodable, Equatable {
+        public let message: String
+        /// The Markdown document's line number, mapped the same way `preview.js` maps it
+        /// (`mapMermaidLineToDocument`: fence `data-line` + Mermaid's own line number).
+        /// `nil` when the fence's document line isn't known.
+        public let line: Int?
+    }
+
+    /// Mermaid diagrams that failed to render in the prepared page.
+    public private(set) var diagramErrors: [DiagramError] = []
 
     /// Loads the page and renders `markdown` into it, waiting for diagrams, images and fonts.
     ///
@@ -150,10 +160,21 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
             _ = try await webView.evaluateJavaScript(updateScript)
         }
         try await waitForContent(until: deadline)
-        let errors = try? await webView.evaluateJavaScript(
-            #"[...document.querySelectorAll(".mermaid-block.error")].map((b) => b.getAttribute("data-error") || "")"#
+        // JSON-encoded in JS so an unknown line can be genuinely absent from each object,
+        // rather than `null`, matching what `DiagramError.line` expects to decode.
+        let errorsJSON = try? await webView.evaluateJavaScript(
+            #"""
+            JSON.stringify([...document.querySelectorAll(".mermaid-block.error")].map((b) => {
+              const line = b.querySelector(".mermaid-error")?.getAttribute("data-doc-line");
+              const entry = { message: b.getAttribute("data-error") || "" };
+              if (line !== null && line !== undefined) entry.line = Number(line);
+              return entry;
+            }))
+            """#
         )
-        diagramErrors = errors as? [String] ?? []
+        diagramErrors = (errorsJSON as? String).flatMap {
+            try? JSONDecoder().decode([DiagramError].self, from: Data($0.utf8))
+        } ?? []
         _ = try? await webView.evaluateJavaScript(Self.keepHeadingsWithNextScript)
     }
 
@@ -275,7 +296,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         printInfo: NSPrintInfo,
         window: NSWindow?,
         configure: (NSPrintInfo, NSPrintOperation) -> Void = { _, _ in }
-    ) async throws -> (completed: Bool, diagramErrors: [String]) {
+    ) async throws -> (completed: Bool, diagramErrors: [DiagramError]) {
         // Lay out at the printable width, so measured block heights match the printed pages.
         let printableWidth = printInfo.paperSize.width - 2 * pageMargins.width
         let exporter = DocumentExporter(
@@ -321,7 +342,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
     public struct PDFResult: Sendable {
         public let url: URL
         public let pageCount: Int
-        public let diagramErrors: [String]
+        public let diagramErrors: [DiagramError]
     }
 
     /// Exports `markdown` straight to a PDF file, with no panels. Needs a running AppKit event loop.
