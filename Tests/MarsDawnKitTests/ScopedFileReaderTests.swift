@@ -239,6 +239,33 @@ struct ScopedFileReaderTests {
         #expect(getiopolicy_np(type, IOPOL_SCOPE_THREAD) == before)
     }
 
+    /// Runs the block with a policy whose `get` returns `getResult` and whose `set` returns
+    /// `setResult`, and returns every value `set` was called with, in order.
+    private func policySets(get getResult: Int32, set setResult: Int32) throws -> [Int32] {
+        let sets = PolicySetsBox()
+        let policy = Reader.DatalessPolicy(get: { getResult }, set: { sets.append($0); return setResult })
+        let insideCount = try Reader.withDatalessFilesNotMaterialized(policy: policy) { () throws(Reader.Failure) -> Int in
+            sets.value.count
+        }
+        #expect(insideCount == 1, "the policy is set once before the body runs")
+        return sets.value
+    }
+
+    // Issue #91: when the previous policy can't be read, the thread must not be left with
+    // materialization off; it goes back to the default (follow the process policy).
+    @Test func unreadablePolicyIsRestoredToDefault() throws {
+        #expect(try policySets(get: -1, set: 0) == [IOPOL_MATERIALIZE_DATALESS_FILES_OFF, IOPOL_MATERIALIZE_DATALESS_FILES_DEFAULT])
+    }
+
+    @Test func readablePolicyIsRestoredToItsPreviousValue() throws {
+        #expect(try policySets(get: IOPOL_MATERIALIZE_DATALESS_FILES_ON, set: 0) == [IOPOL_MATERIALIZE_DATALESS_FILES_OFF, IOPOL_MATERIALIZE_DATALESS_FILES_ON])
+    }
+
+    @Test func policyThatCouldNotBeChangedIsNotRestored() throws {
+        #expect(try policySets(get: IOPOL_MATERIALIZE_DATALESS_FILES_ON, set: -1) == [IOPOL_MATERIALIZE_DATALESS_FILES_OFF])
+        #expect(try policySets(get: -1, set: -1) == [IOPOL_MATERIALIZE_DATALESS_FILES_OFF])
+    }
+
     // MARK: System alias spellings
 
     @Test func aliasTableMatchesWholeFirstComponentsOnly() {
@@ -312,6 +339,14 @@ private final class ElapsedBox: @unchecked Sendable {
     private var stored: UInt64 = 0
     var value: UInt64 { lock.withLock { stored } }
     func set(_ value: UInt64) { lock.withLock { stored = value } }
+}
+
+/// The values an injected `DatalessPolicy.set` was called with.
+private final class PolicySetsBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: [Int32] = []
+    var value: [Int32] { lock.withLock { stored } }
+    func append(_ value: Int32) { lock.withLock { stored.append(value) } }
 }
 
 private final class FailureBox: @unchecked Sendable {
