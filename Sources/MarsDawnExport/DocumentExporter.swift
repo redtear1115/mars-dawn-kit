@@ -78,8 +78,34 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         webView.navigationDelegate = self
     }
 
+    /// A Mermaid diagram that failed to render (mars-dawn-kit#114). `fenceLine` and `line` are
+    /// two different document lines, not a fallback pair — a diagram whose message names no
+    /// line (e.g. "No diagram type detected") still has a `fenceLine` with no `line`.
+    public struct DiagramError: Sendable, Decodable, Equatable {
+        public let message: String
+        /// The document line the diagram's fence (` ```mermaid `) starts on — the block's own
+        /// `data-line`. Present whenever that's known; absent only when the fence itself has no
+        /// `data-line` at all (e.g. a diagram inside a footnote's own text never gets one, #44).
+        public let fenceLine: Int?
+        /// The document line **of the error itself**: `fenceLine` plus Mermaid's own line number
+        /// from inside its message, mapped the same way `preview.js`'s
+        /// `mapMermaidLineToDocument` does. Present only when Mermaid's message actually names a
+        /// line (some errors, like an undetected diagram type, don't) *and* `fenceLine` is known.
+        public let line: Int?
+    }
+
     /// Mermaid diagrams that failed to render in the prepared page, as their error messages.
+    ///
+    /// Kept as `[String]` — this is a public package and `export --json`'s `diagramErrors` is a
+    /// published schema (marsdawn-mcp, mars-dawn-website) with `additionalProperties: false`, so
+    /// neither this property's type nor that JSON field can change shape without breaking
+    /// existing readers. `diagramErrorDetails` below carries the same failures with their
+    /// document line, in the same order, additively.
     public private(set) var diagramErrors: [String] = []
+
+    /// The same failures as `diagramErrors`, in the same order, each with its document line when
+    /// known (mars-dawn-kit#114). Additive: `diagramErrors` is unchanged.
+    public private(set) var diagramErrorDetails: [DiagramError] = []
 
     /// Loads the page and renders `markdown` into it, waiting for diagrams, images and fonts.
     ///
@@ -150,10 +176,24 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
             _ = try await webView.evaluateJavaScript(updateScript)
         }
         try await waitForContent(until: deadline)
-        let errors = try? await webView.evaluateJavaScript(
-            #"[...document.querySelectorAll(".mermaid-block.error")].map((b) => b.getAttribute("data-error") || "")"#
+        // JSON-encoded in JS so an unknown fenceLine/line can be genuinely absent from each
+        // object, rather than `null`, matching what `DiagramError` expects to decode.
+        let errorsJSON = try? await webView.evaluateJavaScript(
+            #"""
+            JSON.stringify([...document.querySelectorAll(".mermaid-block.error")].map((b) => {
+              const fenceLineAttr = b.getAttribute("data-line");
+              const errorLine = b.querySelector(".mermaid-error")?.getAttribute("data-doc-line");
+              const entry = { message: b.getAttribute("data-error") || "" };
+              if (fenceLineAttr !== null && fenceLineAttr !== "") entry.fenceLine = Number(fenceLineAttr);
+              if (errorLine !== null && errorLine !== undefined) entry.line = Number(errorLine);
+              return entry;
+            }))
+            """#
         )
-        diagramErrors = errors as? [String] ?? []
+        diagramErrorDetails = (errorsJSON as? String).flatMap {
+            try? JSONDecoder().decode([DiagramError].self, from: Data($0.utf8))
+        } ?? []
+        diagramErrors = diagramErrorDetails.map(\.message)
         _ = try? await webView.evaluateJavaScript(Self.keepHeadingsWithNextScript)
     }
 
@@ -265,6 +305,13 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
     }
 
     /// Like `run`, also reporting diagrams that failed to render.
+    ///
+    /// **Exact original shape, on purpose**: this 2-tuple, with these two labels, is public
+    /// source the app already builds against as its own return type (`MarsDawnTests
+    /// /ReviewPrompterTests.swift`'s `export(_:)` declares `-> (completed: Bool, diagramErrors:
+    /// [String])` and returns this call directly) — kit is a public package, so this can't
+    /// change shape. `runReportingDiagramDetails` below is the same operation, additionally
+    /// reporting each failure's document line.
     public static func runReportingDiagrams(
         markdown: String,
         theme: PreviewTheme,
@@ -276,6 +323,26 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         window: NSWindow?,
         configure: (NSPrintInfo, NSPrintOperation) -> Void = { _, _ in }
     ) async throws -> (completed: Bool, diagramErrors: [String]) {
+        let result = try await runReportingDiagramDetails(
+            markdown: markdown, theme: theme, baseDirectory: baseDirectory, allowRemoteImages: allowRemoteImages,
+            scopeRoot: scopeRoot, footnoteBackLabel: footnoteBackLabel, printInfo: printInfo, window: window, configure: configure
+        )
+        return (result.completed, result.diagramErrors)
+    }
+
+    /// Like `runReportingDiagrams`, additionally reporting each failed diagram's document line
+    /// (mars-dawn-kit#114). Additive: `runReportingDiagrams` itself is unchanged.
+    public static func runReportingDiagramDetails(
+        markdown: String,
+        theme: PreviewTheme,
+        baseDirectory: URL?,
+        allowRemoteImages: Bool,
+        scopeRoot: URL? = nil,
+        footnoteBackLabel: String = MarkdownRenderer.Options().footnoteBackLabel,
+        printInfo: NSPrintInfo,
+        window: NSWindow?,
+        configure: (NSPrintInfo, NSPrintOperation) -> Void = { _, _ in }
+    ) async throws -> (completed: Bool, diagramErrors: [String], diagramErrorDetails: [DiagramError]) {
         // Lay out at the printable width, so measured block heights match the printed pages.
         let printableWidth = printInfo.paperSize.width - 2 * pageMargins.width
         let exporter = DocumentExporter(
@@ -304,7 +371,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
            let url = operation.printInfo.dictionary()[NSPrintInfo.AttributeKey.jobSavingURL] as? URL {
             ToUnicodeRepair.repairFile(at: url, source: markdown)
         }
-        return (completed, exporter.diagramErrors)
+        return (completed, exporter.diagramErrors, exporter.diagramErrorDetails)
     }
 
     public enum Paper: String, CaseIterable, Sendable {
@@ -322,6 +389,9 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         public let url: URL
         public let pageCount: Int
         public let diagramErrors: [String]
+        /// Additive (mars-dawn-kit#114): the same failures as `diagramErrors`, in the same
+        /// order, each with its document line when known.
+        public let diagramErrorDetails: [DiagramError]
     }
 
     /// Exports `markdown` straight to a PDF file, with no panels. Needs a running AppKit event loop.
@@ -341,7 +411,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         let printInfo = NSPrintInfo()
         printInfo.paperSize = paper.size
         printInfo.orientation = .portrait
-        let result = try await runReportingDiagrams(
+        let result = try await runReportingDiagramDetails(
             markdown: markdown, theme: theme, baseDirectory: baseDirectory,
             allowRemoteImages: allowRemoteImages, scopeRoot: scopeRoot, footnoteBackLabel: footnoteBackLabel,
             printInfo: printInfo, window: nil
@@ -352,7 +422,10 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
             operation.showsProgressPanel = false
         }
         guard result.completed, let document = PDFDocument(url: url) else { throw ExportError.printFailed }
-        return PDFResult(url: url, pageCount: document.pageCount, diagramErrors: result.diagramErrors)
+        return PDFResult(
+            url: url, pageCount: document.pageCount,
+            diagramErrors: result.diagramErrors, diagramErrorDetails: result.diagramErrorDetails
+        )
     }
 
     private var hostWindow: NSWindow?

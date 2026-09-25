@@ -641,6 +641,12 @@ extension MarsDawnCommand {
                     "theme": resolvedTheme().id,
                     "paper": paper.rawValue,
                     "diagramErrors": result.diagramErrors,
+                    "diagramErrorDetails": result.diagramErrorDetails.map { error -> [String: Any] in
+                        var entry: [String: Any] = ["message": error.message]
+                        if let fenceLine = error.fenceLine { entry["fenceLine"] = fenceLine }
+                        if let line = error.line { entry["line"] = line }
+                        return entry
+                    },
                 ],
                 text: text
             )
