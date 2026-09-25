@@ -40,9 +40,13 @@ struct OutputOptions: ParsableArguments {
     }
 }
 
-func printJSON(_ object: [String: Any]) {
+func jsonString(_ object: [String: Any]) -> String {
     let data = (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes])) ?? Data("{}".utf8)
-    print(String(decoding: data, as: UTF8.self))
+    return String(decoding: data, as: UTF8.self)
+}
+
+func printJSON(_ object: [String: Any]) {
+    print(jsonString(object))
 }
 
 /// A failure with a stable exit code and a machine-readable kind.
@@ -92,11 +96,12 @@ struct CLIFailure: Error, CustomStringConvertible {
 }
 
 /// The status `marsdawn` exits with for an error: a `CLIFailure`'s own code, `WaitRangeFailure`'s
-/// own code, and otherwise ArgumentParser's — 64 for a usage error, 0 for `--help` and
-/// `--version`.
+/// or `SkillInstallFailure`'s own code, and otherwise ArgumentParser's — 64 for a usage error, 0
+/// for `--help` and `--version`.
 func cliExitCode(for error: Error) -> Int32 {
     if let failure = error as? CLIFailure { return failure.code.rawValue }
     if error is WaitRangeFailure { return WaitRangeFailure.exitCode }
+    if error is SkillInstallFailure { return SkillInstallFailure.exitCode }
     return MarsDawnCommand.exitCode(for: error).rawValue
 }
 
@@ -115,6 +120,35 @@ struct WaitRangeFailure: Error, CustomStringConvertible {
     var description: String { message }
     static let exitCode: Int32 = 64
     static let kind = "wait_out_of_range"
+}
+
+/// `skill --install` refuses to write, for a reason the person can fix rather than a runtime
+/// failure: a different `SKILL.md` already at the target without `--force`, the target being a
+/// symlink that escapes the folder it's meant to stay in, the target being something other than a
+/// plain file (a folder, a FIFO, …), or an existing file that can't even be read to compare. A
+/// usage error like `WaitRangeFailure` (#120): it exits `64`, not one of `CLIFailure.Code`'s
+/// runtime codes, and carries its own machine-readable `kind` for `--json`.
+struct SkillInstallFailure: Error, CustomStringConvertible {
+    enum Kind: String {
+        /// A `SKILL.md` is already at the target and its bytes differ from this version's.
+        case differs = "skill_differs"
+        /// The target path is a symlink whose resolved destination is outside the target folder.
+        case unsafeSymlink = "skill_unsafe_symlink"
+        /// Something is at the target path (or at what a safe symlink there resolves to) that
+        /// isn't a plain file — a folder, a FIFO, a socket, a device. Refused unconditionally,
+        /// `--force` included: replacing a folder isn't "replacing a file", and `--force` only
+        /// ever means "yes, overwrite the differing SKILL.md I asked about."
+        case notAFile = "skill_target_not_a_file"
+        /// A plain file is already at the target, but it couldn't be read to compare against this
+        /// version's skill (permission denied, most likely). Treated as differing: refused without
+        /// `--force`, same as bytes that don't match, rather than guessed at and silently replaced.
+        case unreadable = "skill_unreadable"
+    }
+
+    let kind: Kind
+    let message: String
+    var description: String { message }
+    static let exitCode: Int32 = 64
 }
 
 /// Where MarsDawn is installed. Replaceable for tests.
