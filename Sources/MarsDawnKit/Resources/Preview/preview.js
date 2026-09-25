@@ -189,6 +189,36 @@
     return rendered;
   }
 
+  // Posting through a MessageChannel is a genuine top-level task, unlike a plain `.then()`
+  // chained inside another async call's continuation: WebKit clamps a *chain* of async steps to
+  // a ~1s floor per step once it's nested a few levels deep (mars-dawn-kit#113), even with
+  // nothing running concurrently and no real timer involved. Yielding through a fresh task
+  // between diagrams resets that nesting.
+  function yieldToFreshTask() {
+    return new Promise((resolve) => {
+      const channel = new MessageChannel();
+      channel.port2.onmessage = () => resolve();
+      channel.port1.postMessage(null);
+    });
+  }
+
+  // `mermaid.render()` shares mutable state across calls (a temporary DOM sandbox, an id
+  // counter) and isn't meant to run several at once: firing many calls concurrently (as this
+  // used to, one per changed diagram) doesn't overlap their work, it serializes it badly, and
+  // even a plain sequential `.then()` chain hits the same wall (see `yieldToFreshTask` above) —
+  // 25 diagrams took ~15.5s either way, when each one alone takes single-digit milliseconds
+  // (mars-dawn-kit#113, the CLI export deadline this caused; fixed, the same 25 diagrams take
+  // well under half a second). So every batch of diagrams that need rendering goes through this,
+  // one at a time, each preceded by a fresh task, no matter how many changed in one update.
+  // Never rejects (each render's own errors already end up in the page, not thrown), matching
+  // what callers here relied on `Promise.allSettled` for before.
+  function renderMermaidSequentially(pairs) {
+    return pairs.reduce(
+      (chain, [block, stale]) => chain.then(() => yieldToFreshTask()).then(() => renderMermaid(block, stale)).catch(() => {}),
+      Promise.resolve()
+    );
+  }
+
   async function renderMermaid(block, placeholderSVG) {
     const source = block.querySelector(".mermaid-source")?.textContent ?? "";
     const target = document.createElement("div");
@@ -640,19 +670,19 @@
     root.replaceChildren(fragment);
 
     refreshRemoteBar();
-    const renders = [];
+    const pending = [];
     for (const el of fresh) {
       highlightCode(el);
       const blocks = el.classList.contains("mermaid-block") ? [el] : el.querySelectorAll(".mermaid-block");
-      for (const block of blocks) renders.push(renderMermaid(block, staleSVGs.shift()));
+      for (const block of blocks) pending.push([block, staleSVGs.shift()]);
     }
     // Synchronous, and only over elements the pool didn't reuse: math whose source hasn't
     // changed keeps the KaTeX output it already has.
     renderMath();
     reapplySync();
-    pendingWork = Promise.allSettled(renders);
-    if (renders.length) {
-      Promise.allSettled(renders).then(() => {
+    pendingWork = renderMermaidSequentially(pending);
+    if (pending.length) {
+      pendingWork.then(() => {
         invalidateAnchors();
         reapplySync();
       });
@@ -661,15 +691,16 @@
 
   // Redraw diagrams in place (keeps scroll position); old SVGs stay visible until replaced.
   function rerenderDiagrams() {
-    for (const block of content().querySelectorAll(".mermaid-block")) {
+    const pending = [...content().querySelectorAll(".mermaid-block")].map((block) => {
       const output = block.querySelector(".mermaid-output");
       const previous = output?.innerHTML;
       output?.remove();
-      renderMermaid(block, previous).then(() => {
-        invalidateAnchors();
-        reapplySync();
-      });
-    }
+      return [block, previous];
+    });
+    renderMermaidSequentially(pending).then(() => {
+      invalidateAnchors();
+      reapplySync();
+    });
   }
 
   function refreshTheme() {
