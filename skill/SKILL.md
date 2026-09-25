@@ -38,8 +38,10 @@ On success it exits 0 and prints one JSON line:
 - `paper`: Paper size used for the export.
 - `diagramErrors`: One message per Mermaid diagram that failed to render. The PDF is still written.
 - `diagramErrorDetails`: The same failures as `diagramErrors`, in the same order, each as
-  `{message, line}`. `line` is the Markdown document's line number for the diagram, omitted when
-  it can't be determined.
+  `{message, fenceLine, line}`. `fenceLine` is the document line the diagram's fence starts on,
+  present whenever that's known. `line` is the document line of the error itself (`fenceLine` plus
+  Mermaid's own line number from its message), present only when Mermaid's message names a line —
+  some errors, like an undetected diagram type, don't. Either can be absent on its own.
 
 If `diagramErrors` isn't empty, the PDF was still written: tell the user which diagrams failed.
 

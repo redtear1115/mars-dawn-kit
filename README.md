@@ -52,8 +52,10 @@ swift run marsdawn export notes.md -o notes.pdf --theme classic --paper a4
   - The theme defaults to `$MARSDAWN_THEME`, then `dawn`.
   - Existing files are only overwritten with `--force`.
   - `--json` prints `ok`, `output`, `pages`, `diagramErrors` and `diagramErrorDetails` (the same
-    failures as `diagramErrors`, in the same order, each as `{message, line}` with `line` the
-    document's line number for the diagram, omitted when unknown).
+    failures as `diagramErrors`, in the same order, each as `{message, fenceLine, line}`:
+    `fenceLine` is the diagram's own fence line, present whenever known; `line` is the error's own
+    line — `fenceLine` plus Mermaid's line number from its message — present only when Mermaid's
+    message names one, which not every error does).
   - It renders on its own: the MarsDawn app does not have to be installed. Only `open` needs the app.
 - `--version` prints the release number and nothing else, so a package manager can compare it against its own. Bumping it is part of cutting a release; see [RELEASING.md](RELEASING.md).
 - `--generate-completion-script bash|zsh|fish` writes a shell completion script to stdout.

@@ -78,13 +78,19 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         webView.navigationDelegate = self
     }
 
-    /// A Mermaid diagram that failed to render: its error message and, when known, the
-    /// document line the diagram's fence starts on (mars-dawn-kit#114).
+    /// A Mermaid diagram that failed to render (mars-dawn-kit#114). `fenceLine` and `line` are
+    /// two different document lines, not a fallback pair — a diagram whose message names no
+    /// line (e.g. "No diagram type detected") still has a `fenceLine` with no `line`.
     public struct DiagramError: Sendable, Decodable, Equatable {
         public let message: String
-        /// The Markdown document's line number, mapped the same way `preview.js` maps it
-        /// (`mapMermaidLineToDocument`: fence `data-line` + Mermaid's own line number).
-        /// `nil` when the fence's document line isn't known.
+        /// The document line the diagram's fence (` ```mermaid `) starts on — the block's own
+        /// `data-line`. Present whenever that's known; absent only when the fence itself has no
+        /// `data-line` at all (e.g. a diagram inside a footnote's own text never gets one, #44).
+        public let fenceLine: Int?
+        /// The document line **of the error itself**: `fenceLine` plus Mermaid's own line number
+        /// from inside its message, mapped the same way `preview.js`'s
+        /// `mapMermaidLineToDocument` does. Present only when Mermaid's message actually names a
+        /// line (some errors, like an undetected diagram type, don't) *and* `fenceLine` is known.
         public let line: Int?
     }
 
@@ -170,14 +176,16 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
             _ = try await webView.evaluateJavaScript(updateScript)
         }
         try await waitForContent(until: deadline)
-        // JSON-encoded in JS so an unknown line can be genuinely absent from each object,
-        // rather than `null`, matching what `DiagramError.line` expects to decode.
+        // JSON-encoded in JS so an unknown fenceLine/line can be genuinely absent from each
+        // object, rather than `null`, matching what `DiagramError` expects to decode.
         let errorsJSON = try? await webView.evaluateJavaScript(
             #"""
             JSON.stringify([...document.querySelectorAll(".mermaid-block.error")].map((b) => {
-              const line = b.querySelector(".mermaid-error")?.getAttribute("data-doc-line");
+              const fenceLineAttr = b.getAttribute("data-line");
+              const errorLine = b.querySelector(".mermaid-error")?.getAttribute("data-doc-line");
               const entry = { message: b.getAttribute("data-error") || "" };
-              if (line !== null && line !== undefined) entry.line = Number(line);
+              if (fenceLineAttr !== null && fenceLineAttr !== "") entry.fenceLine = Number(fenceLineAttr);
+              if (errorLine !== null && errorLine !== undefined) entry.line = Number(errorLine);
               return entry;
             }))
             """#
@@ -297,7 +305,34 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
     }
 
     /// Like `run`, also reporting diagrams that failed to render.
+    ///
+    /// **Exact original shape, on purpose**: this 2-tuple, with these two labels, is public
+    /// source the app already builds against as its own return type (`MarsDawnTests
+    /// /ReviewPrompterTests.swift`'s `export(_:)` declares `-> (completed: Bool, diagramErrors:
+    /// [String])` and returns this call directly) — kit is a public package, so this can't
+    /// change shape. `runReportingDiagramDetails` below is the same operation, additionally
+    /// reporting each failure's document line.
     public static func runReportingDiagrams(
+        markdown: String,
+        theme: PreviewTheme,
+        baseDirectory: URL?,
+        allowRemoteImages: Bool,
+        scopeRoot: URL? = nil,
+        footnoteBackLabel: String = MarkdownRenderer.Options().footnoteBackLabel,
+        printInfo: NSPrintInfo,
+        window: NSWindow?,
+        configure: (NSPrintInfo, NSPrintOperation) -> Void = { _, _ in }
+    ) async throws -> (completed: Bool, diagramErrors: [String]) {
+        let result = try await runReportingDiagramDetails(
+            markdown: markdown, theme: theme, baseDirectory: baseDirectory, allowRemoteImages: allowRemoteImages,
+            scopeRoot: scopeRoot, footnoteBackLabel: footnoteBackLabel, printInfo: printInfo, window: window, configure: configure
+        )
+        return (result.completed, result.diagramErrors)
+    }
+
+    /// Like `runReportingDiagrams`, additionally reporting each failed diagram's document line
+    /// (mars-dawn-kit#114). Additive: `runReportingDiagrams` itself is unchanged.
+    public static func runReportingDiagramDetails(
         markdown: String,
         theme: PreviewTheme,
         baseDirectory: URL?,
@@ -376,7 +411,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         let printInfo = NSPrintInfo()
         printInfo.paperSize = paper.size
         printInfo.orientation = .portrait
-        let result = try await runReportingDiagrams(
+        let result = try await runReportingDiagramDetails(
             markdown: markdown, theme: theme, baseDirectory: baseDirectory,
             allowRemoteImages: allowRemoteImages, scopeRoot: scopeRoot, footnoteBackLabel: footnoteBackLabel,
             printInfo: printInfo, window: nil
