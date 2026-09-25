@@ -102,5 +102,240 @@ struct SkillTests {
         let out = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
         #expect(out == MarsDawnSkill.text + "\n")
     }
+
+    // MARK: - --install (#120)
+
+    /// Redirects stdout for `body`, always restoring it even if `body` throws, and returns what
+    /// was written.
+    static func captureStdout(_ body: () throws -> Void) throws -> String {
+        let pipe = Pipe()
+        let saved = dup(STDOUT_FILENO)
+        dup2(pipe.fileHandleForWriting.fileDescriptor, STDOUT_FILENO)
+        var caught: Error?
+        do { try body() } catch { caught = error }
+        fflush(stdout)
+        dup2(saved, STDOUT_FILENO)
+        close(saved)
+        pipe.fileHandleForWriting.closeFile()
+        let out = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        if let caught { throw caught }
+        return out
+    }
+
+    /// A fresh, empty folder under a per-test temporary root, never `~/.claude` — #120's tests
+    /// "must use a temp HOME/dir and never touch the real ~/.claude".
+    static func tempRoot() throws -> URL {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("marsdawn-skill-install-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        return root
+    }
+
+    @Test func installParsesFlagsTogether() throws {
+        let command = try MarsDawnCommand.Skill.parse(["--install", "--dir", "/tmp/x", "--force", "--json"])
+        #expect(command.install && command.force && command.output.json)
+        #expect(command.dir == "/tmp/x")
+        #expect(!(try MarsDawnCommand.Skill.parse([])).install)
+    }
+
+    /// `--dir`, `--force` and `--json` describe what `--install` does, so each is a usage error on
+    /// its own — the plain, unchanged `marsdawn skill` never silently ignores one.
+    @Test func installOnlyOptionsRequireInstall() {
+        #expect(throws: (any Error).self) { try MarsDawnCommand.Skill.parse(["--dir", "/tmp/x"]) }
+        #expect(throws: (any Error).self) { try MarsDawnCommand.Skill.parse(["--force"]) }
+        #expect(throws: (any Error).self) { try MarsDawnCommand.Skill.parse(["--json"]) }
+    }
+
+    @Test func freshInstallWritesTheSkillAndCreatesFolders() throws {
+        let root = try Self.tempRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let dir = root.appendingPathComponent("nested/skills/marsdawn")
+
+        let result = try SkillInstaller.install(dir: dir.path, force: false)
+
+        #expect(result.action == .installed)
+        #expect(result.path == dir.appendingPathComponent("SKILL.md").path)
+        let written = try Data(contentsOf: dir.appendingPathComponent("SKILL.md"))
+        #expect(written == Data((MarsDawnSkill.text + "\n").utf8))
+    }
+
+    @Test func aByteIdenticalFileIsReportedUnchangedAndNeverRewritten() throws {
+        let root = try Self.tempRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let dir = root.appendingPathComponent("skill")
+        _ = try SkillInstaller.install(dir: dir.path, force: false)
+        let target = dir.appendingPathComponent("SKILL.md")
+        let before = try FileManager.default.attributesOfItem(atPath: target.path)[.modificationDate] as? Date
+
+        let result = try SkillInstaller.install(dir: dir.path, force: false)
+
+        #expect(result.action == .unchanged)
+        let after = try FileManager.default.attributesOfItem(atPath: target.path)[.modificationDate] as? Date
+        #expect(before == after, "unchanged must mean nothing was written, not just the same bytes")
+    }
+
+    /// The no-overwrite rule (#120): a `SKILL.md` that already exists and differs is refused
+    /// without `--force`, and the refused install must not touch it.
+    @Test func aDifferingFileIsRefusedWithoutForceAndLeftUntouched() throws {
+        let root = try Self.tempRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let dir = root.appendingPathComponent("skill")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let target = dir.appendingPathComponent("SKILL.md")
+        let original = Data("# my own notes\n".utf8)
+        try original.write(to: target)
+
+        #expect {
+            _ = try SkillInstaller.install(dir: dir.path, force: false)
+        } throws: { ($0 as? SkillInstallFailure)?.kind == .differs }
+        #expect(cliExitCode(for: SkillInstallFailure(kind: .differs, message: "")) == 64)
+        #expect(try Data(contentsOf: target) == original, "a refused install must not touch the existing file")
+    }
+
+    @Test func forceReplacesADifferingFile() throws {
+        let root = try Self.tempRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let dir = root.appendingPathComponent("skill")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let target = dir.appendingPathComponent("SKILL.md")
+        try Data("stale\n".utf8).write(to: target)
+
+        let result = try SkillInstaller.install(dir: dir.path, force: true)
+
+        #expect(result.action == .replaced)
+        #expect(try Data(contentsOf: target) == Data((MarsDawnSkill.text + "\n").utf8))
+    }
+
+    @Test func dirWritesToThatFolderInsteadOfTheDefault() throws {
+        let root = try Self.tempRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let dir = root.appendingPathComponent("agents/other")
+
+        let result = try SkillInstaller.install(dir: dir.path, force: false)
+
+        #expect(result.path == dir.appendingPathComponent("SKILL.md").path)
+        #expect(!FileManager.default.fileExists(atPath: SkillInstaller.defaultDirectory().path), "must not also write the default location")
+    }
+
+    @Test func withoutDirItWritesTheDefaultDirectory() throws {
+        let root = try Self.tempRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let fakeHome = root.appendingPathComponent(".claude/skills/marsdawn", isDirectory: true)
+        let original = SkillInstaller.defaultDirectory
+        defer { SkillInstaller.defaultDirectory = original }
+        SkillInstaller.defaultDirectory = { fakeHome }
+
+        let result = try SkillInstaller.install(dir: nil, force: false)
+
+        #expect(result.path == fakeHome.appendingPathComponent("SKILL.md").path)
+    }
+
+    /// A symlink at the target path is only ever written through when its resolved destination
+    /// stays inside the folder `--install` was asked to write to — never followed to overwrite
+    /// something elsewhere on disk, `--force` or not.
+    @Test func aSymlinkEscapingTheTargetFolderIsRefusedEvenWithForce() throws {
+        let root = try Self.tempRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let dir = root.appendingPathComponent("skill")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let outside = root.appendingPathComponent("elsewhere.txt")
+        let outsideContent = Data("not the skill".utf8)
+        try outsideContent.write(to: outside)
+        let target = dir.appendingPathComponent("SKILL.md")
+        try FileManager.default.createSymbolicLink(at: target, withDestinationURL: outside)
+
+        #expect {
+            _ = try SkillInstaller.install(dir: dir.path, force: true)
+        } throws: { ($0 as? SkillInstallFailure)?.kind == .unsafeSymlink }
+        #expect(try Data(contentsOf: outside) == outsideContent, "must never write through a symlink that escapes the folder")
+    }
+
+    @Test func aSymlinkInsideTheTargetFolderIsReplacedNormally() throws {
+        let root = try Self.tempRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let dir = root.appendingPathComponent("skill")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let real = dir.appendingPathComponent("real-skill.md")
+        try Data("stale\n".utf8).write(to: real)
+        let target = dir.appendingPathComponent("SKILL.md")
+        try FileManager.default.createSymbolicLink(at: target, withDestinationURL: real)
+
+        let result = try SkillInstaller.install(dir: dir.path, force: true)
+
+        #expect(result.action == .replaced)
+    }
+
+    @Test func jsonReportsPathAndEachAction() throws {
+        let root = try Self.tempRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let dir = root.appendingPathComponent("skill")
+
+        let installedOut = try Self.captureStdout {
+            try MarsDawnCommand.Skill.parse(["--install", "--dir", dir.path, "--json"]).run()
+        }
+        let installed = try #require(try JSONSerialization.jsonObject(with: Data(installedOut.utf8)) as? [String: Any])
+        #expect(installed["ok"] as? Bool == true)
+        #expect(installed["action"] as? String == "installed")
+        #expect(installed["path"] as? String == dir.appendingPathComponent("SKILL.md").path)
+
+        let unchangedOut = try Self.captureStdout {
+            try MarsDawnCommand.Skill.parse(["--install", "--dir", dir.path, "--json"]).run()
+        }
+        let unchanged = try #require(try JSONSerialization.jsonObject(with: Data(unchangedOut.utf8)) as? [String: Any])
+        #expect(unchanged["action"] as? String == "unchanged")
+
+        try Data("stale\n".utf8).write(to: dir.appendingPathComponent("SKILL.md"))
+        let replacedOut = try Self.captureStdout {
+            try MarsDawnCommand.Skill.parse(["--install", "--dir", dir.path, "--force", "--json"]).run()
+        }
+        let replaced = try #require(try JSONSerialization.jsonObject(with: Data(replacedOut.utf8)) as? [String: Any])
+        #expect(replaced["action"] as? String == "replaced")
+    }
+
+    @Test func nonJSONTextNamesTheAction() throws {
+        let root = try Self.tempRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let dir = root.appendingPathComponent("skill")
+        let target = dir.appendingPathComponent("SKILL.md")
+
+        let installedOut = try Self.captureStdout {
+            try MarsDawnCommand.Skill.parse(["--install", "--dir", dir.path]).run()
+        }
+        #expect(installedOut.contains("Installed") && installedOut.contains(target.path))
+
+        let unchangedOut = try Self.captureStdout {
+            try MarsDawnCommand.Skill.parse(["--install", "--dir", dir.path]).run()
+        }
+        #expect(unchangedOut.contains("Already installed") && unchangedOut.contains(target.path))
+    }
+
+    /// Errors from `run()` exit `64`, `SkillInstallFailure`'s own code, not one of
+    /// `CLIFailure.Code`'s runtime failure numbers.
+    @Test func aDifferingInstallExitsSixtyFour() throws {
+        let root = try Self.tempRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let dir = root.appendingPathComponent("skill")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try Data("stale\n".utf8).write(to: dir.appendingPathComponent("SKILL.md"))
+
+        do {
+            _ = try Self.captureStdout {
+                try MarsDawnCommand.Skill.parse(["--install", "--dir", dir.path]).run()
+            }
+            Issue.record("expected a SkillInstallFailure")
+        } catch {
+            #expect(cliExitCode(for: error) == 64)
+            #expect((error as? SkillInstallFailure)?.kind == .differs)
+        }
+    }
+
+    /// `versionHint` reads a version mentioned near the top of an existing file, for the conflict
+    /// message (#120: "the version line if the file has one"), and finds nothing when there isn't
+    /// one — today's canonical `SKILL.md` has no such line.
+    @Test func versionHintFindsAMentionOrNothing() {
+        #expect(SkillInstaller.versionHint(in: "---\nname: marsdawn\n---\ninstalled by marsdawn 0.4.2\n") == "marsdawn 0.4.2")
+        #expect(SkillInstaller.versionHint(in: MarsDawnSkill.text) == nil)
+        #expect(SkillInstaller.versionHint(in: "nothing here") == nil)
+    }
 }
 #endif

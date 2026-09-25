@@ -30,7 +30,8 @@ Two things that have caught people out when writing tests here:
 ## Command line
 
 Install it with Homebrew: `brew tap redtear1115/tap && brew install marsdawn`.
-Using a coding agent? Add the skill: https://marsdawn.southern-light.dev/cli/skill/
+Using a coding agent? `marsdawn skill --install` adds it for Claude Code, matched to the version
+you have installed.
 
 ```sh
 swift run marsdawn open notes.md
@@ -57,9 +58,24 @@ swift run marsdawn export notes.md -o notes.pdf --theme classic --paper a4
     line — `fenceLine` plus Mermaid's line number from its message — present only when Mermaid's
     message names one, which not every error does).
   - It renders on its own: the MarsDawn app does not have to be installed. Only `open` needs the app.
+- `skill [--install] [--dir PATH] [--force] [--json]` prints the agent skill (`SKILL.md`) that
+  matches this version of `marsdawn` — the same text as [skill/SKILL.md](skill/SKILL.md), never one
+  describing an option the installed CLI lacks.
+  - Plain `marsdawn skill` prints it to stdout, unchanged by any of the flags below.
+  - `--install` writes it to `~/.claude/skills/marsdawn/SKILL.md` instead, creating the folder if
+    it doesn't exist. A byte-identical file already there is left alone and reported as unchanged.
+    A different one is only replaced with `--force`, so a local edit to the skill is never
+    overwritten silently — without `--force` it exits `64` and says what's there and how to
+    replace it (`error: "skill_differs"` in `--json`). Refuses the same way, `error:
+    "skill_unsafe_symlink"`, if the target path is a symlink pointing outside the folder it's
+    meant to stay in.
+  - `--dir PATH` installs to `PATH/SKILL.md` instead of `~/.claude/skills/marsdawn/SKILL.md`, for
+    another agent's skill folder. Only applies with `--install`.
+  - `--json` (only with `--install`) prints `ok`, `path` and `action`
+    (`"installed"`, `"unchanged"` or `"replaced"`).
 - `--version` prints the release number and nothing else, so a package manager can compare it against its own. Bumping it is part of cutting a release; see [RELEASING.md](RELEASING.md).
 - `--generate-completion-script bash|zsh|fish` writes a shell completion script to stdout.
-- Exit codes: 2 input not found, 3 MarsDawn not installed (`open` only), 4 output exists, 5 export failed, 6 this MarsDawn can't take a folder (`open` only), 64 usage error.
+- Exit codes: 2 input not found, 3 MarsDawn not installed (`open` only), 4 output exists, 5 export failed, 6 this MarsDawn can't take a folder (`open` only), 64 usage error (including `skill --install`'s `skill_differs` and `skill_unsafe_symlink`, and `open --wait`'s `wait_out_of_range`).
 - `MARSDAWN_APP_PATH` overrides where the tool looks for the MarsDawn app. It exists for testing, so
   it's only honoured for a bundle whose `CFBundleIdentifier` is `dev.southern-light.marsdawn` or
   starts with `dev.southern-light.marsdawn.` (a throwaway verification copy); anything else is

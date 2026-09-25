@@ -27,6 +27,14 @@ func finish(_ error: Error?) -> Never {
         }
         exit(WaitRangeFailure.exitCode) // 64, ArgumentParser's own usage-error code.
     }
+    if let failure = error as? SkillInstallFailure {
+        if wantsJSON {
+            printJSON(["ok": false, "error": failure.kind.rawValue, "message": failure.message])
+        } else {
+            FileHandle.standardError.write(Data("marsdawn: \(failure.message)\n".utf8))
+        }
+        exit(SkillInstallFailure.exitCode) // 64, ArgumentParser's own usage-error code.
+    }
     // Other usage errors, --help and --version keep ArgumentParser's own output and exit codes.
     MarsDawnCommand.exit(withError: error)
 }

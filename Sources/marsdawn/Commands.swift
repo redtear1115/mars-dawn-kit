@@ -92,11 +92,12 @@ struct CLIFailure: Error, CustomStringConvertible {
 }
 
 /// The status `marsdawn` exits with for an error: a `CLIFailure`'s own code, `WaitRangeFailure`'s
-/// own code, and otherwise ArgumentParser's — 64 for a usage error, 0 for `--help` and
-/// `--version`.
+/// or `SkillInstallFailure`'s own code, and otherwise ArgumentParser's — 64 for a usage error, 0
+/// for `--help` and `--version`.
 func cliExitCode(for error: Error) -> Int32 {
     if let failure = error as? CLIFailure { return failure.code.rawValue }
     if error is WaitRangeFailure { return WaitRangeFailure.exitCode }
+    if error is SkillInstallFailure { return SkillInstallFailure.exitCode }
     return MarsDawnCommand.exitCode(for: error).rawValue
 }
 
@@ -115,6 +116,25 @@ struct WaitRangeFailure: Error, CustomStringConvertible {
     var description: String { message }
     static let exitCode: Int32 = 64
     static let kind = "wait_out_of_range"
+}
+
+/// `skill --install` refuses to write, for a reason the person can fix rather than a runtime
+/// failure: a different `SKILL.md` already at the target without `--force`, or the target being a
+/// symlink that escapes the folder it's meant to stay in. A usage error like `WaitRangeFailure`
+/// (#120): it exits `64`, not one of `CLIFailure.Code`'s runtime codes, and carries its own
+/// machine-readable `kind` for `--json`.
+struct SkillInstallFailure: Error, CustomStringConvertible {
+    enum Kind: String {
+        /// A `SKILL.md` is already at the target and its bytes differ from this version's.
+        case differs = "skill_differs"
+        /// The target path is a symlink whose resolved destination is outside the target folder.
+        case unsafeSymlink = "skill_unsafe_symlink"
+    }
+
+    let kind: Kind
+    let message: String
+    var description: String { message }
+    static let exitCode: Int32 = 64
 }
 
 /// Where MarsDawn is installed. Replaceable for tests.

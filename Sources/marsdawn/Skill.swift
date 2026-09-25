@@ -117,16 +117,150 @@ Every field, schema and code: https://marsdawn.southern-light.dev/cli/agents/
 extension MarsDawnCommand {
     struct Skill: ParsableCommand {
         static let configuration = CommandConfiguration(
-            abstract: "Print the agent skill (SKILL.md) that matches this version of marsdawn.",
+            abstract: "Print the agent skill (SKILL.md) that matches this version of marsdawn, or install it with --install.",
             discussion: """
-            Install it for Claude Code with:
+            Without --install, prints the skill to stdout — the old way to install it is still \
+            good shell:
               mkdir -p ~/.claude/skills/marsdawn && marsdawn skill > ~/.claude/skills/marsdawn/SKILL.md
+
+            --install does that in one step:
+              marsdawn skill --install
+
+            It writes ~/.claude/skills/marsdawn/SKILL.md, creating the folder if it doesn't exist \
+            yet. A byte-identical file already there is left alone, reported as unchanged. A \
+            different one is only replaced with --force, so a local edit to the skill is never \
+            overwritten silently; without --force it exits 64 (skill_differs in --json) and says \
+            what to do instead. --dir <path> installs to <path>/SKILL.md instead, for another \
+            agent's skill folder.
             """
         )
 
-        func run() {
-            FileHandle.standardOutput.write(Data((MarsDawnSkill.text + "\n").utf8))
+        @Flag(help: "Write the skill to disk (~/.claude/skills/marsdawn/SKILL.md, or --dir) instead of printing it.")
+        var install = false
+
+        @Option(help: ArgumentHelp(
+            "With --install, the skill folder to write into instead of ~/.claude/skills/marsdawn. Writes <path>/SKILL.md.",
+            valueName: "path"
+        ))
+        var dir: String?
+
+        @Flag(help: "With --install, replace a SKILL.md that's already there and differs.")
+        var force = false
+
+        @OptionGroup var output: OutputOptions
+
+        func validate() throws {
+            guard !install else { return }
+            if dir != nil {
+                throw ValidationError("--dir only applies with --install.")
+            }
+            if force {
+                throw ValidationError("--force only applies with --install.")
+            }
+            if output.json {
+                throw ValidationError("--json only applies with --install. Without --install, skill prints the skill text on its own, unchanged by --json.")
+            }
         }
+
+        func run() throws {
+            guard install else {
+                FileHandle.standardOutput.write(Data((MarsDawnSkill.text + "\n").utf8))
+                return
+            }
+            let installed = try SkillInstaller.install(dir: dir, force: force)
+            let text: String
+            switch installed.action {
+            case .unchanged: text = "Already installed at \(installed.path)."
+            case .replaced: text = "Replaced \(installed.path) with this version's skill."
+            case .installed: text = "Installed the skill at \(installed.path)."
+            }
+            output.report(["path": installed.path, "action": installed.action.rawValue], text: text)
+        }
+    }
+}
+
+// MARK: - skill --install
+
+/// Writes `MarsDawnSkill.text` to a skill folder (#120), instead of `marsdawn skill` printing it
+/// for the caller to redirect. The folder and file name mirror what Claude Code itself expects:
+/// `<folder>/SKILL.md`.
+enum SkillInstaller {
+    /// Where `--install` writes without `--dir`. Replaceable for tests, so they never touch the
+    /// real `~/.claude` (mirrors `MarsDawnApp.locate`'s seam).
+    nonisolated(unsafe) static var defaultDirectory: () -> URL = {
+        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude/skills/marsdawn", isDirectory: true)
+    }
+
+    struct Installed {
+        enum Action: String {
+            case installed, unchanged, replaced
+        }
+
+        var path: String
+        var action: Action
+    }
+
+    /// Installs `MarsDawnSkill.text` at `<dir ?? defaultDirectory()>/SKILL.md`, atomically (a temp
+    /// file next to the target, then a rename, so a reader never sees a half-written file).
+    static func install(dir: String?, force: Bool, fileManager: FileManager = .default) throws -> Installed {
+        let directory = dir.map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath).standardizedFileURL } ?? defaultDirectory()
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        let resolvedDirectory = directory.resolvingSymlinksInPath().standardizedFileURL
+        let target = directory.appendingPathComponent("SKILL.md")
+
+        // Refuse before touching anything if the target is a symlink that escapes the folder it's
+        // meant to stay in — never followed to overwrite something elsewhere on the disk.
+        if let attributes = try? fileManager.attributesOfItem(atPath: target.path),
+           (attributes[.type] as? FileAttributeType) == .typeSymbolicLink {
+            let resolvedTarget = target.resolvingSymlinksInPath().standardizedFileURL
+            guard resolvedTarget.path.hasPrefix(resolvedDirectory.path + "/") else {
+                throw SkillInstallFailure(
+                    kind: .unsafeSymlink,
+                    message: "\(target.path) is a symlink to \(resolvedTarget.path), outside \(resolvedDirectory.path). "
+                        + "Refusing to write through it. Remove or repoint the symlink, then run --install again."
+                )
+            }
+        }
+
+        let newData = Data((MarsDawnSkill.text + "\n").utf8)
+        let existingData = try? Data(contentsOf: target)
+        if let existingData {
+            if existingData == newData {
+                return Installed(path: target.path, action: .unchanged)
+            }
+            guard force else {
+                let hint = versionHint(in: String(decoding: existingData, as: UTF8.self)).map { " (\($0))" } ?? ""
+                throw SkillInstallFailure(
+                    kind: .differs,
+                    message: "\(target.path) already exists and differs from this version's skill\(hint). "
+                        + "Pass --force to replace it, or --dir to install somewhere else."
+                )
+            }
+        }
+
+        let temporary = directory.appendingPathComponent(".SKILL.md.\(UUID().uuidString).tmp")
+        try newData.write(to: temporary)
+        defer { try? fileManager.removeItem(at: temporary) }
+        // `removeItem` on `target` removes the symlink itself, not what it points to, the same as
+        // `rm`; harmless when nothing is there yet. Plain `moveItem` after that (not
+        // `replaceItemAt`, which resolves symlinks while building its backup and then fails
+        // looking for the target through it) is an atomic rename either way.
+        try? fileManager.removeItem(at: target)
+        try fileManager.moveItem(at: temporary, to: target)
+        return Installed(path: target.path, action: existingData == nil ? .installed : .replaced)
+    }
+
+    /// A version-looking mention (`marsdawn 0.5.1`, say) near the top of an existing file, for the
+    /// conflict message. Today's canonical `SKILL.md` carries no such line, so this usually finds
+    /// nothing — it exists for whatever a hand-edited or future file does carry, per #120's "the
+    /// version line if the file has one".
+    static func versionHint(in text: String) -> String? {
+        for line in text.components(separatedBy: "\n").prefix(20) {
+            if let match = line.firstMatch(of: /marsdawn[^\d\n]{0,12}(\d+\.\d+(?:\.\d+)?)/) {
+                return "marsdawn \(match.output.1)"
+            }
+        }
+        return nil
     }
 }
 #endif
