@@ -247,6 +247,23 @@ img { max-width: 100%; }
 }
 .mermaid-error::before { content: "Mermaid: "; }
 
+/* Sequence diagram message labels (redtear1115/mars-dawn-kit#112): a message between
+   non-adjacent participants centres its label over the arrow, and Mermaid draws the
+   crossed lifelines through the text because .messageText has no background of its own.
+   Painting the page background as a stroke behind the fill gives the label a halo that
+   knocks the lifeline out, in every theme (var(--bg) tracks light/dark and per-theme
+   colours) and in the PDF export, which shares this stylesheet. Scoped to this one
+   class, which only sequence diagrams emit, so no other diagram type is affected.
+   Mermaid injects its own per-diagram `#mermaid-N .messageText { stroke: none }` inside
+   the SVG, an ID selector that outranks any class selector here on specificity alone
+   however many classes it has, so only the `stroke` property needs `!important` to win. */
+.mermaid-output .messageText {
+  paint-order: stroke;
+  stroke: var(--bg) !important;
+  stroke-width: 4px;
+  stroke-linejoin: round;
+}
+
 /* Math (KaTeX)
    KaTeX's stylesheet sets sizes and fonts but no colour, so its output inherits; these
    rules say so, give the block the same spacing as a paragraph, and keep an expression
