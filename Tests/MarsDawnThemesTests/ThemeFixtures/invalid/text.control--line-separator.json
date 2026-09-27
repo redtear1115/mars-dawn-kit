@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 1,
+  "id": "sample-dawn",
+  "version": "1.0.0",
+  "name": {
+    "en": "Sample\u2028Dawn"
+  },
+  "summary": {
+    "en": "A copy of Dawn for the validator's fixtures"
+  },
+  "fontDesign": "sans",
+  "scenarios": [
+    "notes-sharing"
+  ],
+  "author": {
+    "name": "Jane Doe",
+    "github": "janedoe"
+  },
+  "license": "Apache-2.0",
+  "light": {
+    "background": "#FFFDFB",
+    "surface": "#F6F0EC",
+    "text": "#26211F",
+    "muted": "#6F6660",
+    "border": "#EADFD8",
+    "heading": "#26211F",
+    "accent": "#C8471B",
+    "link": "#B03C0C",
+    "quote": "#D97A4A",
+    "syntax": {
+      "keyword": "#B03C0C",
+      "string": "#2F6F5E",
+      "comment": "#746B66",
+      "number": "#9A5B00",
+      "function": "#5B3E8C",
+      "type": "#1F6FB2"
+    },
+    "diagram": {
+      "node": "#FBE9E0",
+      "nodeBorder": "#CA6C3C",
+      "text": "#26211F",
+      "line": "#8A6A5C",
+      "secondary": "#E6F1EE",
+      "tertiary": "#FFF6F1",
+      "note": "#FFF1D6"
+    }
+  },
+  "dark": {
+    "background": "#1C1A1F",
+    "surface": "#262229",
+    "text": "#EBE4DF",
+    "muted": "#A39992",
+    "border": "#3A343A",
+    "heading": "#F4EEEA",
+    "accent": "#FF8A50",
+    "link": "#FF9E6B",
+    "quote": "#E08A5C",
+    "syntax": {
+      "keyword": "#FF9E6B",
+      "string": "#7FD1B9",
+      "comment": "#938A84",
+      "number": "#F2C572",
+      "function": "#C7A6F5",
+      "type": "#6CB6FF"
+    },
+    "diagram": {
+      "node": "#3A2A26",
+      "nodeBorder": "#E08A5C",
+      "text": "#EBE4DF",
+      "line": "#B8A69C",
+      "secondary": "#23332F",
+      "tertiary": "#2B2427",
+      "note": "#3D3322"
+    }
+  }
+}

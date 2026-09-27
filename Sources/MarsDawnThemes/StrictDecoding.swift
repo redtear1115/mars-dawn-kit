@@ -15,14 +15,21 @@ struct AnyCodingKey: CodingKey {
     }
 }
 
+/// Thrown as itself, not wrapped in a `DecodingError`, so the validator can tell an unknown key
+/// from any other failure and quote the key (attacker text) before it repeats it (kit #125, M4).
+/// `description` quotes it too, for any caller that just prints the error.
 enum StrictDecodingError: Error, CustomStringConvertible {
     case unknownKey(String, path: [CodingKey])
+    case missingEnglish(path: [CodingKey])
 
     var description: String {
         switch self {
         case .unknownKey(let key, let path):
-            let location = path.map(\.stringValue).joined(separator: ".")
-            return location.isEmpty ? "unknown key '\(key)'" : "unknown key '\(key)' at '\(location)'"
+            let location = ThemeValidator.render(path)
+            let quoted = ThemeMessageText.quote(key)
+            return location.isEmpty ? "unknown key '\(quoted)'" : "unknown key '\(quoted)' at '\(location)'"
+        case .missingEnglish(let path):
+            return "missing required 'en' entry at '\(ThemeValidator.render(path))'"
         }
     }
 }
@@ -34,10 +41,7 @@ func rejectUnknownKeys<Keys: CodingKey & CaseIterable>(_ decoder: Decoder, keyed
     let any = try decoder.container(keyedBy: AnyCodingKey.self)
     let known = Set(Keys.allCases.map(\.stringValue))
     for key in any.allKeys where !known.contains(key.stringValue) {
-        throw DecodingError.dataCorrupted(DecodingError.Context(
-            codingPath: decoder.codingPath,
-            debugDescription: StrictDecodingError.unknownKey(key.stringValue, path: decoder.codingPath).description
-        ))
+        throw StrictDecodingError.unknownKey(key.stringValue, path: decoder.codingPath)
     }
 }
 
@@ -47,9 +51,6 @@ func rejectUnknownKeys<Keys: CodingKey & CaseIterable>(_ decoder: Decoder, keyed
 func rejectUnknownKeys(_ decoder: Decoder, allowed: Set<String>) throws {
     let any = try decoder.container(keyedBy: AnyCodingKey.self)
     for key in any.allKeys where !allowed.contains(key.stringValue) {
-        throw DecodingError.dataCorrupted(DecodingError.Context(
-            codingPath: decoder.codingPath,
-            debugDescription: StrictDecodingError.unknownKey(key.stringValue, path: decoder.codingPath).description
-        ))
+        throw StrictDecodingError.unknownKey(key.stringValue, path: decoder.codingPath)
     }
 }

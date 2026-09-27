@@ -68,6 +68,7 @@ On failure with `--json` it prints `{"ok": false, "error": <kind>, "message": ..
 | Code | `error` | Meaning |
 |---|---|---|
 | 0 | — | Success. With --json, stdout is one JSON line. |
+| 1 | — | The theme isn't valid. Only `theme validate` returns this; with --json its problems are under `issues`. |
 | 2 | `input_not_found` | The input file isn't there. |
 | 3 | `app_not_installed` | MarsDawn isn't installed. Only `open` returns this. |
 | 4 | `output_exists` | The PDF already exists. Pass --force to replace it, or -o to write elsewhere. |

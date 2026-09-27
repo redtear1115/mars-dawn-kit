@@ -74,6 +74,11 @@ enum ThemeGoldenDocument {
         ".task-list-item input",
         "blockquote", "blockquote blockquote",
         "table", "th", "td",
+        // kit #125 carry-over from #127's verification: `table`/`th`/`td` above match the
+        // front-matter table first (querySelector order), so the body table's header rules
+        // (Classic `accentRule`, Vivid `filled`) weren't in the golden. These sample the body's
+        // own table, a direct child of the article.
+        ".markdown-body > table", ".markdown-body > table th", ".markdown-body > table td",
         "code:not(pre code)",
         "pre code", ".hljs-keyword", ".hljs-title",
         "hr",

@@ -123,9 +123,7 @@ package struct LocalizedText: Codable, Hashable, Sendable {
     package init(from decoder: Decoder) throws {
         strings = try [String: String](from: decoder)
         guard strings["en"] != nil else {
-            throw DecodingError.dataCorrupted(DecodingError.Context(
-                codingPath: decoder.codingPath, debugDescription: "missing required 'en' entry"
-            ))
+            throw StrictDecodingError.missingEnglish(path: decoder.codingPath)
         }
     }
 
@@ -225,9 +223,13 @@ package enum ThemeDocumentLoader {
 
     /// A built-in theme's `theme.json`, bundled under `Resources/Themes/<id>/theme.json`.
     package static func loadBuiltIn(id: String, bundle: Bundle = .module) throws -> ThemeDocument {
-        guard let url = bundle.url(forResource: "theme", withExtension: "json", subdirectory: "Themes/\(id)") else {
-            throw LoadError.notFound(id)
-        }
+        guard let url = builtInURL(id: id, bundle: bundle) else { throw LoadError.notFound(id) }
         return try load(from: url)
+    }
+
+    /// Where a built-in's `theme.json` is bundled; only the four built-in ids are looked up.
+    package static func builtInURL(id: String, bundle: Bundle = .module) -> URL? {
+        guard ["dawn", "classic", "modern", "vivid"].contains(id) else { return nil }
+        return bundle.url(forResource: "theme", withExtension: "json", subdirectory: "Themes/\(id)")
     }
 }

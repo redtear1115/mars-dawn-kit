@@ -11,8 +11,12 @@ import MarsDawnThemes
 /// Since kit #124, a built-in theme's colours, font design and per-theme style options (§4.3 of
 /// the theme-ecosystem design) are data: a bundled `theme.json` in `MarsDawnThemes`, decoded once
 /// into this struct. `style` stays kit-internal (`package`), not part of the public API: it feeds
-/// `ThemeCSSGenerator`, which the app and CLI never call directly, and a later slice replaces it
-/// with a validated-theme type before any of this decoding is exposed publicly.
+/// `ThemeCSSGenerator`, which the app and CLI never call directly.
+///
+/// Since kit #125 every `PreviewTheme` carries the `ValidatedTheme` it was checked as (`nil` if it
+/// failed), and the served stylesheets are generated from that alone: a theme that didn't pass
+/// `ThemeValidator` contributes no byte to `themes.css` or to the spliced `preview.css`, whichever
+/// initializer made it (security review H1).
 public struct PreviewTheme: Identifiable, Hashable, Sendable {
     public enum FontDesign: String, Sendable {
         case sans, serif, rounded
@@ -59,22 +63,32 @@ public struct PreviewTheme: Identifiable, Hashable, Sendable {
     public let dark: Palette
     /// The theme's style options (design §4.3): kit-internal, not public API (see the type doc).
     package let style: ThemeStyle?
+    /// What `ThemeValidator` made of this theme; `nil` when it failed. The only thing the
+    /// stylesheet generator reads (kit #125, H1).
+    package let validated: ValidatedTheme?
 
     /// `package`, not `public`: kit 0.5.4 had no public initializer for `PreviewTheme` (every
     /// instance was one of the four `static let`s below), and this slice adds no public API
     /// (verifier finding, kit #127 review). Nothing outside the module constructs a `PreviewTheme`
     /// directly.
     package init(id: String, name: String, summary: String, fontDesign: FontDesign, light: Palette, dark: Palette) {
-        self.id = id
-        self.name = name
-        self.summary = summary
-        self.fontDesign = fontDesign
-        self.light = light
-        self.dark = dark
-        self.style = nil
+        self.init(id: id, name: name, summary: summary, fontDesign: fontDesign, light: light, dark: dark, style: nil)
     }
 
+    /// The lowest entry point: anything in the package can hand it any strings. It validates what
+    /// it was given (as a `notes-sharing` theme, the scenario with no threshold beyond the pairs
+    /// every theme must pass), so a hostile palette, id or style here still reaches no stylesheet.
     package init(id: String, name: String, summary: String, fontDesign: FontDesign, light: Palette, dark: Palette, style: ThemeStyle?) {
+        let document = ThemeDocument(
+            id: id, version: "1.0.0", name: LocalizedText(en: name), summary: LocalizedText(en: summary),
+            fontDesign: ThemeFontDesign(rawValue: fontDesign.rawValue) ?? .sans, scenarios: [.notesSharing],
+            light: ThemeColors(light), dark: ThemeColors(dark), style: style
+        )
+        self.init(id: id, name: name, summary: summary, fontDesign: fontDesign, light: light, dark: dark, style: style,
+                  validated: ThemeValidator.validate(document).theme)
+    }
+
+    private init(id: String, name: String, summary: String, fontDesign: FontDesign, light: Palette, dark: Palette, style: ThemeStyle?, validated: ValidatedTheme?) {
         self.id = id
         self.name = name
         self.summary = summary
@@ -82,6 +96,7 @@ public struct PreviewTheme: Identifiable, Hashable, Sendable {
         self.light = light
         self.dark = dark
         self.style = style
+        self.validated = validated
     }
 
     public func palette(dark isDark: Bool) -> Palette {
@@ -102,50 +117,44 @@ public struct PreviewTheme: Identifiable, Hashable, Sendable {
 private let builtInLog = Logger(subsystem: "dev.southern-light.marsdawn-kit", category: "PreviewTheme")
 
 public extension PreviewTheme {
-    /// Decodes a built-in's bundled `theme.json` (kit #124), using the kit's own string table for
-    /// its localized name and summary (design §4.2: "Built-in themes keep their string-table
-    /// localizations"). `nil` on any failure -- a damaged bundle, not a bad theme -- which the
-    /// caller logs and falls back from.
-    private static func decodedBuiltIn(id: String, name: String, summary: String) -> PreviewTheme? {
-        guard let document = try? ThemeDocumentLoader.loadBuiltIn(id: id) else { return nil }
-        return PreviewTheme(document: document, name: name, summary: summary)
+    /// Decodes and validates a built-in's bundled `theme.json` (kit #124, #125), naming it from
+    /// the kit's own string table by its id (design §4.2: "Built-in themes keep their
+    /// string-table localizations"). `nil` on any failure -- a damaged bundle, not a bad theme --
+    /// which the caller logs and falls back from.
+    private static func decodedBuiltIn(id: String) -> PreviewTheme? {
+        guard let document = try? ThemeDocumentLoader.loadBuiltIn(id: id),
+              let validated = ThemeValidator.validate(document).theme
+        else { return nil }
+        return PreviewTheme(validated: validated)
     }
 
     static let dawn: PreviewTheme = {
-        let name = String(localized: "Dawn", bundle: .module)
-        let summary = String(localized: "Warm Martian sunrise", bundle: .module)
-        guard let theme = decodedBuiltIn(id: "dawn", name: name, summary: summary) else {
-            builtInLog.fault("THEME-DECODE-FAILED: dawn/theme.json didn't decode; using the compiled-in fallback")
+        guard let theme = decodedBuiltIn(id: "dawn") else {
+            builtInLog.fault("THEME-DECODE-FAILED: dawn/theme.json didn't decode or validate; using the compiled-in fallback")
             return compiledDawn
         }
         return theme
     }()
 
     static let classic: PreviewTheme = {
-        let name = String(localized: "Classic", bundle: .module)
-        let summary = String(localized: "Elegant serif on paper", bundle: .module)
-        guard let theme = decodedBuiltIn(id: "classic", name: name, summary: summary) else {
-            builtInLog.fault("THEME-DECODE-FAILED: classic/theme.json didn't decode; falling back to dawn")
+        guard let theme = decodedBuiltIn(id: "classic") else {
+            builtInLog.fault("THEME-DECODE-FAILED: classic/theme.json didn't decode or validate; falling back to dawn")
             return dawn
         }
         return theme
     }()
 
     static let modern: PreviewTheme = {
-        let name = String(localized: "Modern", bundle: .module)
-        let summary = String(localized: "Clean and familiar", bundle: .module)
-        guard let theme = decodedBuiltIn(id: "modern", name: name, summary: summary) else {
-            builtInLog.fault("THEME-DECODE-FAILED: modern/theme.json didn't decode; falling back to dawn")
+        guard let theme = decodedBuiltIn(id: "modern") else {
+            builtInLog.fault("THEME-DECODE-FAILED: modern/theme.json didn't decode or validate; falling back to dawn")
             return dawn
         }
         return theme
     }()
 
     static let vivid: PreviewTheme = {
-        let name = String(localized: "Vivid", bundle: .module)
-        let summary = String(localized: "Playful, bright and rounded", bundle: .module)
-        guard let theme = decodedBuiltIn(id: "vivid", name: name, summary: summary) else {
-            builtInLog.fault("THEME-DECODE-FAILED: vivid/theme.json didn't decode; falling back to dawn")
+        guard let theme = decodedBuiltIn(id: "vivid") else {
+            builtInLog.fault("THEME-DECODE-FAILED: vivid/theme.json didn't decode or validate; falling back to dawn")
             return dawn
         }
         return theme
@@ -181,17 +190,109 @@ public extension PreviewTheme {
 // MARK: - Mapping from the schema type (MarsDawnThemes.ThemeDocument)
 
 package extension PreviewTheme {
-    /// Builds a `PreviewTheme` from a decoded `theme.json`, keeping the caller's own (string-table)
-    /// name and summary for a built-in rather than the file's `name`/`summary` fields.
+    /// Builds a `PreviewTheme` from a decoded `theme.json`, keeping the caller's own name and
+    /// summary rather than the file's `name`/`summary` fields. Validates the document; a failure
+    /// leaves `validated` nil, so the theme draws nothing.
     init(document: ThemeDocument, name: String, summary: String) {
+        let validated = ThemeValidator.validate(document).theme
         self.init(
             id: document.id,
             name: name,
             summary: summary,
             fontDesign: FontDesign(rawValue: document.fontDesign.rawValue) ?? .sans,
-            light: Palette(document.light),
-            dark: Palette(document.dark),
-            style: document.style
+            light: validated.map { Palette($0.light) } ?? Palette(document.light),
+            dark: validated.map { Palette($0.dark) } ?? Palette(document.dark),
+            style: validated?.document.style ?? document.style,
+            validated: validated
+        )
+    }
+
+    /// Builds a `PreviewTheme` from a theme that passed the validator (kit #125). Its display name
+    /// and summary follow L1: a built-in is named from the kit's string table **by its id**, and
+    /// any other theme shows its own `name`/`summary` verbatim -- never passed through a string
+    /// table, where a name that happens to equal a key (`"Dawn"`) would be translated and one
+    /// like `"%@ %n"` would be read as a format. `localization` picks the language (e.g.
+    /// `"zh-Hant"`); nil means the process's own.
+    init(validated: ValidatedTheme, localization: String? = nil) {
+        let strings = Self.displayStrings(for: validated.document, localization: localization)
+        self.init(
+            id: validated.id,
+            name: strings.name,
+            summary: strings.summary,
+            fontDesign: FontDesign(rawValue: validated.document.fontDesign.rawValue) ?? .sans,
+            light: Palette(validated.light),
+            dark: Palette(validated.dark),
+            style: validated.document.style,
+            validated: validated
+        )
+    }
+
+    /// L1: the name and summary a theme is shown with.
+    static func displayStrings(for document: ThemeDocument, localization: String?) -> (name: String, summary: String) {
+        if let keys = builtInStringKeys[document.id] {
+            return (localizedBuiltIn(keys.name, localization: localization), localizedBuiltIn(keys.summary, localization: localization))
+        }
+        let language = localization ?? Locale.preferredLanguages.first ?? "en"
+        func pick(_ text: LocalizedText) -> String {
+            text[language] ?? text[String(language.prefix { $0 != "-" })] ?? text.en
+        }
+        return (pick(document.name), pick(document.summary))
+    }
+
+    /// The string-table keys of the four built-ins, looked up by id only. Literal keys, so the
+    /// kit's localization coverage test sees them.
+    private static let builtInStringKeys: [String: (name: String.LocalizationValue, summary: String.LocalizationValue)] = [
+        "dawn": ("Dawn", "Warm Martian sunrise"),
+        "classic": ("Classic", "Elegant serif on paper"),
+        "modern": ("Modern", "Clean and familiar"),
+        "vivid": ("Vivid", "Playful, bright and rounded"),
+    ]
+
+    /// `String(localized:bundle:locale:)` ignores `locale:` for a package's resource bundle, so an
+    /// explicit localization reads that `.lproj` directly (as `PreviewWebView.moduleLocalizedString`
+    /// does for the tests).
+    private static func localizedBuiltIn(_ key: String.LocalizationValue, localization: String?) -> String {
+        guard let localization,
+              let folder = Bundle.module.localizations.first(where: { $0.caseInsensitiveCompare(localization) == .orderedSame }),
+              let path = Bundle.module.path(forResource: folder, ofType: "lproj"),
+              let bundle = Bundle(path: path)
+        else { return String(localized: key, bundle: .module) }
+        return String(localized: key, bundle: bundle)
+    }
+}
+
+public extension PreviewTheme {
+    /// The display-string rules themes are held to (kit #125, L1), for the app to apply to any text
+    /// it shows from a theme: the string normalised to NFC, or nil if it is empty, longer than
+    /// `limit` scalars, or contains a control, line-break, bidirectional-control or invisible
+    /// format character, a run of more than three combining marks, or a link. Show the result with
+    /// `Text(verbatim:)`, never as a localization key.
+    static func acceptedDisplayString(_ text: String, limit: Int = 48) -> String? {
+        let (normalized, problems) = ThemeDisplayText.check(text, limit: limit)
+        return problems.isEmpty ? normalized : nil
+    }
+}
+
+private extension ThemeColors {
+    init(_ palette: PreviewTheme.Palette) {
+        self.init(
+            background: palette.background, surface: palette.surface, text: palette.text, muted: palette.muted,
+            border: palette.border, heading: palette.heading, accent: palette.accent, link: palette.link, quote: palette.quote,
+            syntax: ThemeSyntaxColors(keyword: palette.syntax.keyword, string: palette.syntax.string, comment: palette.syntax.comment,
+                                      number: palette.syntax.number, function: palette.syntax.function, type: palette.syntax.type),
+            diagram: ThemeDiagramColors(node: palette.diagram.node, nodeBorder: palette.diagram.nodeBorder, text: palette.diagram.text,
+                                        line: palette.diagram.line, secondary: palette.diagram.secondary,
+                                        tertiary: palette.diagram.tertiary, note: palette.diagram.note)
+        )
+    }
+}
+
+private extension PreviewTheme.Palette {
+    init(_ palette: ResolvedPalette) {
+        self.init(
+            background: palette.background, surface: palette.surface, text: palette.text, muted: palette.muted,
+            border: palette.border, heading: palette.heading, accent: palette.accent, link: palette.link, quote: palette.quote,
+            syntax: PreviewTheme.Syntax(palette.syntax), diagram: PreviewTheme.Diagram(palette.diagram)
         )
     }
 }
@@ -227,11 +328,7 @@ private extension PreviewTheme.Diagram {
 
 public extension PreviewTheme {
     var bodyFontStack: String {
-        switch fontDesign {
-        case .sans: #"-apple-system, BlinkMacSystemFont, "Helvetica Neue", "PingFang TC", "PingFang SC", sans-serif"#
-        case .serif: #"ui-serif, "New York", Georgia, "Songti TC", "Songti SC", serif"#
-        case .rounded: #"ui-rounded, "SF Pro Rounded", -apple-system, "PingFang TC", "PingFang SC", sans-serif"#
-        }
+        (ThemeFontDesign(rawValue: fontDesign.rawValue) ?? .sans).cssFontStack
     }
 
     /// CSS custom properties for every theme, keyed by `data-theme` and colour scheme. Palette
@@ -239,44 +336,62 @@ public extension PreviewTheme {
     /// `ThemeCSSGenerator` and spliced into `preview.css` by `PreviewSchemeHandler`, not into this
     /// stylesheet, so they keep the exact cascade position the hand-written rules had.
     static var stylesheet: String {
-        all.map(\.css).joined(separator: "\n")
-    }
-
-    private var css: String {
-        """
-        :root[data-theme="\(id)"] {
-        \(Self.variables(light, fonts: bodyFontStack))
-        }
-        @media (prefers-color-scheme: dark) {
-          :root[data-theme="\(id)"] {
-        \(Self.variables(dark, fonts: nil))
-          }
-        }
-        """
-    }
-
-    private static func variables(_ p: Palette, fonts: String?) -> String {
-        var pairs: [(String, String)] = [
-            ("bg", p.background), ("surface", p.surface), ("fg", p.text), ("muted", p.muted),
-            ("border", p.border), ("heading", p.heading), ("accent", p.accent), ("link", p.link),
-            ("quote", p.quote),
-            ("hl-keyword", p.syntax.keyword), ("hl-string", p.syntax.string), ("hl-comment", p.syntax.comment),
-            ("hl-number", p.syntax.number), ("hl-function", p.syntax.function), ("hl-type", p.syntax.type),
-            ("mm-node", p.diagram.node), ("mm-border", p.diagram.nodeBorder), ("mm-text", p.diagram.text),
-            ("mm-line", p.diagram.line), ("mm-secondary", p.diagram.secondary),
-            ("mm-tertiary", p.diagram.tertiary), ("mm-note", p.diagram.note),
-        ]
-        if let fonts { pairs.append(("font-body", fonts)) }
-        return pairs.map { "  --\($0.0): \($0.1);" }.joined(separator: "\n")
+        stylesheet(for: all)
     }
 }
 
 // MARK: - Per-theme style CSS (kit #124)
 
+private let stylesheetLog = Logger(subsystem: "dev.southern-light.marsdawn-kit", category: "PreviewTheme")
+
 package extension PreviewTheme {
     /// The generated per-theme rules for every built-in, in `PreviewTheme.all` order, joined --
     /// what `PreviewSchemeHandler` splices into `preview.css` at the removed blocks' old position.
     static var generatedStyleCSS: String {
-        all.map { ThemeCSSGenerator.generate(id: $0.id, style: $0.style).css }.joined()
+        generatedStyleCSS(for: all)
+    }
+
+    /// `themes.css` for `themes`: each theme's palette block, generated from its `ValidatedTheme`
+    /// only. A theme that failed validation, that the generator refuses, or whose id an earlier
+    /// theme in the list already has, is left out entirely (kit #125, H1/M3).
+    static func stylesheet(for themes: [PreviewTheme]) -> String {
+        accepted(themes).compactMap { theme -> String? in
+            do throws(ThemeCSSGenerator.Refusal) {
+                return try ThemeCSSGenerator.variables(for: theme)
+            } catch {
+                stylesheetLog.fault("THEME-REFUSED: the generator refused a validated theme's palette (\(error.description, privacy: .public))")
+                return nil
+            }
+        }.joined(separator: "\n")
+    }
+
+    /// The per-theme rules for `themes`, under the same rules as `stylesheet(for:)`.
+    static func generatedStyleCSS(for themes: [PreviewTheme]) -> String {
+        accepted(themes).compactMap { theme -> String? in
+            do throws(ThemeCSSGenerator.Refusal) {
+                return try ThemeCSSGenerator.rules(for: theme).css
+            } catch {
+                stylesheetLog.fault("THEME-REFUSED: the generator refused a validated theme's rules (\(error.description, privacy: .public))")
+                return nil
+            }
+        }.joined()
+    }
+
+    /// The validated themes of `themes`, first occurrence of each id only.
+    private static func accepted(_ themes: [PreviewTheme]) -> [ValidatedTheme] {
+        var seen = Set<String>()
+        var out: [ValidatedTheme] = []
+        for theme in themes {
+            guard let validated = theme.validated else {
+                stylesheetLog.error("THEME-REFUSED: a theme failed validation and is left out of the stylesheet")
+                continue
+            }
+            guard seen.insert(validated.id).inserted else {
+                stylesheetLog.error("THEME-REFUSED: a second theme with the same id is left out of the stylesheet")
+                continue
+            }
+            out.append(validated)
+        }
+        return out
     }
 }

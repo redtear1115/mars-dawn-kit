@@ -1,0 +1,8 @@
+{
+  "contrast.baseline--dark-text.json": "dark body text: `text` #7A7A7A is 4.02:1 against `background` #1C1A1F, needs 4.5:1",
+  "contrast.pair--mm-text-equals-mm-node.json": "light diagram label on node: `diagram.text` #FBE9E0 is 1.00:1 against `diagram.node` #FBE9E0, needs 4.5:1",
+  "contrast.pair--muted-equals-surface.json": "light banner and placeholder text: `muted` #F6F0EC is 1.00:1 against `surface` #F6F0EC, needs 4.5:1 (notice text must stay readable in every scenario)",
+  "contrast.scenario--formal-output-accent.json": "`formal-output`: light `accent` #E8457A is 3.71:1 against `background`, needs 4.5:1",
+  "json.duplicateKey--escaped-spelling.json": "the key `accent` appears more than once in the same object",
+  "schema.unknownKey--top-level.json": "unknown key `bogus`"
+}

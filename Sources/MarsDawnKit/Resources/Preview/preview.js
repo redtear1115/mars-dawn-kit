@@ -3,7 +3,11 @@
 (() => {
   const content = () => document.getElementById("content");
   const darkQuery = window.matchMedia("(prefers-color-scheme: dark)");
-  const themeIDPattern = /^[a-z0-9-]+$/;
+  // The theme id grammar every part of the kit shares (design §4.2, kit #125): lowercase ASCII
+  // letters and digits in runs joined by single hyphens, at most 32 characters. JavaScript's `$`
+  // (no `m` flag) only matches at the very end, so a trailing newline can't slip through.
+  const themeIDPattern = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+  const isThemeID = (id) => typeof id === "string" && id.length <= 32 && themeIDPattern.test(id);
 
   // The light/dark theme pair (S2). Initialized from theme-boot's query so a scheme flip
   // before any `setThemes` call still picks the right one.
@@ -11,8 +15,8 @@
     const params = new URLSearchParams(location.search);
     const theme = params.get("theme");
     const darkTheme = params.get("darkTheme");
-    const light = theme && themeIDPattern.test(theme) ? theme : (document.documentElement.dataset.theme || "dawn");
-    const dark = darkTheme && themeIDPattern.test(darkTheme) ? darkTheme : light;
+    const light = isThemeID(theme) ? theme : (document.documentElement.dataset.theme || "dawn");
+    const dark = isThemeID(darkTheme) ? darkTheme : light;
     return { light, dark };
   }
   let themePair = initialThemePair();
@@ -31,6 +35,26 @@
   }
   window.addEventListener("error", (e) => log(`${e.message} @${e.filename}:${e.lineno}`));
 
+  // Every colour Mermaid is given must be a plain #RRGGBB (kit #125, security review H1): the
+  // values come from the active theme's CSS variables, and Mermaid writes them into the SVG's own
+  // stylesheet verbatim. A value that isn't one -- whatever put it there -- is replaced by Dawn's
+  // for the current appearance. The table is dawn/theme.json's (ThemeSecurityWebTests asserts it).
+  const hexColor = /^#[0-9a-f]{6}$/i;
+  const dawnMermaidColors = {
+    light: {
+      "--bg": "#FFFDFB", "--border": "#EADFD8", "--heading": "#26211F", "--accent": "#C8471B",
+      "--link": "#B03C0C", "--hl-function": "#5B3E8C", "--hl-string": "#2F6F5E", "--hl-number": "#9A5B00",
+      "--hl-type": "#1F6FB2", "--mm-node": "#FBE9E0", "--mm-border": "#CA6C3C", "--mm-text": "#26211F",
+      "--mm-line": "#8A6A5C", "--mm-secondary": "#E6F1EE", "--mm-tertiary": "#FFF6F1", "--mm-note": "#FFF1D6",
+    },
+    dark: {
+      "--bg": "#1C1A1F", "--border": "#3A343A", "--heading": "#F4EEEA", "--accent": "#FF8A50",
+      "--link": "#FF9E6B", "--hl-function": "#C7A6F5", "--hl-string": "#7FD1B9", "--hl-number": "#F2C572",
+      "--hl-type": "#6CB6FF", "--mm-node": "#3A2A26", "--mm-border": "#E08A5C", "--mm-text": "#EBE4DF",
+      "--mm-line": "#B8A69C", "--mm-secondary": "#23332F", "--mm-tertiary": "#2B2427", "--mm-note": "#3D3322",
+    },
+  };
+
   // Mermaid colours come from the active theme's CSS variables (see themes.css).
   function configureMermaid() {
     const theme = document.documentElement.dataset.theme || "dawn";
@@ -44,6 +68,11 @@
 
     const style = getComputedStyle(document.documentElement);
     const v = (name) => style.getPropertyValue(name).trim();
+    const fallback = dawnMermaidColors[dark ? "dark" : "light"];
+    const c = (name) => {
+      const value = v(name);
+      return hexColor.test(value) ? value : fallback[name];
+    };
     const font = v("--font-body");
     mermaid.initialize({
       startOnLoad: false,
@@ -52,55 +81,55 @@
       fontFamily: font,
       themeVariables: {
         darkMode: dark,
-        background: v("--bg"),
+        background: c("--bg"),
         fontFamily: font,
         fontSize: "14px",
-        primaryColor: v("--mm-node"),
-        primaryTextColor: v("--mm-text"),
-        primaryBorderColor: v("--mm-border"),
-        secondaryColor: v("--mm-secondary"),
-        secondaryTextColor: v("--mm-text"),
-        secondaryBorderColor: v("--mm-border"),
-        tertiaryColor: v("--mm-tertiary"),
-        tertiaryTextColor: v("--mm-text"),
-        tertiaryBorderColor: v("--mm-border"),
-        lineColor: v("--mm-line"),
-        textColor: v("--mm-text"),
-        mainBkg: v("--mm-node"),
-        nodeBorder: v("--mm-border"),
-        clusterBkg: v("--mm-tertiary"),
-        clusterBorder: v("--border"),
-        edgeLabelBackground: v("--bg"),
-        titleColor: v("--heading"),
-        noteBkgColor: v("--mm-note"),
-        noteTextColor: v("--mm-text"),
-        noteBorderColor: v("--mm-border"),
-        actorBkg: v("--mm-node"),
-        actorBorder: v("--mm-border"),
-        actorTextColor: v("--mm-text"),
-        actorLineColor: v("--mm-line"),
-        signalColor: v("--mm-text"),
-        signalTextColor: v("--mm-text"),
-        labelBoxBkgColor: v("--mm-node"),
-        labelBoxBorderColor: v("--mm-border"),
-        labelTextColor: v("--mm-text"),
-        loopTextColor: v("--mm-text"),
-        activationBkgColor: v("--mm-secondary"),
-        activationBorderColor: v("--mm-border"),
-        sequenceNumberColor: v("--bg"),
-        pie1: v("--accent"),
-        pie2: v("--hl-function"),
-        pie3: v("--hl-string"),
-        pie4: v("--hl-number"),
-        pie5: v("--hl-type"),
-        pie6: v("--link"),
-        pieStrokeColor: v("--bg"),
-        pieTitleTextColor: v("--heading"),
-        pieSectionTextColor: v("--bg"),
-        git0: v("--accent"),
-        git1: v("--hl-function"),
-        git2: v("--hl-string"),
-        git3: v("--hl-number"),
+        primaryColor: c("--mm-node"),
+        primaryTextColor: c("--mm-text"),
+        primaryBorderColor: c("--mm-border"),
+        secondaryColor: c("--mm-secondary"),
+        secondaryTextColor: c("--mm-text"),
+        secondaryBorderColor: c("--mm-border"),
+        tertiaryColor: c("--mm-tertiary"),
+        tertiaryTextColor: c("--mm-text"),
+        tertiaryBorderColor: c("--mm-border"),
+        lineColor: c("--mm-line"),
+        textColor: c("--mm-text"),
+        mainBkg: c("--mm-node"),
+        nodeBorder: c("--mm-border"),
+        clusterBkg: c("--mm-tertiary"),
+        clusterBorder: c("--border"),
+        edgeLabelBackground: c("--bg"),
+        titleColor: c("--heading"),
+        noteBkgColor: c("--mm-note"),
+        noteTextColor: c("--mm-text"),
+        noteBorderColor: c("--mm-border"),
+        actorBkg: c("--mm-node"),
+        actorBorder: c("--mm-border"),
+        actorTextColor: c("--mm-text"),
+        actorLineColor: c("--mm-line"),
+        signalColor: c("--mm-text"),
+        signalTextColor: c("--mm-text"),
+        labelBoxBkgColor: c("--mm-node"),
+        labelBoxBorderColor: c("--mm-border"),
+        labelTextColor: c("--mm-text"),
+        loopTextColor: c("--mm-text"),
+        activationBkgColor: c("--mm-secondary"),
+        activationBorderColor: c("--mm-border"),
+        sequenceNumberColor: c("--bg"),
+        pie1: c("--accent"),
+        pie2: c("--hl-function"),
+        pie3: c("--hl-string"),
+        pie4: c("--hl-number"),
+        pie5: c("--hl-type"),
+        pie6: c("--link"),
+        pieStrokeColor: c("--bg"),
+        pieTitleTextColor: c("--heading"),
+        pieSectionTextColor: c("--bg"),
+        git0: c("--accent"),
+        git1: c("--hl-function"),
+        git2: c("--hl-string"),
+        git3: c("--hl-number"),
       },
     });
     svgCache.clear();
@@ -715,8 +744,8 @@
   // Stores a separate light and dark theme (S2); an invalid or missing dark id falls back to
   // the light id. Sets `data-theme` to whichever one matches the current color scheme.
   function setThemes(light, dark) {
-    if (!themeIDPattern.test(light)) return;
-    const validDark = dark && themeIDPattern.test(dark) ? dark : light;
+    if (!isThemeID(light)) return;
+    const validDark = isThemeID(dark) ? dark : light;
     themePair = { light, dark: validDark };
     document.documentElement.dataset.theme = pickTheme(themePair);
     refreshTheme();
