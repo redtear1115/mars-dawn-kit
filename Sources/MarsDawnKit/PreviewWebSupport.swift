@@ -8,8 +8,21 @@ import WebKit
 public final class PreviewSchemeHandler: NSObject, WKURLSchemeHandler {
     public nonisolated static let scheme = "marsdawn-app"
     public nonisolated static let pageURL = URL(string: "\(scheme)://preview/index.html")!
-    /// Generated from `PreviewTheme.all` rather than read from the bundle.
+    /// Generated from the registry's themes rather than read from the bundle.
     nonisolated static let themesStylesheetName = "themes.css"
+
+    /// The query item naming the registry snapshot a page's stylesheets come from (kit #126, L4):
+    /// `index.html` is served with its `themes.css` and `preview.css` links carrying the token of
+    /// the snapshot that was current then, so both stylesheets of one page load come from the
+    /// same snapshot even if the registry changes between the two requests.
+    ///
+    /// A page served while the registry holds just the built-ins (a host that never loads a
+    /// directory) is served exactly as before, with plain links, and a stylesheet request that
+    /// names no snapshot is answered from the built-ins alone -- so such a page's two
+    /// stylesheets also come from one snapshot, whatever the registry does in between.
+    nonisolated static let snapshotQueryItem = "snapshot"
+    /// How many recent page loads' snapshots a handler keeps for their stylesheet requests.
+    nonisolated static let pinnedSnapshotLimit = 8
 
     /// Where `preview.css`'s per-theme rules (kit #124) are spliced in, at the exact position the
     /// hand-written rules occupied (see the marker's comment in `preview.css` for why the
@@ -76,18 +89,48 @@ public final class PreviewSchemeHandler: NSObject, WKURLSchemeHandler {
         return Data(text.utf8)
     }
 
-    /// `preview.css` with every built-in's generated per-theme rules spliced in at the marker
-    /// (kit #124), keeping the cascade position the hand-written rules had.
+    /// `preview.css` with the current registry's generated per-theme rules spliced in at the
+    /// marker (kit #124), keeping the cascade position the hand-written rules had.
     nonisolated static func splicedPreviewCSS(_ css: Data) -> Data {
-        let text = String(decoding: css, as: UTF8.self)
-        guard text.contains(themeRulesMarker) else { return css }
-        return Data(text.replacingOccurrences(of: themeRulesMarker, with: PreviewTheme.generatedStyleCSS).utf8)
+        splicedPreviewCSS(css, snapshot: ThemeRegistry.current.snapshot)
     }
 
-    private static let log = Logger(subsystem: "dev.southern-light.marsdawn-kit", category: "PreviewScheme")
+    /// `preview.css` with `snapshot`'s per-theme rules spliced in at the marker.
+    nonisolated static func splicedPreviewCSS(_ css: Data, snapshot: ThemeRegistry.Snapshot) -> Data {
+        let text = String(decoding: css, as: UTF8.self)
+        guard text.contains(themeRulesMarker) else { return css }
+        return Data(text.replacingOccurrences(of: themeRulesMarker, with: snapshot.rulesCSS).utf8)
+    }
+
+    /// The stylesheet links `index.html` carries, each rewritten to name `token`'s snapshot.
+    nonisolated static let pinnedStylesheets = [themesStylesheetName, "preview.css"]
+
+    /// `index.html` with its two stylesheet links naming the snapshot `token`. If the page doesn't
+    /// have exactly one of each link (a changed template), it is served unchanged, and its
+    /// stylesheets, naming no snapshot, get the built-ins alone.
+    nonisolated static func pinningStylesheets(_ html: Data, token: UInt64) -> Data {
+        var text = String(decoding: html, as: UTF8.self)
+        for name in pinnedStylesheets {
+            let link = "href=\"\(name)\""
+            guard text.components(separatedBy: link).count == 2 else {
+                log.fault("PREVIEW-SNAPSHOT-UNPINNED: index.html doesn't link \(name, privacy: .public) exactly once")
+                return html
+            }
+            text = text.replacingOccurrences(of: link, with: "href=\"\(name)?\(snapshotQueryItem)=\(token)\"")
+        }
+        return Data(text.utf8)
+    }
+
+    private nonisolated static let log = Logger(subsystem: "dev.southern-light.marsdawn-kit", category: "PreviewScheme")
 
     /// The bundled Preview folder, or nil if the bundle doesn't have it.
     private let rootURL: URL?
+
+    /// Where the served themes come from: the process registry, unless a test put another in place.
+    private let registry: ThemeRegistry
+
+    /// The snapshots recent `index.html` loads were served from, by token, oldest first.
+    private let pinned = OSAllocatedUnfairLock(initialState: [ThemeRegistry.Snapshot]())
 
     override public convenience init() {
         self.init(rootURL: Bundle.module.url(forResource: "Preview", withExtension: nil))
@@ -96,8 +139,9 @@ public final class PreviewSchemeHandler: NSObject, WKURLSchemeHandler {
     /// With no Preview folder (a damaged install, or a bundle lookup an OS update changed), the
     /// handler serves nothing and every page load fails, so the app shows its preview failure
     /// and keeps working instead of trapping when the first preview is built (#6 in the app).
-    init(rootURL: URL?) {
+    init(rootURL: URL?, registry: ThemeRegistry = .current) {
         self.rootURL = rootURL?.standardizedFileURL
+        self.registry = registry
         super.init()
         if rootURL == nil {
             Self.log.fault("PREVIEW-RESOURCE-MISSING: the bundled Preview folder wasn't found; previews won't load")
@@ -112,13 +156,19 @@ public final class PreviewSchemeHandler: NSObject, WKURLSchemeHandler {
         let data: Data
         let pathExtension: String
         if requestURL.path == "/\(Self.themesStylesheetName)" {
-            data = Data(PreviewTheme.stylesheet.utf8)
+            data = Data(snapshot(for: requestURL).variablesCSS.utf8)
             pathExtension = "css"
         } else if let fileURL = resolve(requestURL), let contents = try? Data(contentsOf: fileURL) {
             if fileURL.lastPathComponent == "index.html" {
-                data = Self.page(contents, for: requestURL)
+                let page = Self.page(contents, for: requestURL)
+                let snapshot = registry.snapshot
+                if snapshot === ThemeRegistry.builtIns {
+                    data = page
+                } else {
+                    data = Self.pinningStylesheets(page, token: pin(snapshot).token)
+                }
             } else if fileURL.lastPathComponent == "preview.css" {
-                data = Self.splicedPreviewCSS(contents)
+                data = Self.splicedPreviewCSS(contents, snapshot: snapshot(for: requestURL))
             } else {
                 data = contents
             }
@@ -145,6 +195,32 @@ public final class PreviewSchemeHandler: NSObject, WKURLSchemeHandler {
     }
 
     public func webView(_ webView: WKWebView, stop urlSchemeTask: any WKURLSchemeTask) {}
+
+    /// Keeps `snapshot` for the stylesheet requests of the page being served.
+    private func pin(_ snapshot: ThemeRegistry.Snapshot) -> ThemeRegistry.Snapshot {
+        pinned.withLock { list in
+            list.removeAll { $0.token == snapshot.token }
+            list.append(snapshot)
+            if list.count > Self.pinnedSnapshotLimit { list.removeFirst(list.count - Self.pinnedSnapshotLimit) }
+        }
+        return snapshot
+    }
+
+    /// The snapshot a stylesheet request names. A request naming no snapshot comes from a page
+    /// served from the built-ins alone, so it gets the built-ins; one naming a snapshot this
+    /// handler no longer holds (more than `pinnedSnapshotLimit` page loads since) gets the
+    /// registry's current one.
+    private func snapshot(for requestURL: URL) -> ThemeRegistry.Snapshot {
+        let items = URLComponents(url: requestURL, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        guard let value = items.first(where: { $0.name == Self.snapshotQueryItem })?.value else {
+            return ThemeRegistry.builtIns
+        }
+        if let token = UInt64(value), let snapshot = pinned.withLock({ list in list.first { $0.token == token } }) {
+            return snapshot
+        }
+        Self.log.error("PREVIEW-SNAPSHOT-EXPIRED: a stylesheet named a snapshot no longer held; serving the current one")
+        return registry.snapshot
+    }
 
     /// Maps a request path to a file inside the bundled Preview folder, rejecting traversal.
     private func resolve(_ url: URL) -> URL? {

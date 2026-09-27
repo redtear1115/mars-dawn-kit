@@ -357,4 +357,197 @@ struct ThemeRegistryFileTests {
     }
 }
 
+// MARK: - L4: one read, one snapshot per page load
+
+@MainActor
+@Suite(.serialized, .timeLimit(.minutes(2)))
+struct ThemeRegistrySnapshotTests {
+    private static func serve(_ handler: PreviewSchemeHandler, _ path: String) -> String {
+        let task = FakeSchemeTask(url: URL(string: "marsdawn-app://preview/\(path)")!)
+        handler.webView(WKWebView(), start: task)
+        return String(decoding: task.body, as: UTF8.self)
+    }
+
+    private static func href(_ name: String, in page: String) throws -> String {
+        let start = try #require(page.range(of: "href=\"\(name)"))
+        return String(page[start.lowerBound...].dropFirst(6).prefix { $0 != "\"" })
+    }
+
+    /// A theme whose light background is `background`.
+    private static func tinted(_ id: String, _ background: String) throws -> Data {
+        try InstalledThemes.theme(id) { InstalledThemes.set(&$0, ["light", "background"], background) }
+    }
+
+    @Test func aFileChangedOnDiskAfterLoadingChangesNothingServed() throws {
+        let dir = try InstalledThemes()
+        let file = try dir.add("mine", Self.tinted("mine", "#FFFDFA"))
+        let registry = ThemeRegistry()
+        dir.load(into: registry)
+        let handler = ThemeRegistry.$override.withValue(registry) { PreviewSchemeHandler() }
+        let page = Self.serve(handler, "index.html?theme=mine")
+        let themesBefore = Self.serve(handler, try Self.href("themes.css", in: page))
+        let rulesBefore = Self.serve(handler, try Self.href("preview.css", in: page))
+        #expect(themesBefore.contains("--bg: #FFFDFA;"))
+
+        try Self.tinted("mine", "#FFFEF0").write(to: file)
+
+        let again = Self.serve(handler, "index.html?theme=mine")
+        #expect(Self.serve(handler, try Self.href("themes.css", in: again)) == themesBefore)
+        #expect(Self.serve(handler, try Self.href("preview.css", in: again)) == rulesBefore)
+        #expect(registry.snapshot.named("mine").light.background == "#FFFDFA")
+        // Positive fixture: the change was real -- the next load picks it up.
+        dir.load(into: registry)
+        #expect(registry.snapshot.named("mine").light.background == "#FFFEF0")
+        let reloaded = Self.serve(handler, "index.html?theme=mine")
+        #expect(Self.serve(handler, try Self.href("themes.css", in: reloaded)).contains("--bg: #FFFEF0;"))
+    }
+
+    /// No directory passed: `index.html` is served exactly as before the registry (plain
+    /// stylesheet links), and its stylesheets come from the built-ins even if the registry loads
+    /// installed themes between the page and its stylesheet requests.
+    @Test func aBuiltInsOnlyPageIsServedAsBeforeAndKeepsTheBuiltIns() throws {
+        let dir = try InstalledThemes()
+        try dir.add("late", Self.tinted("late", "#FFFDFA"))
+        let registry = ThemeRegistry()
+        let handler = ThemeRegistry.$override.withValue(registry) { PreviewSchemeHandler() }
+
+        let url = URL(string: "marsdawn-app://preview/index.html?theme=dawn")!
+        let page = Self.serve(handler, "index.html?theme=dawn")
+        let raw = try Data(contentsOf: Self.previewFolderURL.appendingPathComponent("index.html"))
+        #expect(page == String(decoding: PreviewSchemeHandler.page(raw, for: url), as: UTF8.self))
+        #expect(try Self.href("themes.css", in: page) == "themes.css")
+        #expect(try Self.href("preview.css", in: page) == "preview.css")
+
+        // The registry changes between the page and its stylesheets.
+        #expect(dir.load(into: registry).map(\.id) == ["late"])
+        let themes = Self.serve(handler, "themes.css")
+        let rules = Self.serve(handler, "preview.css")
+        #expect(themes == ThemeRegistry.builtIns.variablesCSS)
+        let rawCSS = try String(contentsOf: Self.previewFolderURL.appendingPathComponent("preview.css"), encoding: .utf8)
+        #expect(rules == rawCSS.replacingOccurrences(of: PreviewSchemeHandler.themeRulesMarker, with: ThemeRegistry.builtIns.rulesCSS))
+        #expect(!themes.contains(#""late""#) && !rules.contains(#""late""#))
+
+        // Positive fixture: a page served now names the new snapshot, which has the new theme.
+        let next = Self.serve(handler, "index.html?theme=late")
+        #expect(try Self.href("themes.css", in: next) == "themes.css?snapshot=\(registry.snapshot.token)")
+        #expect(Self.serve(handler, try Self.href("themes.css", in: next)).contains(#":root[data-theme="late"]"#))
+        #expect(Self.serve(handler, try Self.href("preview.css", in: next)).contains(#"[data-theme="late"] hr"#))
+    }
+
+    /// A page served from a loaded snapshot names it; when the registry is swapped between that
+    /// page and its two stylesheet requests, both still come from the page's snapshot.
+    @Test func bothStylesheetsOfOnePageComeFromTheSnapshotItsPageWasServedFrom() throws {
+        let first = try InstalledThemes()
+        try first.add("before", Self.tinted("before", "#FFFDFA"))
+        let second = try InstalledThemes()
+        try second.add("after", Self.tinted("after", "#FFFEF0"))
+        let registry = ThemeRegistry()
+        let handler = ThemeRegistry.$override.withValue(registry) { PreviewSchemeHandler() }
+        first.load(into: registry)
+        let pinned = registry.snapshot
+
+        let page = Self.serve(handler, "index.html?theme=before")
+        let themesLink = try Self.href("themes.css", in: page)
+        let rulesLink = try Self.href("preview.css", in: page)
+        #expect(themesLink == "themes.css?snapshot=\(pinned.token)")
+        #expect(rulesLink == "preview.css?snapshot=\(pinned.token)")
+
+        // The registry is swapped between the page and its stylesheets.
+        second.load(into: registry)
+        #expect(registry.snapshot.token != pinned.token)
+        let themes = Self.serve(handler, themesLink)
+        let rules = Self.serve(handler, rulesLink)
+        #expect(themes == pinned.variablesCSS)
+        #expect(themes.contains(#":root[data-theme="before"]"#) && !themes.contains(#""after""#))
+        #expect(rules.contains(#"[data-theme="before"] hr"#) && !rules.contains(#""after""#))
+
+        // Positive fixture: the swapped-in snapshot really differs, and a new page gets it.
+        let next = Self.serve(handler, "index.html?theme=after")
+        let nextThemes = Self.serve(handler, try Self.href("themes.css", in: next))
+        #expect(nextThemes.contains(#":root[data-theme="after"]"#) && !nextThemes.contains(#""before""#))
+    }
+
+    static let previewFolderURL = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        .appendingPathComponent("Sources/MarsDawnKit/Resources/Preview")
+
+    /// The real page in WebKit: it asks for both stylesheets with the token its `index.html`
+    /// carried, and an installed theme is actually drawn with its own colours.
+    @Test func thePageRequestsBothStylesheetsWithItsTokenAndDrawsAnInstalledTheme() async throws {
+        let dir = try InstalledThemes()
+        try dir.add("drawn", Self.tinted("drawn", "#FFFEF0"))
+        let registry = ThemeRegistry()
+        #expect(dir.load(into: registry).map(\.id) == ["drawn"])
+        let recorder = ThemeRegistry.$override.withValue(registry) { RegistryRecordingSchemeHandler() }
+        let configuration = WKWebViewConfiguration()
+        configuration.setURLSchemeHandler(recorder, forURLScheme: PreviewSchemeHandler.scheme)
+        configuration.websiteDataStore = .nonPersistent()
+        let webView = PreviewWKWebView(frame: NSRect(x: 0, y: 0, width: 600, height: 400), configuration: configuration)
+        webView.appearance = NSAppearance(named: .aqua)
+        webView.applyContentRuleList(try await PreviewContentRules.ruleList(allowRemoteImages: false))
+        _ = webView.load(URLRequest(url: PreviewSchemeHandler.pageURL(theme: registry.snapshot.named("drawn"))))
+        let deadline = ContinuousClock.now + .seconds(20)
+        while webView.isLoading, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(20)) }
+
+        let token = registry.snapshot.token
+        let requested = recorder.urls.map { "\($0.path)?\($0.query ?? "")" }
+        #expect(requested.contains("/themes.css?snapshot=\(token)"), "\(requested)")
+        #expect(requested.contains("/preview.css?snapshot=\(token)"), "\(requested)")
+        let background = try await webView.evaluateJavaScript("getComputedStyle(document.body).backgroundColor") as? String
+        #expect(background == "rgb(255, 254, 240)")
+        let theme = try await webView.evaluateJavaScript("document.documentElement.dataset.theme") as? String
+        #expect(theme == "drawn")
+    }
+}
+
+/// `PreviewSchemeHandler`, recording every URL it's asked for.
+@MainActor
+final class RegistryRecordingSchemeHandler: NSObject, WKURLSchemeHandler {
+    private let inner = PreviewSchemeHandler()
+    private(set) var urls: [URL] = []
+
+    func webView(_ webView: WKWebView, start urlSchemeTask: any WKURLSchemeTask) {
+        if let url = urlSchemeTask.request.url { urls.append(url) }
+        inner.webView(webView, start: urlSchemeTask)
+    }
+
+    func webView(_ webView: WKWebView, stop urlSchemeTask: any WKURLSchemeTask) {}
+}
+
+// MARK: - M3: the S1 golden with hostile installs present
+
+@MainActor
+@Suite(.serialized, .timeLimit(.minutes(3)))
+struct ThemeRegistryGoldenTests {
+    /// The four built-ins render exactly as the S1 golden says while the hostile installs of
+    /// `ThemeRegistrySecurityTests.hostileInstalls()` -- and one valid installed theme, which
+    /// shows the installs were really in effect -- are loaded into the registry the pages use.
+    @Test func theGoldenIsUnchangedWithHostileInstallsPresent() async throws {
+        let dir = try ThemeRegistrySecurityTests.hostileInstalls()
+        try dir.add("valid-one", InstalledThemes.theme("valid-one"))
+        let registry = ThemeRegistry()
+        #expect(dir.load(into: registry).map(\.id) == ["valid-one"])
+
+        let captured = try await ThemeRegistry.$override.withValue(registry) {
+            try await ThemeGoldenHarness.capture()
+        }
+        #expect(Set(captured.entries.map(\.theme)) == Set(builtInIDs + ["valid-one"]), "positive fixture: the installed theme was rendered too")
+
+        let golden = try JSONDecoder().decode(GoldenSnapshot.self, from: Data(contentsOf: ThemeGoldenTests.goldenURL))
+        let builtIn = captured.entries.filter { builtInIDs.contains($0.theme) }
+        #expect(builtIn.count == golden.entries.count)
+        var mismatches: [String] = []
+        for entry in golden.entries {
+            let key = GoldenKey(theme: entry.theme, mode: entry.mode, selector: entry.selector)
+            guard let actual = captured[key] else {
+                mismatches.append("\(entry.theme)/\(entry.mode)/\(entry.selector): missing")
+                continue
+            }
+            for (property, expected) in entry.properties where actual[property] != expected {
+                mismatches.append("\(entry.theme)/\(entry.mode)/\(entry.selector) \(property): got \(actual[property] ?? "<nil>"), want \(expected)")
+            }
+        }
+        #expect(mismatches.isEmpty, Comment(rawValue: mismatches.joined(separator: "\n")))
+    }
+}
 #endif
