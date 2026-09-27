@@ -105,11 +105,15 @@ public struct PreviewTheme: Identifiable, Hashable, Sendable {
 
     public static let defaultID = "dawn"
 
+    /// The theme with `id` in the process's `ThemeRegistry`, or Dawn.
     public static func named(_ id: String?) -> PreviewTheme {
-        all.first { $0.id == id } ?? dawn
+        ThemeRegistry.current.snapshot.named(id)
     }
 
-    public static var all: [PreviewTheme] { [dawn, classic, modern, vivid] }
+    /// Every theme in the process's `ThemeRegistry` (kit #126): the four built-ins in their fixed
+    /// order, then any installed themes the host has loaded. Just the built-ins until
+    /// `ThemeRegistry.shared.loadInstalled(from:revokedIDs:revokedAuthors:)` is called.
+    public static var all: [PreviewTheme] { ThemeRegistry.current.snapshot.themes }
 }
 
 // MARK: - Built-in themes
@@ -331,12 +335,13 @@ public extension PreviewTheme {
         (ThemeFontDesign(rawValue: fontDesign.rawValue) ?? .sans).cssFontStack
     }
 
-    /// CSS custom properties for every theme, keyed by `data-theme` and colour scheme. Palette
+    /// CSS custom properties for every theme in `all`, keyed by `data-theme` and colour scheme,
+    /// generated once per registry snapshot (kit #126). Palette
     /// variables only (kit #124): per-theme style rules are generated separately by
     /// `ThemeCSSGenerator` and spliced into `preview.css` by `PreviewSchemeHandler`, not into this
     /// stylesheet, so they keep the exact cascade position the hand-written rules had.
     static var stylesheet: String {
-        stylesheet(for: all)
+        ThemeRegistry.current.snapshot.variablesCSS
     }
 }
 
@@ -348,7 +353,7 @@ package extension PreviewTheme {
     /// The generated per-theme rules for every built-in, in `PreviewTheme.all` order, joined --
     /// what `PreviewSchemeHandler` splices into `preview.css` at the removed blocks' old position.
     static var generatedStyleCSS: String {
-        generatedStyleCSS(for: all)
+        ThemeRegistry.current.snapshot.rulesCSS
     }
 
     /// `themes.css` for `themes`: each theme's palette block, generated from its `ValidatedTheme`
