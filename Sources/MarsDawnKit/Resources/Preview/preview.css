@@ -298,89 +298,15 @@ img { max-width: 100%; }
 }
 .math-error { color: var(--hl-keyword); }
 
-/* ---- Classic: book-like serif, centred title, quiet rules ---- */
-:root[data-theme="classic"] {
-  --heading-weight: 600;
-  --body-size: 16px;
-  --line-height: 1.75;
-  --radius: 4px;
-}
-[data-theme="classic"] .markdown-body { max-width: 720px; }
-[data-theme="classic"] h1 {
-  text-align: center;
-  font-size: 2.2em;
-  letter-spacing: 0.01em;
-  border-bottom: 0;
-  padding-bottom: 0;
-}
-[data-theme="classic"] h1::after {
-  content: "";
-  display: block;
-  width: 48px;
-  height: 1px;
-  margin: 0.5em auto 0;
-  background: var(--accent);
-}
-[data-theme="classic"] h2 { border-bottom-color: var(--border); font-style: italic; }
-[data-theme="classic"] blockquote { border-left-width: 2px; font-style: italic; }
-[data-theme="classic"] hr { height: 1px; width: 30%; margin: 2.4em auto; background: var(--accent); }
-[data-theme="classic"] th { background: transparent; border-bottom: 2px solid var(--accent); }
-[data-theme="classic"] th, [data-theme="classic"] td { border-left: 0; border-right: 0; }
-
-/* ---- Modern: crisp, tight headings ---- */
-:root[data-theme="modern"] {
-  --heading-weight: 700;
-  --radius: 6px;
-}
-[data-theme="modern"] h1, [data-theme="modern"] h2 { letter-spacing: -0.015em; }
-[data-theme="modern"] blockquote { border-left-width: 4px; }
-[data-theme="modern"] li::marker { color: var(--muted); }
-
-/* ---- Vivid: rounded, colourful accents ---- */
-:root[data-theme="vivid"] {
-  --heading-weight: 800;
-  --radius: 14px;
-}
-[data-theme="vivid"] h1 {
-  border-bottom: 0;
-  padding-bottom: 0.15em;
-  background-image: linear-gradient(90deg, var(--accent), var(--heading));
-  background-size: 64px 4px;
-  background-repeat: no-repeat;
-  background-position: left bottom;
-}
-[data-theme="vivid"] h2 { border-bottom: 0; padding-bottom: 0; }
-[data-theme="vivid"] h2::before {
-  content: "";
-  display: inline-block;
-  width: 0.5em;
-  height: 0.5em;
-  margin-right: 0.45em;
-  border-radius: 50%;
-  background: var(--accent);
-  vertical-align: 0.12em;
-}
-[data-theme="vivid"] blockquote {
-  border-left: 0;
-  padding: 0.6em 1em;
-  background: var(--surface);
-  border-radius: var(--radius);
-  color: var(--fg);
-}
-[data-theme="vivid"] code:not(pre code) { color: var(--hl-keyword); }
-[data-theme="vivid"] table { border-radius: var(--radius); }
-[data-theme="vivid"] th { background: var(--heading); color: var(--bg); border-color: var(--heading); }
-[data-theme="vivid"] hr { height: 4px; border-radius: 2px; background: linear-gradient(90deg, var(--accent), var(--heading), var(--link)); }
-
-/* ---- Contrast (#152): every theme meets WCAG AA ----
-   Rules separate content, so they reach 3:1 on the page. Dawn's is Mars Rust, kept to a
-   hairline so the page stays calm; Modern's takes the quote bar's grey. */
-[data-theme="dawn"] hr { height: 1px; background: var(--accent); }
-[data-theme="modern"] hr { background: var(--quote); }
-/* Classic is black and white, so a link can't be told from text by colour: it is underlined.
-   Its syntax colours are greys, so keywords and names are told apart by weight. */
-[data-theme="classic"] a { text-decoration: underline; text-underline-offset: 0.15em; text-decoration-thickness: 1px; }
-[data-theme="classic"] .hljs-keyword, [data-theme="classic"] .hljs-title { font-weight: 650; }
+/* ---- Per-theme style rules (kit #124) ----
+   Generated from each built-in's theme.json by ThemeCSSGenerator and spliced in here by
+   PreviewSchemeHandler, at this exact position: after the shared rules above, and before the
+   print/export block below, which overrides `[data-theme] .markdown-body` at equal specificity
+   (order matters there). This keeps every generated rule's selector -- and so its specificity --
+   identical to the hand-written per-theme rules kit 0.5.4 had here. See
+   `Tests/MarsDawnKitTests/ThemeGeneratedCSSTests.swift` for the golden computed-style and
+   selector-list checks that this splice must keep passing. */
+/* MARSDAWN-GENERATED-THEME-RULES */
 
 /* ---- Print and PDF export: light palette on white paper, paginated ----
    The page tint would stop where the content ends, so the paper stays white;

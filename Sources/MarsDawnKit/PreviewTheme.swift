@@ -1,10 +1,18 @@
 import Foundation
+import os
+import MarsDawnThemes
 
 /// A preview style: typography plus a light and a dark palette.
 ///
 /// This is the single source of truth for theme colours. The preview page's
 /// `themes.css` is generated from it, and native UI (settings swatches, editor
 /// colours) reads the same values.
+///
+/// Since kit #124, a built-in theme's colours, font design and per-theme style options (§4.3 of
+/// the theme-ecosystem design) are data: a bundled `theme.json` in `MarsDawnThemes`, decoded once
+/// into this struct. `style` stays kit-internal (`package`), not part of the public API: it feeds
+/// `ThemeCSSGenerator`, which the app and CLI never call directly, and a later slice replaces it
+/// with a validated-theme type before any of this decoding is exposed publicly.
 public struct PreviewTheme: Identifiable, Hashable, Sendable {
     public enum FontDesign: String, Sendable {
         case sans, serif, rounded
@@ -49,6 +57,28 @@ public struct PreviewTheme: Identifiable, Hashable, Sendable {
     public let fontDesign: FontDesign
     public let light: Palette
     public let dark: Palette
+    /// The theme's style options (design §4.3): kit-internal, not public API (see the type doc).
+    package let style: ThemeStyle?
+
+    public init(id: String, name: String, summary: String, fontDesign: FontDesign, light: Palette, dark: Palette) {
+        self.id = id
+        self.name = name
+        self.summary = summary
+        self.fontDesign = fontDesign
+        self.light = light
+        self.dark = dark
+        self.style = nil
+    }
+
+    package init(id: String, name: String, summary: String, fontDesign: FontDesign, light: Palette, dark: Palette, style: ThemeStyle?) {
+        self.id = id
+        self.name = name
+        self.summary = summary
+        self.fontDesign = fontDesign
+        self.light = light
+        self.dark = dark
+        self.style = style
+    }
 
     public func palette(dark isDark: Bool) -> Palette {
         isDark ? dark : light
@@ -65,8 +95,62 @@ public struct PreviewTheme: Identifiable, Hashable, Sendable {
 
 // MARK: - Built-in themes
 
+private let builtInLog = Logger(subsystem: "dev.southern-light.marsdawn-kit", category: "PreviewTheme")
+
 public extension PreviewTheme {
-    static let dawn = PreviewTheme(
+    /// Decodes a built-in's bundled `theme.json` (kit #124), using the kit's own string table for
+    /// its localized name and summary (design §4.2: "Built-in themes keep their string-table
+    /// localizations"). `nil` on any failure -- a damaged bundle, not a bad theme -- which the
+    /// caller logs and falls back from.
+    private static func decodedBuiltIn(id: String, name: String, summary: String) -> PreviewTheme? {
+        guard let document = try? ThemeDocumentLoader.loadBuiltIn(id: id) else { return nil }
+        return PreviewTheme(document: document, name: name, summary: summary)
+    }
+
+    static let dawn: PreviewTheme = {
+        let name = String(localized: "Dawn", bundle: .module)
+        let summary = String(localized: "Warm Martian sunrise", bundle: .module)
+        guard let theme = decodedBuiltIn(id: "dawn", name: name, summary: summary) else {
+            builtInLog.fault("THEME-DECODE-FAILED: dawn/theme.json didn't decode; using the compiled-in fallback")
+            return compiledDawn
+        }
+        return theme
+    }()
+
+    static let classic: PreviewTheme = {
+        let name = String(localized: "Classic", bundle: .module)
+        let summary = String(localized: "Elegant serif on paper", bundle: .module)
+        guard let theme = decodedBuiltIn(id: "classic", name: name, summary: summary) else {
+            builtInLog.fault("THEME-DECODE-FAILED: classic/theme.json didn't decode; falling back to dawn")
+            return dawn
+        }
+        return theme
+    }()
+
+    static let modern: PreviewTheme = {
+        let name = String(localized: "Modern", bundle: .module)
+        let summary = String(localized: "Clean and familiar", bundle: .module)
+        guard let theme = decodedBuiltIn(id: "modern", name: name, summary: summary) else {
+            builtInLog.fault("THEME-DECODE-FAILED: modern/theme.json didn't decode; falling back to dawn")
+            return dawn
+        }
+        return theme
+    }()
+
+    static let vivid: PreviewTheme = {
+        let name = String(localized: "Vivid", bundle: .module)
+        let summary = String(localized: "Playful, bright and rounded", bundle: .module)
+        guard let theme = decodedBuiltIn(id: "vivid", name: name, summary: summary) else {
+            builtInLog.fault("THEME-DECODE-FAILED: vivid/theme.json didn't decode; falling back to dawn")
+            return dawn
+        }
+        return theme
+    }()
+
+    /// The compiled-in Dawn, kit `0.5.4`'s Swift constants, kept only as the last-resort fallback
+    /// if the bundled `Themes/dawn/theme.json` can't be decoded. `PreviewThemeDecodingTests`
+    /// asserts this equals the decoded `dawn/theme.json`, so the two can't silently drift apart.
+    static let compiledDawn = PreviewTheme(
         id: "dawn",
         name: String(localized: "Dawn", bundle: .module),
         summary: String(localized: "Warm Martian sunrise", bundle: .module),
@@ -82,65 +166,57 @@ public extension PreviewTheme {
             border: "#3A343A", heading: "#F4EEEA", accent: "#FF8A50", link: "#FF9E6B", quote: "#E08A5C",
             syntax: Syntax(keyword: "#FF9E6B", string: "#7FD1B9", comment: "#938A84", number: "#F2C572", function: "#C7A6F5", type: "#6CB6FF"),
             diagram: Diagram(node: "#3A2A26", nodeBorder: "#E08A5C", text: "#EBE4DF", line: "#B8A69C", secondary: "#23332F", tertiary: "#2B2427", note: "#3D3322")
-        )
-    )
-
-    static let classic = PreviewTheme(
-        id: "classic",
-        name: String(localized: "Classic", bundle: .module),
-        summary: String(localized: "Elegant serif on paper", bundle: .module),
-        fontDesign: .serif,
-        light: Palette(
-            background: "#FCFCFB", surface: "#F2F2F0", text: "#1C1C1C", muted: "#5E5E5E",
-            border: "#DDDDDB", heading: "#111111", accent: "#2E2E2E", link: "#1C1C1C", quote: "#8C8C8C",
-            syntax: Syntax(keyword: "#1C1C1C", string: "#4D4D4D", comment: "#6A6A6A", number: "#3A3A3A", function: "#1C1C1C", type: "#3A3A3A"),
-            diagram: Diagram(node: "#F2F2F0", nodeBorder: "#5E5E5E", text: "#1C1C1C", line: "#6A6A6A", secondary: "#EAEAE8", tertiary: "#FCFCFB", note: "#F6F6F3")
         ),
-        dark: Palette(
-            background: "#171717", surface: "#222222", text: "#E6E6E6", muted: "#A6A6A6",
-            border: "#363636", heading: "#F2F2F2", accent: "#D4D4D4", link: "#EDEDED", quote: "#7C7C7C",
-            syntax: Syntax(keyword: "#F2F2F2", string: "#C4C4C4", comment: "#9C9C9C", number: "#D4D4D4", function: "#F2F2F2", type: "#D4D4D4"),
-            diagram: Diagram(node: "#262626", nodeBorder: "#A6A6A6", text: "#E6E6E6", line: "#9C9C9C", secondary: "#202020", tertiary: "#1B1B1B", note: "#2B2B2B")
-        )
+        // Dawn's only per-theme rule (kit 30d323c, preview.css line 378): a 1px accent-coloured
+        // `hr`. Hard-coded here, independent of the bundle, matching `dawn/theme.json`'s own
+        // `style.hr` -- `PreviewThemeDecodingTests` checks the two can't drift apart.
+        style: ThemeStyle(hr: ThemeStyle.Hr(style: .line(color: .accent, thickness: 1)))
     )
+}
 
-    static let modern = PreviewTheme(
-        id: "modern",
-        name: String(localized: "Modern", bundle: .module),
-        summary: String(localized: "Clean and familiar", bundle: .module),
-        fontDesign: .sans,
-        light: Palette(
-            background: "#FFFFFF", surface: "#F6F8FA", text: "#1F2328", muted: "#59636E",
-            border: "#D1D9E0", heading: "#1F2328", accent: "#0969DA", link: "#0969DA", quote: "#8C939A",
-            syntax: Syntax(keyword: "#CF222E", string: "#0A3069", comment: "#59636E", number: "#0550AE", function: "#8250DF", type: "#953800"),
-            diagram: Diagram(node: "#EEF4FC", nodeBorder: "#0969DA", text: "#1F2328", line: "#59636E", secondary: "#F1ECFB", tertiary: "#F6F8FA", note: "#FFF8C5")
-        ),
-        dark: Palette(
-            background: "#0D1117", surface: "#151B23", text: "#E6EDF3", muted: "#9198A1",
-            border: "#30363D", heading: "#F0F6FC", accent: "#4493F8", link: "#4493F8", quote: "#5B636C",
-            syntax: Syntax(keyword: "#FF7B72", string: "#A5D6FF", comment: "#9198A1", number: "#79C0FF", function: "#D2A8FF", type: "#FFA657"),
-            diagram: Diagram(node: "#172233", nodeBorder: "#4493F8", text: "#E6EDF3", line: "#9198A1", secondary: "#221B33", tertiary: "#151B23", note: "#2E2A12")
-        )
-    )
+// MARK: - Mapping from the schema type (MarsDawnThemes.ThemeDocument)
 
-    static let vivid = PreviewTheme(
-        id: "vivid",
-        name: String(localized: "Vivid", bundle: .module),
-        summary: String(localized: "Playful, bright and rounded", bundle: .module),
-        fontDesign: .rounded,
-        light: Palette(
-            background: "#FFFDF8", surface: "#F3EEFF", text: "#2D2A32", muted: "#6B6475",
-            border: "#E6DCFB", heading: "#5B3BE0", accent: "#D5316B", link: "#087481", quote: "#FFB020",
-            syntax: Syntax(keyword: "#B8246A", string: "#07734F", comment: "#70697C", number: "#A44D06", function: "#5B3BE0", type: "#087481"),
-            diagram: Diagram(node: "#EFE9FF", nodeBorder: "#6C4BF4", text: "#2D2A32", line: "#E8457A", secondary: "#E0F7F4", tertiary: "#FFF1F6", note: "#FFF1CC")
-        ),
-        dark: Palette(
-            background: "#1A1625", surface: "#251F36", text: "#F1ECFA", muted: "#AFA6BE",
-            border: "#3A3150", heading: "#B69CFF", accent: "#FF7AA2", link: "#3DD6D0", quote: "#FFC857",
-            syntax: Syntax(keyword: "#FF7AB8", string: "#5BE3A8", comment: "#948BA6", number: "#FFA657", function: "#B69CFF", type: "#3DD6D0"),
-            diagram: Diagram(node: "#2E2548", nodeBorder: "#B69CFF", text: "#F1ECFA", line: "#FF7AA2", secondary: "#1D3534", tertiary: "#2A1F2E", note: "#3D3420")
+package extension PreviewTheme {
+    /// Builds a `PreviewTheme` from a decoded `theme.json`, keeping the caller's own (string-table)
+    /// name and summary for a built-in rather than the file's `name`/`summary` fields.
+    init(document: ThemeDocument, name: String, summary: String) {
+        self.init(
+            id: document.id,
+            name: name,
+            summary: summary,
+            fontDesign: FontDesign(rawValue: document.fontDesign.rawValue) ?? .sans,
+            light: Palette(document.light),
+            dark: Palette(document.dark),
+            style: document.style
         )
-    )
+    }
+}
+
+private extension PreviewTheme.Palette {
+    /// `ThemeColors.syntax`/`.diagram` are optional in the schema (a submitted theme may omit
+    /// them, design §4.2); the kit's own built-ins always carry both, so a missing one here means
+    /// a damaged bundled `theme.json`, not a submitter's choice -- `PreviewTheme.decodedBuiltIn`
+    /// already treats a decode failure as "use the fallback", so this only needs to not crash.
+    init(_ colors: ThemeColors) {
+        self.init(
+            background: colors.background, surface: colors.surface, text: colors.text, muted: colors.muted,
+            border: colors.border, heading: colors.heading, accent: colors.accent, link: colors.link, quote: colors.quote,
+            syntax: colors.syntax.map(PreviewTheme.Syntax.init) ?? PreviewTheme.Syntax(keyword: colors.text, string: colors.text, comment: colors.muted, number: colors.text, function: colors.text, type: colors.text),
+            diagram: colors.diagram.map(PreviewTheme.Diagram.init) ?? PreviewTheme.Diagram(node: colors.surface, nodeBorder: colors.border, text: colors.text, line: colors.border, secondary: colors.surface, tertiary: colors.background, note: colors.surface)
+        )
+    }
+}
+
+private extension PreviewTheme.Syntax {
+    init(_ syntax: ThemeSyntaxColors) {
+        self.init(keyword: syntax.keyword, string: syntax.string, comment: syntax.comment, number: syntax.number, function: syntax.function, type: syntax.type)
+    }
+}
+
+private extension PreviewTheme.Diagram {
+    init(_ diagram: ThemeDiagramColors) {
+        self.init(node: diagram.node, nodeBorder: diagram.nodeBorder, text: diagram.text, line: diagram.line, secondary: diagram.secondary, tertiary: diagram.tertiary, note: diagram.note)
+    }
 }
 
 // MARK: - Stylesheet
@@ -154,7 +230,10 @@ public extension PreviewTheme {
         }
     }
 
-    /// CSS custom properties for every theme, keyed by `data-theme` and colour scheme.
+    /// CSS custom properties for every theme, keyed by `data-theme` and colour scheme. Palette
+    /// variables only (kit #124): per-theme style rules are generated separately by
+    /// `ThemeCSSGenerator` and spliced into `preview.css` by `PreviewSchemeHandler`, not into this
+    /// stylesheet, so they keep the exact cascade position the hand-written rules had.
     static var stylesheet: String {
         all.map(\.css).joined(separator: "\n")
     }
@@ -185,5 +264,15 @@ public extension PreviewTheme {
         ]
         if let fonts { pairs.append(("font-body", fonts)) }
         return pairs.map { "  --\($0.0): \($0.1);" }.joined(separator: "\n")
+    }
+}
+
+// MARK: - Per-theme style CSS (kit #124)
+
+package extension PreviewTheme {
+    /// The generated per-theme rules for every built-in, in `PreviewTheme.all` order, joined --
+    /// what `PreviewSchemeHandler` splices into `preview.css` at the removed blocks' old position.
+    static var generatedStyleCSS: String {
+        all.map { ThemeCSSGenerator.generate(id: $0.id, style: $0.style).css }.joined()
     }
 }
