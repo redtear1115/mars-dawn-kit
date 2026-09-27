@@ -14,7 +14,8 @@ struct MarsDawnCommand: AsyncParsableCommand {
         discussion: """
         export renders on its own and needs nothing else installed. open hands the files to the \
         MarsDawn app, so it needs the app, which is not publicly available yet.
-        Pass --json for machine-readable results. Exit codes: 0 success, \(CLIFailure.Code.inputNotFound.rawValue) input not found, \
+        Pass --json for machine-readable results. Exit codes: 0 success, 1 invalid theme (theme validate only), \
+        \(CLIFailure.Code.inputNotFound.rawValue) input not found, \
         \(CLIFailure.Code.appNotInstalled.rawValue) MarsDawn not installed (open only), \(CLIFailure.Code.outputExists.rawValue) output exists \
         (use --force), \(CLIFailure.Code.exportFailed.rawValue) export failed, \(CLIFailure.Code.appCannotOpenFolders.rawValue) this MarsDawn \
         can't show a folder (open only), 64 usage error.
@@ -704,8 +705,11 @@ extension MarsDawnCommand {
                 discussion: """
                 Runs the same validator the app uses when it installs a theme: the schema, colours, \
                 numbers and style options, display strings, the contrast of every colour pair the \
-                preview draws, and the thresholds of the scenarios the theme declares. Exit codes: \
-                0 valid, 1 invalid (each problem is listed with its rule id), 64 usage error. Only a \
+                preview draws, and the thresholds of the scenarios the theme declares. \
+                --require-complete is the check for publishing a theme: the syntax and diagram \
+                colours, optional otherwise (the app fills them from Dawn), must all be in the file. \
+                Exit codes: 0 valid, 1 invalid (each problem is listed with its rule id), \
+                \(CLIFailure.Code.inputNotFound.rawValue) input not found, 64 usage error. Only a \
                 regular file of at most \(ThemeValidator.maxFileBytes) bytes is read: a symlink, a \
                 folder, a FIFO or a device is refused without being opened.
                 """
@@ -714,20 +718,26 @@ extension MarsDawnCommand {
             @Argument(help: ArgumentHelp("The theme.json to check.", valueName: "file"))
             var file: String
 
+            @Flag(help: "Require every colour group (syntax and diagram) in the file, as a published theme must have.")
+            var requireComplete = false
+
             @OptionGroup var output: OutputOptions
 
             func run() throws {
-                let status = Self.run(path: file, json: output.json)
+                let status = try Self.run(path: file, json: output.json, requireComplete: requireComplete)
                 if status != 0 { throw ExitCode(status) }
             }
 
             /// The command's logic with its output sink as a parameter (as `Skill.run`), so tests
-            /// can read what it prints without touching the process's stdout.
-            static func run(path: String, json: Bool, write: (String) -> Void = { print($0) }) -> Int32 {
+            /// can read what it prints without touching the process's stdout. A missing file throws
+            /// the CLI-wide `input_not_found` (exit 2), like every other command; anything else wrong
+            /// with the file or its content is a validation result (exit 1).
+            static func run(path: String, json: Bool, requireComplete: Bool = false, write: (String) -> Void = { print($0) }) throws -> Int32 {
                 let report: ThemeValidationReport
                 switch ThemeFileReader.read(path: path) {
-                case .success(let data): report = ThemeValidator.validate(data: data)
-                case .failure(let refusal): report = ThemeValidationReport(issues: [refusal.issue], theme: nil)
+                case .success(let data): report = ThemeValidator.validate(data: data, requireComplete: requireComplete)
+                case .failure(.notFound): throw CLIFailure(code: .inputNotFound, message: "No such file: \(path)")
+                case .failure(.refused(let issue)): report = ThemeValidationReport(issues: [issue], theme: nil)
                 }
                 if json {
                     write(ThemeValidateOutput(report).jsonText)
@@ -771,29 +781,34 @@ struct ThemeValidateOutput: Codable, Equatable {
 /// `O_NONBLOCK`, checked again with `fstat` to be the same regular file `lstat` saw, and read up to
 /// one byte past the size cap.
 enum ThemeFileReader {
-    struct Refusal: Error {
-        let issue: ThemeIssue
-        init(_ rule: String, _ message: String) { issue = ThemeIssue(rule: rule, path: "", message: message) }
+    enum Refusal: Error {
+        /// Nothing at that path: the CLI-wide `input_not_found`, not a validation result.
+        case notFound
+        case refused(ThemeIssue)
+    }
+
+    private static func refuse(_ rule: String, _ message: String) -> Refusal {
+        .refused(ThemeIssue(rule: rule, path: "", message: message))
     }
 
     static func read(path: String) -> Result<Data, Refusal> {
         var before = stat()
         guard lstat(path, &before) == 0 else {
-            return .failure(Refusal("file.unreadable", errno == ENOENT ? "no file at that path" : "the file can't be read"))
+            return .failure(errno == ENOENT ? .notFound : refuse("file.unreadable", "the file can't be read"))
         }
         switch before.st_mode & S_IFMT {
         case S_IFREG: break
-        case S_IFLNK: return .failure(Refusal("file.notRegular", "is a symlink; pass the file itself"))
-        case S_IFDIR: return .failure(Refusal("file.notRegular", "is a folder, not a file"))
-        default: return .failure(Refusal("file.notRegular", "is not a regular file (a FIFO, socket or device)"))
+        case S_IFLNK: return .failure(refuse("file.notRegular", "is a symlink; pass the file itself"))
+        case S_IFDIR: return .failure(refuse("file.notRegular", "is a folder, not a file"))
+        default: return .failure(refuse("file.notRegular", "is not a regular file (a FIFO, socket or device)"))
         }
         let fd = open(path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
-        guard fd >= 0 else { return .failure(Refusal("file.unreadable", "the file can't be read")) }
+        guard fd >= 0 else { return .failure(refuse("file.unreadable", "the file can't be read")) }
         defer { close(fd) }
         var after = stat()
         guard fstat(fd, &after) == 0, after.st_mode & S_IFMT == S_IFREG,
               after.st_dev == before.st_dev, after.st_ino == before.st_ino
-        else { return .failure(Refusal("file.notRegular", "changed while it was being opened")) }
+        else { return .failure(refuse("file.notRegular", "changed while it was being opened")) }
 
         let limit = ThemeValidator.maxFileBytes + 1
         var data = Data()
@@ -803,13 +818,13 @@ enum ThemeFileReader {
             let got = buffer.withUnsafeMutableBytes { Darwin.read(fd, $0.baseAddress, wanted) }
             if got < 0 {
                 if errno == EINTR { continue }
-                return .failure(Refusal("file.unreadable", "the file can't be read"))
+                return .failure(refuse("file.unreadable", "the file can't be read"))
             }
             if got == 0 { break }
             data.append(contentsOf: buffer[0..<got])
         }
         if data.count > ThemeValidator.maxFileBytes {
-            return .failure(Refusal("file.tooLarge", "the file is larger than \(ThemeValidator.maxFileBytes) bytes"))
+            return .failure(refuse("file.tooLarge", "the file is larger than \(ThemeValidator.maxFileBytes) bytes"))
         }
         return .success(data)
     }

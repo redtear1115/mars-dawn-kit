@@ -59,8 +59,8 @@ package enum ThemeValidator {
     package static let maxFileBytes = 16 * 1024
 
     /// Validates the raw bytes of a `theme.json`: size cap, the duplicate-key and depth pre-pass,
-    /// strict decoding, then every rule in `validate(_:)`.
-    package static func validate(data: Data) -> ThemeValidationReport {
+    /// strict decoding, then every rule in `validate(_:requireComplete:)`.
+    package static func validate(data: Data, requireComplete: Bool = false) -> ThemeValidationReport {
         if data.count > maxFileBytes {
             return fail(ThemeIssue(rule: "file.tooLarge", path: "", message: "the file is larger than \(maxFileBytes) bytes"))
         }
@@ -81,11 +81,17 @@ package enum ThemeValidator {
         } catch {
             return fail(issue(forDecodingError: error))
         }
-        return validate(document)
+        return validate(document, requireComplete: requireComplete)
     }
 
     /// Validates an already-decoded document.
-    package static func validate(_ document: ThemeDocument) -> ThemeValidationReport {
+    ///
+    /// `requireComplete` is the publication mode (design §4.2: `syntax` and `diagram` are optional
+    /// in the file, but "CI still requires them for published themes"): a palette without either
+    /// group fails with `palette.incomplete`. Without it, a missing group is filled from Dawn's
+    /// for the same appearance, as the app does. A group that is present but lacks a field fails
+    /// in both modes (`schema.missing`).
+    package static func validate(_ document: ThemeDocument, requireComplete: Bool = false) -> ThemeValidationReport {
         var issues: [ThemeIssue] = []
         guard document.schemaVersion == 1 else {
             let message = document.schemaVersion > 1
@@ -132,6 +138,15 @@ package enum ThemeValidator {
 
         if let style = document.style {
             normalized.style = checkStyle(style, into: &issues)
+        }
+
+        if requireComplete {
+            for (mode, colors) in [("light", document.light), ("dark", document.dark)] {
+                for (group, present) in [("syntax", colors.syntax != nil), ("diagram", colors.diagram != nil)] where !present {
+                    issues.append(.init(rule: "palette.incomplete", path: "\(mode).\(group)",
+                                        message: "is required for a published theme; add all of its colours"))
+                }
+            }
         }
 
         if colorsValid {

@@ -16,6 +16,8 @@ struct ThemeFixtureTests {
 
     static let valid = files("valid")
     static let invalid = files("invalid")
+    /// Valid as the app loads them, invalid for publishing (`requireComplete`).
+    static let publish = files("publish")
 
     static func rule(of fixture: URL) -> String {
         String(fixture.deletingPathExtension().lastPathComponent.split(separator: "--", maxSplits: 1, omittingEmptySubsequences: false)[0])
@@ -30,6 +32,7 @@ struct ThemeFixtureTests {
         #expect(Self.valid.count >= 8, "positive fixture: valid themes found (\(Self.valid.count))")
         #expect(Self.invalid.count >= 50, "positive fixture: invalid themes found (\(Self.invalid.count))")
         #expect(Self.expectedMessages.count >= 6)
+        #expect(Self.publish.count == 2)
     }
 
     @Test(arguments: valid)
@@ -51,6 +54,34 @@ struct ThemeFixtureTests {
         }
     }
 
+    /// Publication mode (design §4.2: "CI still requires them for published themes"): a theme
+    /// without its `syntax` or `diagram` colours loads (filled from Dawn) but can't be published.
+    @Test(arguments: publish)
+    func publishFixtureLoadsButCannotBePublished(_ fixture: URL) throws {
+        let data = try Data(contentsOf: fixture)
+        let loaded = ThemeValidator.validate(data: data)
+        #expect(loaded.issues.isEmpty, "\(fixture.lastPathComponent) without requireComplete: \(loaded.issues)")
+        let published = ThemeValidator.validate(data: data, requireComplete: true)
+        #expect(published.theme == nil)
+        #expect(Set(published.issues.map(\.rule)) == [Self.rule(of: fixture)], "\(fixture.lastPathComponent): \(published.issues)")
+        #expect(published.issues.count == 1)
+    }
+
+    /// Every valid fixture that carries all its colours is publishable as well; the one that
+    /// leaves `syntax` and `diagram` out is not, with one issue per missing group.
+    @Test(arguments: valid)
+    func validFixtureUnderPublicationMode(_ fixture: URL) throws {
+        let report = ThemeValidator.validate(data: try Data(contentsOf: fixture), requireComplete: true)
+        if fixture.lastPathComponent == "minimal-no-syntax-or-diagram.json" {
+            #expect(report.theme == nil, "the minimal fixture validated with requireComplete")
+            #expect(report.issues.map(\.path) == ["light.syntax", "light.diagram", "dark.syntax", "dark.diagram"], "\(report.issues)")
+            #expect(Set(report.issues.map(\.rule)) == ["palette.incomplete"])
+            #expect(report.issues.first?.message == "is required for a published theme; add all of its colours")
+        } else {
+            #expect(report.issues.isEmpty, "\(fixture.lastPathComponent): \(report.issues)")
+        }
+    }
+
     /// Every rule id the validator can report has at least one fixture, apart from the ones that
     /// need something a file in a folder can't be (checked in `ThemeFileRuleTests` and the CLI's
     /// tests). The ids are read from the validator's own source, so a new rule without a fixture
@@ -68,7 +99,7 @@ struct ThemeFixtureTests {
             }
         }
         #expect(rules.count >= 25, "positive fixture: rule ids found in the source (\(rules.sorted()))")
-        let covered = Set(Self.invalid.map(Self.rule(of:)))
+        let covered = Set((Self.invalid + Self.publish).map(Self.rule(of:)))
         let notFileShaped: Set<String> = ["file.tooLarge"]
         let missing = rules.subtracting(covered).subtracting(notFileShaped)
         #expect(missing.isEmpty, "rules without a fixture: \(missing.sorted())")

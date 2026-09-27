@@ -28,10 +28,15 @@ struct ThemeValidateCLITests {
         }
     }
 
-    static func run(_ path: String, json: Bool = false) -> (status: Int32, output: String) {
+    static func run(_ path: String, json: Bool = false, requireComplete: Bool = false) -> (status: Int32, output: String) {
         var output = ""
-        let status = MarsDawnCommand.Theme.Validate.run(path: path, json: json) { output += $0 + "\n" }
-        return (status, output)
+        do {
+            let status = try MarsDawnCommand.Theme.Validate.run(path: path, json: json, requireComplete: requireComplete) { output += $0 + "\n" }
+            return (status, output)
+        } catch {
+            Issue.record("run threw \(error)")
+            return (-1, output)
+        }
     }
 
     static func dawnText() throws -> String { try String(contentsOf: dawnURL, encoding: .utf8) }
@@ -106,10 +111,53 @@ struct ThemeValidateCLITests {
         #expect(output.contains("symlink"))
     }
 
-    @Test func aFolderAndAMissingFileAreRefused() throws {
+    @Test func aFolderIsRefused() throws {
         let scratch = try Scratch()
         #expect(Self.run(scratch.url.path).output.contains("file.notRegular"))
-        #expect(Self.run(scratch.url.appendingPathComponent("nope.json").path).output.contains("file.unreadable"))
+    }
+
+    /// A missing file is the CLI-wide `input_not_found` (exit 2), like `export` and `open`, not a
+    /// validation result; main.swift prints `{"ok": false, "error": "input_not_found", …}` for it.
+    @Test func aMissingFileIsInputNotFound() throws {
+        let scratch = try Scratch()
+        let missing = scratch.url.appendingPathComponent("nope.json").path
+        #expect {
+            _ = try MarsDawnCommand.Theme.Validate.run(path: missing, json: true) { _ in }
+        } throws: { ($0 as? CLIFailure)?.code == .inputNotFound }
+        var command = try MarsDawnCommand.parseAsRoot(["theme", "validate", missing, "--json"])
+        do {
+            try command.run()
+            Issue.record("a missing file didn't throw")
+        } catch {
+            #expect(cliExitCode(for: error) == 2)
+            #expect((error as? CLIFailure)?.code.kind == "input_not_found")
+            #expect((error as? CLIFailure)?.message == "No such file: \(missing)")
+        }
+    }
+
+    @Test func requireCompleteRefusesAMissingColourGroup() throws {
+        let scratch = try Scratch()
+        let text = try Self.dawnText()
+        var object = try #require(try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any])
+        var light = try #require(object["light"] as? [String: Any])
+        light.removeValue(forKey: "diagram")
+        object["light"] = light
+        let path = try scratch.file("partial.json", try JSONSerialization.data(withJSONObject: object))
+        #expect(Self.run(path).status == 0, "without the flag a missing group is filled from Dawn")
+        let (status, output) = Self.run(path, requireComplete: true)
+        #expect(status == 1)
+        #expect(output.contains("palette.incomplete at light.diagram: is required for a published theme"), "\(output)")
+        #expect(Self.run(Self.dawnURL.path, requireComplete: true).status == 0, "a complete theme passes the flag")
+        var parsed = try MarsDawnCommand.parseAsRoot(["theme", "validate", path, "--require-complete"])
+        #expect(throws: ExitCode(1)) { try parsed.run() }
+    }
+
+    @Test func theTopLevelHelpNamesThemeValidateAndItsExitCode() {
+        // Help text wraps at the terminal width; compare with the wrapping taken out.
+        let help = MarsDawnCommand.helpMessage().split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        #expect(help.contains("theme"))
+        #expect(help.contains("1 invalid theme (theme validate only)"))
+        #expect(help.contains("2 input not found"))
     }
 
     @Test func aDuplicateKeyIsRefused() throws {
