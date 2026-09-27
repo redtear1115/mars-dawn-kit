@@ -60,7 +60,11 @@ public struct PreviewTheme: Identifiable, Hashable, Sendable {
     /// The theme's style options (design §4.3): kit-internal, not public API (see the type doc).
     package let style: ThemeStyle?
 
-    public init(id: String, name: String, summary: String, fontDesign: FontDesign, light: Palette, dark: Palette) {
+    /// `package`, not `public`: kit 0.5.4 had no public initializer for `PreviewTheme` (every
+    /// instance was one of the four `static let`s below), and this slice adds no public API
+    /// (verifier finding, kit #127 review). Nothing outside the module constructs a `PreviewTheme`
+    /// directly.
+    package init(id: String, name: String, summary: String, fontDesign: FontDesign, light: Palette, dark: Palette) {
         self.id = id
         self.name = name
         self.summary = summary
