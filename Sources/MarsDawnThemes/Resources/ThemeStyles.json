@@ -1,0 +1,69 @@
+{
+  "h1Decoration": {
+    "none": [
+      { "selector": "h1", "declarations": [["border-bottom", "0"], ["padding-bottom", "0"]] }
+    ],
+    "shortRule": [
+      { "selector": "h1", "declarations": [["border-bottom", "0"], ["padding-bottom", "0"]] },
+      { "selector": "h1::after", "declarations": [
+        ["content", "\"\""], ["display", "block"], ["width", "48px"], ["height", "1px"],
+        ["margin", "0.5em auto 0"], ["background", "{{color}}"]
+      ] }
+    ],
+    "gradientBar": [
+      { "selector": "h1", "declarations": [
+        ["border-bottom", "0"], ["padding-bottom", "0.15em"],
+        ["background-image", "linear-gradient(90deg, {{from}}, {{to}})"],
+        ["background-size", "64px 4px"], ["background-repeat", "no-repeat"], ["background-position", "left bottom"]
+      ] }
+    ]
+  },
+  "h2Decoration": {
+    "none": [
+      { "selector": "h2", "declarations": [["border-bottom", "0"], ["padding-bottom", "0"]] }
+    ],
+    "dot": [
+      { "selector": "h2", "declarations": [["border-bottom", "0"], ["padding-bottom", "0"]] },
+      { "selector": "h2::before", "declarations": [
+        ["content", "\"\""], ["display", "inline-block"], ["width", "0.5em"], ["height", "0.5em"],
+        ["margin-right", "0.45em"], ["border-radius", "50%"], ["background", "{{color}}"],
+        ["vertical-align", "0.12em"]
+      ] }
+    ]
+  },
+  "blockquoteStyle": {
+    "bar": [
+      { "selector": "blockquote", "declarations": [["border-left-width", "{{width}}px"]] }
+    ],
+    "panel": [
+      { "selector": "blockquote", "declarations": [
+        ["border-left", "0"], ["padding", "0.6em 1em"], ["background", "var(--surface)"],
+        ["border-radius", "var(--radius)"], ["color", "var(--fg)"]
+      ] }
+    ]
+  },
+  "hrStyle": {
+    "shortCentered": [
+      { "selector": "hr", "declarations": [
+        ["height", "1px"], ["width", "30%"], ["margin", "2.4em auto"], ["background", "{{color}}"]
+      ] }
+    ],
+    "gradient": [
+      { "selector": "hr", "declarations": [
+        ["height", "4px"], ["border-radius", "2px"],
+        ["background", "linear-gradient(90deg, {{colors.0}}, {{colors.1}}, {{colors.2}})"]
+      ] }
+    ]
+  },
+  "tableHeader": {
+    "surface": [
+      { "selector": "th", "declarations": [["background", "var(--surface)"]] }
+    ],
+    "accentRule": [
+      { "selector": "th", "declarations": [["background", "transparent"], ["border-bottom", "2px solid {{color}}"]] }
+    ],
+    "filled": [
+      { "selector": "th", "declarations": [["background", "{{background}}"], ["color", "{{text}}"], ["border-color", "{{border}}"]] }
+    ]
+  }
+}
