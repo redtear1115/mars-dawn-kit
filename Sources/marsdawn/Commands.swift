@@ -272,13 +272,16 @@ func existingDirectory(_ path: String) throws -> URL {
     return url
 }
 
+/// `--theme` and `$MARSDAWN_THEME` resolve through the theme registry's built-ins only (kit #126,
+/// design §7.4): the CLI can't read the app's container without a privacy prompt, so it never
+/// loads installed themes, and it doesn't resolve them even if something in the process did.
 extension PreviewTheme: ExpressibleByArgument {
     public init?(argument: String) {
-        guard let theme = PreviewTheme.all.first(where: { $0.id == argument.lowercased() }) else { return nil }
+        guard let theme = ThemeRegistry.builtIns.themes.first(where: { $0.id == argument.lowercased() }) else { return nil }
         self = theme
     }
 
-    public static var allValueStrings: [String] { all.map(\.id) }
+    public static var allValueStrings: [String] { ThemeRegistry.builtIns.themes.map(\.id) }
     public var defaultValueDescription: String { id }
 }
 
