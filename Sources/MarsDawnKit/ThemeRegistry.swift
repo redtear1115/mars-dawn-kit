@@ -60,6 +60,15 @@ public final class ThemeRegistry: Sendable {
         state = OSAllocatedUnfairLock(initialState: Self.builtIns)
     }
 
+    /// A registry holding exactly `themes` and nothing else -- not even the built-ins -- for
+    /// `marsdawn theme preview` (kit #139): a page served from it has `themes.css` equal to those
+    /// themes' palette blocks and `preview.css` spliced with their rules alone, so a preview shows
+    /// the file's theme even when its id is a built-in's. Takes `ValidatedTheme` only, so nothing
+    /// reaches the served stylesheets without having passed `ThemeValidator`.
+    package init(serving themes: [ValidatedTheme]) {
+        state = OSAllocatedUnfairLock(initialState: Snapshot(themes: themes.map { PreviewTheme(validated: $0) }, partialIDs: []))
+    }
+
     /// The current snapshot. Immutable: a later `loadInstalled` replaces it, never changes it.
     package var snapshot: Snapshot { state.withLock { $0 } }
 
