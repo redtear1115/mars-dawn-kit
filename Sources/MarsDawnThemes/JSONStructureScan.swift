@@ -52,7 +52,7 @@ package enum JSONStructureScan {
             var raw: [UInt8] = []
             func flushRaw() throws(Failure) {
                 guard !raw.isEmpty else { return }
-                guard let text = String(validating: raw, as: UTF8.self) else { throw .malformed }
+                guard let text = String(bytes: raw, encoding: .utf8) else { throw .malformed } // iOS 17: no String(validating:)
                 scalars.append(contentsOf: text.unicodeScalars)
                 raw.removeAll()
             }
