@@ -1,0 +1,116 @@
+{
+  "schemaVersion": 1,
+  "id": "classic-copy",
+  "version": "1.0.0",
+  "name": {
+    "en": "Classic Copy"
+  },
+  "summary": {
+    "en": "Elegant serif on paper"
+  },
+  "fontDesign": "serif",
+  "scenarios": [
+    "formal-output"
+  ],
+  "light": {
+    "background": "#FCFCFB",
+    "surface": "#F2F2F0",
+    "text": "#1C1C1C",
+    "muted": "#5E5E5E",
+    "border": "#DDDDDB",
+    "heading": "#111111",
+    "accent": "#2E2E2E",
+    "link": "#1C1C1C",
+    "quote": "#8C8C8C",
+    "syntax": {
+      "keyword": "#1C1C1C",
+      "string": "#4D4D4D",
+      "comment": "#6A6A6A",
+      "number": "#3A3A3A",
+      "function": "#1C1C1C",
+      "type": "#3A3A3A"
+    },
+    "diagram": {
+      "node": "#F2F2F0",
+      "nodeBorder": "#5E5E5E",
+      "text": "#1C1C1C",
+      "line": "#6A6A6A",
+      "secondary": "#EAEAE8",
+      "tertiary": "#FCFCFB",
+      "note": "#F6F6F3"
+    }
+  },
+  "dark": {
+    "background": "#171717",
+    "surface": "#222222",
+    "text": "#E6E6E6",
+    "muted": "#A6A6A6",
+    "border": "#363636",
+    "heading": "#F2F2F2",
+    "accent": "#D4D4D4",
+    "link": "#EDEDED",
+    "quote": "#7C7C7C",
+    "syntax": {
+      "keyword": "#F2F2F2",
+      "string": "#C4C4C4",
+      "comment": "#9C9C9C",
+      "number": "#D4D4D4",
+      "function": "#F2F2F2",
+      "type": "#D4D4D4"
+    },
+    "diagram": {
+      "node": "#262626",
+      "nodeBorder": "#A6A6A6",
+      "text": "#E6E6E6",
+      "line": "#9C9C9C",
+      "secondary": "#202020",
+      "tertiary": "#1B1B1B",
+      "note": "#2B2B2B"
+    }
+  },
+  "style": {
+    "bodySize": 16,
+    "lineHeight": 1.75,
+    "headingWeight": 600,
+    "radius": 4,
+    "maxWidth": 720,
+    "h1": {
+      "align": "center",
+      "size": 2.2,
+      "letterSpacing": 0.01,
+      "decoration": {
+        "type": "shortRule",
+        "color": "accent"
+      }
+    },
+    "h2": {
+      "italic": true
+    },
+    "blockquote": {
+      "style": {
+        "type": "bar",
+        "width": 2
+      },
+      "italic": true
+    },
+    "hr": {
+      "style": {
+        "type": "shortCentered",
+        "color": "accent"
+      }
+    },
+    "table": {
+      "header": {
+        "type": "accentRule",
+        "color": "accent"
+      },
+      "verticalRules": false
+    },
+    "link": {
+      "underline": true
+    },
+    "syntax": {
+      "boldKeywords": true
+    }
+  }
+}

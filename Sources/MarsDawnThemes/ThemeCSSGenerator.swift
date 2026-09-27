@@ -1,66 +1,190 @@
 import Foundation
 
-/// Turns a `ThemeDocument`'s `style` (design §4.3) into the CSS a preview page needs: a block of
-/// `:root[data-theme="<id>"]` custom-property overrides, and a set of `[data-theme="<id>"] <selector>`
-/// rules. Every colour it emits is a palette `var(--…)`; every rule's selector is one of the fixed
-/// selectors the four built-ins' hand-written per-theme rules (kit `30d323c`,
-/// `Resources/Preview/preview.css` lines 301–383) already used, so the cascade — and the exact
-/// specificity of every replaced rule — is preserved (kit #124).
+/// Turns validated themes into the CSS a preview page needs (kit #124, hardened in #125):
 ///
-/// The complex, multi-declaration option values (the ones with pseudo-elements or more than one
-/// property) read their CSS shape from `ThemeStyles.json`, a single data file meant to be shared
-/// with the site's simulator (design §4.3) once that exists (#125/#126); the simple scalar options
-/// (sizes, weights, booleans) are generated directly, since a one-property rule needs no template.
+/// - the palette block: `:root[data-theme="<id>"] { --bg: …; … }` plus its dark-mode twin, served
+///   as `themes.css`;
+/// - the per-theme style rules: `:root[data-theme="<id>"]` custom-property overrides and
+///   `[data-theme="<id>"] <selector>` rules, spliced into `preview.css`.
+///
+/// Every colour a style rule emits is a palette `var(--…)`; every selector is one of the fixed
+/// selectors the four built-ins' hand-written 0.5.4 rules used, so the cascade -- and the exact
+/// specificity of every replaced rule -- is preserved.
+///
+/// **Only a `ValidatedTheme` gets in** (security review H1): the package API takes nothing else,
+/// and a `ValidatedTheme` can only come from `ThemeValidator`. The generator still re-checks what
+/// it writes (M1, L3): every id against `ThemeGrammar.isThemeID`, every colour against
+/// `ThemeGrammar.isHexColor`, every number against its option's range and step, and no unresolved
+/// `{{placeholder}}`. A value that fails refuses the whole theme -- nothing of it is emitted.
 package enum ThemeCSSGenerator {
     /// One property/value pair a fragment or a scalar option contributes to a selector.
     struct Declaration { let property: String; let value: String }
 
-    /// The variable-override block plus the per-theme rules for one theme, as `(selector,
-    /// declarations)` pairs in the order they were built. `selectors` is every selector a rule was
-    /// emitted for (before scoping), for tests that only need to check which elements are touched.
+    /// Why the generator refused a theme. Carries no attacker text: the field named is the
+    /// generator's own label for it, and `duplicateID` only ever holds an id that passed the
+    /// validator.
+    package enum Refusal: Error, Equatable, CustomStringConvertible {
+        case invalidID
+        case invalidColor(field: String)
+        case invalidNumber(field: String)
+        case unresolvedPlaceholder
+        case duplicateID(String)
+
+        package var description: String {
+            switch self {
+            case .invalidID: "the theme id is not a valid id"
+            case .invalidColor(let field): "\(field) is not a #RRGGBB colour"
+            case .invalidNumber(let field): "\(field) is outside its range or step"
+            case .unresolvedPlaceholder: "a style fragment has an unresolved placeholder"
+            case .duplicateID(let id): "two themes share the id \(id)"
+            }
+        }
+    }
+
+    /// The per-theme rules for one theme, and every selector a rule was emitted for (before
+    /// scoping), for tests that only need to check which elements are touched.
     package struct Output {
         package let css: String
         package let selectors: [String]
     }
 
-    /// Generates the `:root[data-theme="id"] { … }` variable block and every
-    /// `[data-theme="id"] <selector>` rule for `style`. Empty (no output at all) when `style` is
-    /// nil or sets nothing, matching a built-in that added no per-theme rules (kit `30d323c`'s Dawn).
-    package static func generate(id: String, style: ThemeStyle?) -> Output {
+    /// The whole theme CSS for a set of themes: `variables` is `themes.css`, `rules` is what gets
+    /// spliced into `preview.css`. Refuses a list in which two themes share an id (M3): the
+    /// second would silently restyle the first.
+    package static func stylesheet(for themes: [ValidatedTheme]) throws(Refusal) -> (variables: String, rules: String) {
+        var seen = Set<String>()
+        for theme in themes where !seen.insert(theme.id).inserted {
+            throw .duplicateID(theme.id)
+        }
+        var blocks: [String] = []
+        var rules = ""
+        for theme in themes {
+            blocks.append(try variables(for: theme))
+            rules += try checkedRules(id: theme.id, style: theme.document.style).css
+        }
+        return (blocks.joined(separator: "\n"), rules)
+    }
+
+    /// The palette block for one validated theme.
+    package static func variables(for theme: ValidatedTheme) throws(Refusal) -> String {
+        try variableBlock(id: theme.id, light: theme.light, dark: theme.dark, fontStack: theme.document.fontDesign.cssFontStack)
+    }
+
+    /// The per-theme style rules for one validated theme.
+    package static func rules(for theme: ValidatedTheme) throws(Refusal) -> Output {
+        try checkedRules(id: theme.id, style: theme.document.style)
+    }
+
+    // MARK: - Palette block
+
+    /// Byte-for-byte the block kit 0.5.4's `PreviewTheme.css` wrote. Internal: reachable only
+    /// through `variables(for:)`/`stylesheet(for:)` and the tests that feed it hostile values.
+    static func variableBlock(id: String, light: ResolvedPalette, dark: ResolvedPalette, fontStack: String) throws(Refusal) -> String {
+        guard ThemeGrammar.isThemeID(id) else { throw .invalidID }
+        for (mode, palette) in [("light", light), ("dark", dark)] {
+            for (field, value) in palette.fields where !ThemeGrammar.isHexColor(value) {
+                throw .invalidColor(field: "\(mode).\(field)")
+            }
+        }
+        func lines(_ palette: ResolvedPalette, fonts: String?) -> String {
+            var pairs = palette.cssVariables
+            if let fonts { pairs.append(("font-body", fonts)) }
+            return pairs.map { "  --\($0.name): \($0.value);" }.joined(separator: "\n")
+        }
+        return """
+        :root[data-theme="\(id)"] {
+        \(lines(light, fonts: fontStack))
+        }
+        @media (prefers-color-scheme: dark) {
+          :root[data-theme="\(id)"] {
+        \(lines(dark, fonts: nil))
+          }
+        }
+        """
+    }
+
+    // MARK: - Style rules
+
+    /// kit #124's entry point, kept internal for its tests: the same checks as `rules(for:)`, but
+    /// a refusal yields no CSS at all instead of an error.
+    static func generate(id: String, style: ThemeStyle?) -> Output {
+        (try? checkedRules(id: id, style: style)) ?? Output(css: "", selectors: [])
+    }
+
+    static func checkedRules(id: String, style: ThemeStyle?) throws(Refusal) -> Output {
+        guard ThemeGrammar.isThemeID(id) else { throw .invalidID }
         guard let style else { return Output(css: "", selectors: []) }
         var rules = OrderedRules()
+
+        func number(_ value: Double, _ option: ThemeNumber) throws(Refusal) -> String {
+            guard option.isAcceptable(value) else { throw .invalidNumber(field: option.rawValue) }
+            return ThemeNumber.css(value)
+        }
 
         // Root-scoped custom-property overrides (kit 30d323c: e.g. Classic's `--heading-weight`,
         // `--body-size`, `--line-height`, `--radius`).
         var vars: [(String, String)] = []
-        if let v = style.headingWeight { vars.append(("--heading-weight", cssNumber(v))) }
-        if let v = style.bodySize { vars.append(("--body-size", "\(cssNumber(v))px")) }
-        if let v = style.lineHeight { vars.append(("--line-height", cssNumber(v))) }
-        if let v = style.radius { vars.append(("--radius", "\(cssNumber(v))px")) }
+        if let v = style.headingWeight { vars.append(("--heading-weight", try number(v, .headingWeight))) }
+        if let v = style.bodySize { vars.append(("--body-size", "\(try number(v, .bodySize))px")) }
+        if let v = style.lineHeight { vars.append(("--line-height", try number(v, .lineHeight))) }
+        if let v = style.radius { vars.append(("--radius", "\(try number(v, .radius))px")) }
 
         if let v = style.maxWidth {
-            rules.add(".markdown-body", "max-width", "\(cssNumber(v))px")
+            rules.add(".markdown-body", "max-width", "\(try number(v, .maxWidth))px")
         }
         if let h1 = style.h1 {
             if let v = h1.align { rules.add("h1", "text-align", v.rawValue) }
-            if let v = h1.size { rules.add("h1", "font-size", "\(cssNumber(v))em") }
-            if let v = h1.letterSpacing { rules.add("h1", "letter-spacing", "\(cssNumber(v))em") }
-            if let decoration = h1.decoration { apply(decoration, to: &rules) }
+            if let v = h1.size { rules.add("h1", "font-size", "\(try number(v, .h1Size))em") }
+            if let v = h1.letterSpacing { rules.add("h1", "letter-spacing", "\(try number(v, .h1LetterSpacing))em") }
+            if let decoration = h1.decoration { try apply(decoration, to: &rules) }
         }
         if let h2 = style.h2 {
-            if let v = h2.letterSpacing { rules.add("h2", "letter-spacing", "\(cssNumber(v))em") }
+            if let v = h2.letterSpacing { rules.add("h2", "letter-spacing", "\(try number(v, .h2LetterSpacing))em") }
             if let v = h2.italic, v { rules.add("h2", "font-style", "italic") }
-            if let decoration = h2.decoration { apply(decoration, to: &rules) }
+            if let decoration = h2.decoration { try apply(decoration, to: &rules) }
         }
         if let bq = style.blockquote {
             if let v = bq.italic, v { rules.add("blockquote", "font-style", "italic") }
-            if let value = bq.style { apply(value, to: &rules) }
+            if let value = bq.style {
+                switch value {
+                case .bar(let width):
+                    let text = try number(width ?? 3, .blockquoteBarWidth)
+                    try rules.addFragments(for: "blockquoteStyle", value: "bar", params: ["width": text])
+                case .panel:
+                    try rules.addFragments(for: "blockquoteStyle", value: "panel", params: [:])
+                }
+            }
         }
         if let hr = style.hr, let value = hr.style {
-            apply(value, to: &rules)
+            switch value {
+            case .line(let color, let thickness):
+                // Handled directly, not through ThemeStyles.json: `thickness` is only emitted when
+                // the theme names one (kit 30d323c: Modern's `hr` override touched only
+                // `background`, leaving the shared rule's `height: 2px` alone).
+                if let thickness { rules.add("hr", "height", "\(try number(thickness, .hrThickness))px") }
+                rules.add("hr", "background", (color ?? .border).cssValue)
+            case .shortCentered(let color):
+                try rules.addFragments(for: "hrStyle", value: "shortCentered", params: ["color": color.cssValue])
+            case .gradient(let colors):
+                guard (2...3).contains(colors.count) else { throw .unresolvedPlaceholder }
+                try rules.addFragments(for: "hrStyle", value: "gradient", params: ["colors": colors.map(\.cssValue).joined(separator: ", ")])
+            }
         }
         if let table = style.table {
-            if let header = table.header { apply(header, to: &rules) }
+            if let header = table.header {
+                switch header {
+                case .surface:
+                    try rules.addFragments(for: "tableHeader", value: "surface", params: [:])
+                case .accentRule(let color):
+                    try rules.addFragments(for: "tableHeader", value: "accentRule", params: ["color": color.cssValue])
+                case .filled(let background, let text, let border):
+                    // kit #124 review: Vivid's `filled` header also sets `border-color`, defaulting
+                    // to the same role as `background` when the theme doesn't name one.
+                    try rules.addFragments(for: "tableHeader", value: "filled", params: [
+                        "background": background.cssValue, "text": text.cssValue, "border": (border ?? background).cssValue,
+                    ])
+                }
+            }
             if let v = table.verticalRules, !v {
                 rules.add("th, td", "border-left", "0")
                 rules.add("th, td", "border-right", "0")
@@ -85,84 +209,40 @@ package enum ThemeCSSGenerator {
             css += "\n}\n"
         }
         css += rules.render(scopedTo: id)
+        guard !css.contains("{{") else { throw .unresolvedPlaceholder }
         return Output(css: css, selectors: rules.selectorsInOrder)
     }
 
-    // MARK: - Shaped options (via ThemeStyles.json)
-
-    private static func apply(_ decoration: ThemeStyle.H1Decoration, to rules: inout OrderedRules) {
+    private static func apply(_ decoration: ThemeStyle.H1Decoration, to rules: inout OrderedRules) throws(Refusal) {
         switch decoration {
         case .rule: break // The default: the base `h1` rule already draws it. No override needed.
-        case .none: rules.addFragments(Fragments.shared.fragments(for: "h1Decoration", value: "none", params: [:]))
+        case .none: try rules.addFragments(for: "h1Decoration", value: "none", params: [:])
         case .shortRule(let color):
-            rules.addFragments(Fragments.shared.fragments(for: "h1Decoration", value: "shortRule", params: ["color": color.cssValue]))
+            try rules.addFragments(for: "h1Decoration", value: "shortRule", params: ["color": color.cssValue])
         case .gradientBar(let from, let to):
-            rules.addFragments(Fragments.shared.fragments(
-                for: "h1Decoration", value: "gradientBar", params: ["from": from.cssValue, "to": to.cssValue]
-            ))
+            try rules.addFragments(for: "h1Decoration", value: "gradientBar", params: ["from": from.cssValue, "to": to.cssValue])
         }
     }
 
-    private static func apply(_ decoration: ThemeStyle.H2Decoration, to rules: inout OrderedRules) {
+    private static func apply(_ decoration: ThemeStyle.H2Decoration, to rules: inout OrderedRules) throws(Refusal) {
         switch decoration {
         case .rule: break
-        case .none: rules.addFragments(Fragments.shared.fragments(for: "h2Decoration", value: "none", params: [:]))
+        case .none: try rules.addFragments(for: "h2Decoration", value: "none", params: [:])
         case .dot(let color):
-            rules.addFragments(Fragments.shared.fragments(for: "h2Decoration", value: "dot", params: ["color": color.cssValue]))
+            try rules.addFragments(for: "h2Decoration", value: "dot", params: ["color": color.cssValue])
         }
     }
+}
 
-    private static func apply(_ style: ThemeStyle.BlockquoteStyle, to rules: inout OrderedRules) {
-        switch style {
-        case .bar(let width):
-            rules.addFragments(Fragments.shared.fragments(
-                for: "blockquoteStyle", value: "bar", params: ["width": cssNumber(width ?? 3)]
-            ))
-        case .panel:
-            rules.addFragments(Fragments.shared.fragments(for: "blockquoteStyle", value: "panel", params: [:]))
+/// The CSS font stack for each font design (kit 0.5.4's `PreviewTheme.bodyFontStack`, moved here
+/// so the palette block is generated from a `ValidatedTheme` alone).
+extension ThemeFontDesign {
+    package var cssFontStack: String {
+        switch self {
+        case .sans: #"-apple-system, BlinkMacSystemFont, "Helvetica Neue", "PingFang TC", "PingFang SC", sans-serif"#
+        case .serif: #"ui-serif, "New York", Georgia, "Songti TC", "Songti SC", serif"#
+        case .rounded: #"ui-rounded, "SF Pro Rounded", -apple-system, "PingFang TC", "PingFang SC", sans-serif"#
         }
-    }
-
-    private static func apply(_ style: ThemeStyle.HrStyle, to rules: inout OrderedRules) {
-        switch style {
-        case .line(let color, let thickness):
-            // Handled directly, not through ThemeStyles.json: `thickness` is only emitted when the
-            // theme names one (kit 30d323c: Modern's `hr` override touched only `background`,
-            // leaving the shared rule's `height: 2px` alone -- emitting a redundant `height` would
-            // still compute the same, but it isn't what the hand-written rule said).
-            if let thickness { rules.add("hr", "height", "\(cssNumber(thickness))px") }
-            rules.add("hr", "background", (color ?? .border).cssValue)
-        case .shortCentered(let color):
-            rules.addFragments(Fragments.shared.fragments(for: "hrStyle", value: "shortCentered", params: ["color": color.cssValue]))
-        case .gradient(let colors):
-            var params: [String: String] = [:]
-            for (index, color) in colors.enumerated() { params["colors.\(index)"] = color.cssValue }
-            rules.addFragments(Fragments.shared.fragments(for: "hrStyle", value: "gradient", params: params))
-        }
-    }
-
-    private static func apply(_ header: ThemeStyle.TableHeader, to rules: inout OrderedRules) {
-        switch header {
-        case .surface:
-            rules.addFragments(Fragments.shared.fragments(for: "tableHeader", value: "surface", params: [:]))
-        case .accentRule(let color):
-            rules.addFragments(Fragments.shared.fragments(for: "tableHeader", value: "accentRule", params: ["color": color.cssValue]))
-        case .filled(let background, let text, let border):
-            // kit #124 review: Vivid's `filled` header also sets `border-color`, defaulting to
-            // the same role as `background` when the theme doesn't name one.
-            rules.addFragments(Fragments.shared.fragments(
-                for: "tableHeader", value: "filled",
-                params: ["background": background.cssValue, "text": text.cssValue, "border": (border ?? background).cssValue]
-            ))
-        }
-    }
-
-    static func cssNumber(_ value: Double) -> String {
-        if value == value.rounded() { return String(Int(value)) }
-        var text = String(format: "%.3f", value)
-        while text.hasSuffix("0") { text.removeLast() }
-        if text.hasSuffix(".") { text.removeLast() }
-        return text
     }
 }
 
@@ -176,10 +256,7 @@ private struct OrderedRules {
 
     /// `selector` may be a comma-separated list (e.g. `"th, td"`, `".hljs-keyword, .hljs-title"`):
     /// each part is scoped and recorded on its own, so `render` never has to scope a compound
-    /// selector as one string (which would only prefix its first part). Two options that touch
-    /// the same simple selector (say `th` from both a `table.header` value and `verticalRules`)
-    /// merge into the one rule that selector already has -- CSS gives the same computed result
-    /// either way, since the two never set the same property.
+    /// selector as one string (which would only prefix its first part).
     mutating func add(_ selector: String, _ property: String, _ value: String) {
         for part in selector.split(separator: ",").map({ $0.trimmingCharacters(in: .whitespaces) }) {
             if declarations[part] == nil {
@@ -190,10 +267,18 @@ private struct OrderedRules {
         }
     }
 
-    mutating func addFragments(_ fragments: [ThemeFragment]) {
-        for fragment in fragments {
-            for declaration in fragment.declarations {
-                add(fragment.selector, declaration.property, declaration.value)
+    /// Adds `ThemeStyles.json`'s fragments for an option value. A missing table or entry refuses
+    /// the theme rather than silently drawing it without that option.
+    mutating func addFragments(for option: String, value: String, params: [String: String]) throws(ThemeCSSGenerator.Refusal) {
+        guard let raw = ThemeStylesFile.shared?.fragments[option]?[value] else { throw .unresolvedPlaceholder }
+        for fragment in raw {
+            for pair in fragment.declarations {
+                guard pair.count == 2 else { throw .unresolvedPlaceholder }
+                var value = pair[1]
+                for (key, replacement) in params {
+                    value = value.replacingOccurrences(of: "{{\(key)}}", with: replacement)
+                }
+                add(fragment.selector, pair[0], value)
             }
         }
     }
@@ -206,60 +291,5 @@ private struct OrderedRules {
             let body = declarations[selector]!.map { "\($0.property): \($0.value);" }.joined(separator: " ")
             return "\(scoped) { \(body) }\n"
         }.joined()
-    }
-}
-
-/// One `{selector, declarations}` entry from `ThemeStyles.json`, after `{{placeholder}}`
-/// substitution. `declarations` keeps the file's own order, so generated CSS text is
-/// deterministic even though it's assembled from a JSON array of `[property, value]` pairs.
-struct ThemeFragment {
-    let selector: String
-    let declarations: [ThemeCSSGenerator.Declaration]
-}
-
-/// Reads and renders `ThemeStyles.json`'s CSS fragment templates. A `struct` holding only
-/// immutable, `Sendable` data, so `shared` needs no actor isolation.
-struct Fragments: Sendable {
-    static let shared = Fragments()
-
-    /// `declarations` is an array of two-element `[property, value]` arrays, not a JSON object:
-    /// a `[String: String]` would lose the order CSS properties were written in (Swift's
-    /// `Dictionary` doesn't preserve insertion order), which would make the generated stylesheet's
-    /// text non-deterministic between runs.
-    private struct RawFragment: Decodable { let selector: String; let declarations: [[String]] }
-    private let table: [String: [String: [RawFragment]]]
-
-    private init() {
-        guard let url = Bundle.module.url(forResource: "ThemeStyles", withExtension: "json"),
-              let data = try? Data(contentsOf: url),
-              let decoded = try? JSONDecoder().decode([String: [String: [RawFragment]]].self, from: data)
-        else {
-            table = [:]
-            return
-        }
-        table = decoded
-    }
-
-    /// `option` (e.g. `"h1Decoration"`), `value` (e.g. `"shortRule"`), and the placeholder values
-    /// to substitute (e.g. `["color": "var(--accent)"]`). Missing entries render as nothing rather
-    /// than crashing: a theme just gets no rule for that option, which a test can still catch by
-    /// checking the theme it broke.
-    func fragments(for option: String, value: String, params: [String: String]) -> [ThemeFragment] {
-        (table[option]?[value] ?? []).map { raw in
-            ThemeFragment(
-                selector: raw.selector,
-                declarations: raw.declarations.map { pair in
-                    .init(property: pair[0], value: substitute(pair[1], params: params))
-                }
-            )
-        }
-    }
-
-    private func substitute(_ template: String, params: [String: String]) -> String {
-        var result = template
-        for (key, value) in params {
-            result = result.replacingOccurrences(of: "{{\(key)}}", with: value)
-        }
-        return result
     }
 }
