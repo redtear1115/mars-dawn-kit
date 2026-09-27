@@ -156,7 +156,7 @@ struct ThemeValidateCLITests {
         // Help text wraps at the terminal width; compare with the wrapping taken out.
         let help = MarsDawnCommand.helpMessage().split(whereSeparator: \.isWhitespace).joined(separator: " ")
         #expect(help.contains("theme"))
-        #expect(help.contains("1 invalid theme (theme validate only)"))
+        #expect(help.contains("1 invalid theme (theme commands only)"))
         #expect(help.contains("2 input not found"))
     }
 

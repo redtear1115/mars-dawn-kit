@@ -14,11 +14,11 @@ struct MarsDawnCommand: AsyncParsableCommand {
         discussion: """
         export renders on its own and needs nothing else installed. open hands the files to the \
         MarsDawn app, so it needs the app, which is not publicly available yet.
-        Pass --json for machine-readable results. Exit codes: 0 success, 1 invalid theme (theme validate only), \
+        Pass --json for machine-readable results. Exit codes: 0 success, 1 invalid theme (theme commands only), \
         \(CLIFailure.Code.inputNotFound.rawValue) input not found, \
         \(CLIFailure.Code.appNotInstalled.rawValue) MarsDawn not installed (open only), \(CLIFailure.Code.outputExists.rawValue) output exists \
         (use --force), \(CLIFailure.Code.exportFailed.rawValue) export failed, \(CLIFailure.Code.appCannotOpenFolders.rawValue) this MarsDawn \
-        can't show a folder (open only), 64 usage error.
+        can't show a folder (open only), 64 usage error (including theme preview's refused -o).
         """,
         version: MarsDawnCLI.version,
         subcommands: [Open.self, Export.self, Skill.self, Theme.self]

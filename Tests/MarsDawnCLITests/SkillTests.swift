@@ -51,6 +51,9 @@ struct SkillTests {
         MarsDawnCommand.helpMessage(for: MarsDawnCommand.Export.self),
         MarsDawnCommand.helpMessage(for: MarsDawnCommand.Open.self),
         MarsDawnCommand.helpMessage(for: MarsDawnCommand.Skill.self),
+        MarsDawnCommand.helpMessage(for: MarsDawnCommand.Theme.Validate.self),
+        MarsDawnCommand.helpMessage(for: MarsDawnCommand.Theme.CSS.self),
+        MarsDawnCommand.helpMessage(for: MarsDawnCommand.Theme.Preview.self),
     ].joined(separator: "\n")
 
     /// Long options in `text` that the help doesn't list.
