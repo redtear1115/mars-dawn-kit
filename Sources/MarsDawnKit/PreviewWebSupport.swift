@@ -11,6 +11,11 @@ public final class PreviewSchemeHandler: NSObject, WKURLSchemeHandler {
     /// Generated from `PreviewTheme.all` rather than read from the bundle.
     nonisolated static let themesStylesheetName = "themes.css"
 
+    /// Where `preview.css`'s per-theme rules (kit #124) are spliced in, at the exact position the
+    /// hand-written rules occupied (see the marker's comment in `preview.css` for why the
+    /// position matters).
+    nonisolated static let themeRulesMarker = "/* MARSDAWN-GENERATED-THEME-RULES */"
+
     /// Content types for the file kinds the Preview folder holds, by lower-case extension.
     ///
     /// A fixed table, not `UTType(filenameExtension:)`: that has no answer for `woff2`
@@ -71,6 +76,14 @@ public final class PreviewSchemeHandler: NSObject, WKURLSchemeHandler {
         return Data(text.utf8)
     }
 
+    /// `preview.css` with every built-in's generated per-theme rules spliced in at the marker
+    /// (kit #124), keeping the cascade position the hand-written rules had.
+    nonisolated static func splicedPreviewCSS(_ css: Data) -> Data {
+        let text = String(decoding: css, as: UTF8.self)
+        guard text.contains(themeRulesMarker) else { return css }
+        return Data(text.replacingOccurrences(of: themeRulesMarker, with: PreviewTheme.generatedStyleCSS).utf8)
+    }
+
     private static let log = Logger(subsystem: "dev.southern-light.marsdawn-kit", category: "PreviewScheme")
 
     /// The bundled Preview folder, or nil if the bundle doesn't have it.
@@ -102,7 +115,13 @@ public final class PreviewSchemeHandler: NSObject, WKURLSchemeHandler {
             data = Data(PreviewTheme.stylesheet.utf8)
             pathExtension = "css"
         } else if let fileURL = resolve(requestURL), let contents = try? Data(contentsOf: fileURL) {
-            data = fileURL.lastPathComponent == "index.html" ? Self.page(contents, for: requestURL) : contents
+            if fileURL.lastPathComponent == "index.html" {
+                data = Self.page(contents, for: requestURL)
+            } else if fileURL.lastPathComponent == "preview.css" {
+                data = Self.splicedPreviewCSS(contents)
+            } else {
+                data = contents
+            }
             pathExtension = fileURL.pathExtension
         } else {
             urlSchemeTask.didFailWithError(URLError(.fileDoesNotExist))

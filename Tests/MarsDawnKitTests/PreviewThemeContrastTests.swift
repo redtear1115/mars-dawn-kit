@@ -113,12 +113,17 @@ struct PreviewThemeContrastTests {
         #expect(Contrast.mix("#000000", "#FFFFFF", 0.5) == "#808080")
     }
 
-    /// The per-theme rules the map above assumes are really in the stylesheet.
+    /// The per-theme rules the map above assumes are really in the stylesheet. kit #124: the
+    /// hand-written per-theme rules moved out of `preview.css` into `theme.json` + the generator,
+    /// so this now reads the *served* stylesheet -- `preview.css` with the generated rules
+    /// spliced in, exactly as `PreviewSchemeHandler` serves it -- rather than the file on disk,
+    /// keeping the contrast map tied to the rules actually drawn.
     @Test func theMapMatchesPreviewCSS() throws {
         let url = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("Sources/MarsDawnKit/Resources/Preview/preview.css")
-        let css = try String(contentsOf: url, encoding: .utf8)
+        let raw = try Data(contentsOf: url)
+        let css = String(decoding: PreviewSchemeHandler.splicedPreviewCSS(raw), as: UTF8.self)
         for rule in [
             #"[data-theme="dawn"] hr { height: 1px; background: var(--accent); }"#,
             #"[data-theme="modern"] hr { background: var(--quote); }"#,
