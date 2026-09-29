@@ -112,6 +112,27 @@ swift run marsdawn export notes.md -o notes.pdf --theme classic --paper a4
 .package(url: "https://github.com/redtear1115/mars-dawn-kit.git", exact: "0.6.1"),
 ```
 
+### Checking a theme before installing it (unreleased)
+
+`ThemeValidation.validate(data:)` checks the bytes of a `theme.json` the way
+`ThemeRegistry.loadInstalled` will: the size cap (`ThemeValidation.maxFileBytes`), every rule
+`marsdawn theme validate` applies, and the built-in ids, which an installed theme may not use
+(rule `id.reserved`). It only reads the bytes: no file, registry or stylesheet changes.
+
+```swift
+let result = ThemeValidation.validate(data: downloaded)
+if let id = result.themeID {
+    // install as <themes folder>/<id>/theme.json
+} else {
+    // result.issues: stable `rule` ids (schema.version, contrast.pair, …), a JSON `path`,
+    // and an English `message` for logs; show the user text keyed by `rule`.
+}
+```
+
+Rules that depend on the rest of the themes folder or on the host's lists aren't known from one
+file and aren't checked here. These are the folder name, two folders claiming one id, revoked ids
+and authors, and the install limit. `loadInstalled` still applies them.
+
 ## License
 
 Apache-2.0; see [LICENSE](LICENSE). Bundled Mermaid (MIT), highlight.js (BSD-3-Clause) and KaTeX (MIT) keep their own licenses; see [NOTICE](NOTICE).
