@@ -45,6 +45,16 @@ On success it exits 0 and prints one JSON line:
 
 If `diagramErrors` isn't empty, the PDF was still written: tell the user which diagrams failed.
 
+## Themes
+
+`marsdawn theme validate theme.json --json` checks a MarsDawn theme file with the app's own
+validator; exit 1 means invalid, with each problem under `issues`. `--require-complete` is the
+check for a theme to publish. `marsdawn theme css theme.json --json` prints the CSS the preview
+serves for a valid theme, as `variables` and `rules`. `marsdawn theme preview theme.json --appearance light -o preview.png`
+renders a sample document with the theme to a PNG (`--appearance light|dark`, `--width` 600–2000,
+default 1200; `--force` replaces an existing PNG). All three refuse a symlinked or oversized theme
+file, and an invalid theme exits 1 with its problems.
+
 ## Exit codes
 
 On failure with `--json` it prints `{"ok": false, "error": <kind>, "message": ...}`.
@@ -52,12 +62,13 @@ On failure with `--json` it prints `{"ok": false, "error": <kind>, "message": ..
 | Code | `error` | Meaning |
 |---|---|---|
 | 0 | — | Success. With --json, stdout is one JSON line. |
+| 1 | — | The theme isn't valid. Only the `theme` commands return this; with --json its problems are under `issues`. |
 | 2 | `input_not_found` | The input file isn't there. |
 | 3 | `app_not_installed` | MarsDawn isn't installed. Only `open` returns this. |
-| 4 | `output_exists` | The PDF already exists. Pass --force to replace it, or -o to write elsewhere. |
+| 4 | `output_exists` | The PDF (or `theme preview`'s PNG) already exists. Pass --force to replace it, or -o to write elsewhere. |
 | 5 | `export_failed` | Rendering failed. |
 | 6 | `app_cannot_open_folders` | This MarsDawn can't show a folder, so nothing was opened. Only `open` returns this. |
-| 64 | — | Usage error: a bad option or value. Printed as text on stderr, never as JSON. |
+| 64 | — | Usage error: a bad option or value. Printed as text on stderr, never as JSON, except `theme preview`'s refused -o (`output_folder_missing`, `output_symlink`, `output_not_a_file`). |
 
 ## Review: open what you wrote
 

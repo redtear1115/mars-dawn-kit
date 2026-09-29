@@ -66,8 +66,14 @@ jobs:
               MARSDAWN_APP_PATH=/nonexistent "$cli" export "$work/$doc.md" -o "$work/$doc-$config.pdf" --json
               head -c 5 "$work/$doc-$config.pdf" | grep -q '%PDF-'
             done
+            # theme css / theme preview (#139): the website's gallery renders previews on this
+            # runner image, so the real binary must render a PNG here, headless.
+            theme=Sources/MarsDawnThemes/Resources/Themes/vivid/theme.json
+            "$cli" theme css "$theme" --json | grep -q '"ok":true'
+            "$cli" theme preview "$theme" --appearance dark -o "$work/vivid-$config.png" --width 800 --json
+            test "$(head -c 8 "$work/vivid-$config.png" | xxd -p)" = 89504e470d0a1a0a
           done
-          echo "CLI exports fine in debug and release"
+          echo "CLI exports and theme previews fine in debug and release"
 
   version-matches-tag:
     # `marsdawn --version` is how a script decides whether a feature exists, so a build that

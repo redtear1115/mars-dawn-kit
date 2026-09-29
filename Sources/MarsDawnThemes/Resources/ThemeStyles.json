@@ -1,0 +1,221 @@
+{
+  "fragments": {
+    "h1Decoration": {
+      "none": [
+        { "selector": "h1", "declarations": [["border-bottom", "0"], ["padding-bottom", "0"]] }
+      ],
+      "shortRule": [
+        { "selector": "h1", "declarations": [["border-bottom", "0"], ["padding-bottom", "0"]] },
+        { "selector": "h1::after", "declarations": [
+          ["content", "\"\""], ["display", "block"], ["width", "48px"], ["height", "1px"],
+          ["margin", "0.5em auto 0"], ["background", "{{color}}"]
+        ] }
+      ],
+      "gradientBar": [
+        { "selector": "h1", "declarations": [
+          ["border-bottom", "0"], ["padding-bottom", "0.15em"],
+          ["background-image", "linear-gradient(90deg, {{from}}, {{to}})"],
+          ["background-size", "64px 4px"], ["background-repeat", "no-repeat"], ["background-position", "left bottom"]
+        ] }
+      ]
+    },
+    "h2Decoration": {
+      "none": [
+        { "selector": "h2", "declarations": [["border-bottom", "0"], ["padding-bottom", "0"]] }
+      ],
+      "dot": [
+        { "selector": "h2", "declarations": [["border-bottom", "0"], ["padding-bottom", "0"]] },
+        { "selector": "h2::before", "declarations": [
+          ["content", "\"\""], ["display", "inline-block"], ["width", "0.5em"], ["height", "0.5em"],
+          ["margin-right", "0.45em"], ["border-radius", "50%"], ["background", "{{color}}"],
+          ["vertical-align", "0.12em"]
+        ] }
+      ]
+    },
+    "blockquoteStyle": {
+      "bar": [
+        { "selector": "blockquote", "declarations": [["border-left-width", "{{width}}px"]] }
+      ],
+      "panel": [
+        { "selector": "blockquote", "declarations": [
+          ["border-left", "0"], ["padding", "0.6em 1em"], ["background", "var(--surface)"],
+          ["border-radius", "var(--radius)"], ["color", "var(--fg)"]
+        ] }
+      ]
+    },
+    "hrStyle": {
+      "shortCentered": [
+        { "selector": "hr", "declarations": [
+          ["height", "1px"], ["width", "30%"], ["margin", "2.4em auto"], ["background", "{{color}}"]
+        ] }
+      ],
+      "gradient": [
+        { "selector": "hr", "declarations": [
+          ["height", "4px"], ["border-radius", "2px"],
+          ["background", "linear-gradient(90deg, {{colors}})"]
+        ] }
+      ]
+    },
+    "tableHeader": {
+      "surface": [
+        { "selector": "th", "declarations": [["background", "var(--surface)"]] }
+      ],
+      "accentRule": [
+        { "selector": "th", "declarations": [["background", "transparent"], ["border-bottom", "2px solid {{color}}"]] }
+      ],
+      "filled": [
+        { "selector": "th", "declarations": [["background", "{{background}}"], ["color", "{{text}}"], ["border-color", "{{border}}"]] }
+      ]
+    }
+  },
+
+  "pairs": {
+    "_comment": "Composed colour pairs (design 4.5/6.3, kit #125). A pair is a foreground drawn on the background it actually sits on: kind text needs 4.5:1, nontext 3:1. Colour tokens are palette fields (background, surface, text, muted, border, heading, accent, link, quote), syntax fields (keyword, string, comment, number, function, type), diagram.<field>, or the derived chip (inline-code background), frontMatter, footnoteTarget and paper (#FFFFFF, PDF). css lists the preview.css declarations a pair accounts for, as 'selector|property'; mermaid lists the preview.js themeVariables it accounts for. A nontext pair whose foreground is border is a decorative hairline, which #152 exempts.",
+    "shared": [
+      { "id": "body-text", "element": "body text", "fg": "text", "bg": "background", "kind": "text", "baseline": true,
+        "css": ["html|background", "body|background", "body|color", ".math-block|color", ".math-inline|color"] },
+      { "id": "muted-text", "element": "muted text", "fg": "muted", "bg": "background", "kind": "text", "css": ["h6|color"] },
+      { "id": "headings", "element": "headings", "fg": "heading", "bg": "background", "kind": "text", "css": ["h1, h2, h3, h4, h5, h6|color"] },
+      { "id": "links", "element": "links", "fg": "link", "bg": "background", "kind": "text", "css": ["a|color"] },
+      { "id": "inline-code", "element": "inline code", "fg": "text", "bg": "chip", "kind": "text", "css": ["code|background"] },
+      { "id": "code-block-text", "element": "code block text", "fg": "text", "bg": "surface", "kind": "text", "css": ["pre|background", "pre code|color"] },
+      { "id": "syntax-keyword", "element": "syntax keyword in a code block", "fg": "keyword", "bg": "surface", "kind": "text",
+        "css": [".hljs-keyword, .hljs-literal, .hljs-selector-tag, .hljs-doctag, .hljs-template-tag, .hljs-deletion|color"] },
+      { "id": "syntax-string", "element": "syntax string in a code block", "fg": "string", "bg": "surface", "kind": "text",
+        "css": [".hljs-string, .hljs-regexp, .hljs-addition, .hljs-char.escape_|color"] },
+      { "id": "syntax-comment", "element": "syntax comment in a code block", "fg": "comment", "bg": "surface", "kind": "text",
+        "css": [".hljs-comment, .hljs-quote|color"] },
+      { "id": "syntax-number", "element": "syntax number in a code block", "fg": "number", "bg": "surface", "kind": "text",
+        "css": [".hljs-number, .hljs-symbol, .hljs-bullet, .hljs-link, .hljs-variable.constant_|color"] },
+      { "id": "syntax-function", "element": "syntax function in a code block", "fg": "function", "bg": "surface", "kind": "text",
+        "css": [".hljs-title, .hljs-section, .hljs-title.function_|color"] },
+      { "id": "syntax-type", "element": "syntax type in a code block", "fg": "type", "bg": "surface", "kind": "text",
+        "css": [".hljs-type, .hljs-built_in, .hljs-title.class_, .hljs-attr, .hljs-attribute, .hljs-selector-class, .hljs-selector-id, .hljs-params|color"] },
+      { "id": "syntax-meta", "element": "syntax meta in a code block", "fg": "muted", "bg": "surface", "kind": "text",
+        "css": [".hljs-meta, .hljs-meta .hljs-keyword|color"] },
+      { "id": "table-header", "element": "table header", "fg": "text", "bg": "surface", "kind": "text", "css": ["th|background"] },
+      { "id": "table-cell", "element": "table cell", "fg": "text", "bg": "background", "kind": "text" },
+      { "id": "blockquote-text", "element": "blockquote text", "fg": "muted", "bg": "background", "kind": "text", "css": ["blockquote|color"] },
+      { "id": "front-matter-label", "element": "front matter label", "fg": "muted", "bg": "frontMatter", "kind": "text",
+        "css": [".front-matter|background", ".front-matter|color", "details.front-matter th|color"] },
+      { "id": "front-matter-value", "element": "front matter value", "fg": "text", "bg": "frontMatter", "kind": "text",
+        "css": ["details.front-matter td|color"] },
+      { "id": "banner-text", "element": "banner and placeholder text", "fg": "muted", "bg": "surface", "kind": "text", "notice": true,
+        "css": [".image-placeholder|background", ".image-placeholder|color", ".remote-images-bar|background", ".remote-images-bar|color"] },
+      { "id": "banner-button", "element": "banner button", "fg": "background", "bg": "accent", "kind": "text", "notice": true,
+        "css": [".remote-images-bar button|color", ".remote-images-bar button|background", ".image-placeholder button|color", ".image-placeholder button|background"] },
+      { "id": "error-text", "element": "math and diagram errors", "fg": "keyword", "bg": "background", "kind": "text", "notice": true,
+        "css": [".mermaid-error|color", ".math-error|color"] },
+      { "id": "footnote-target", "element": "body text on a footnote highlight", "fg": "text", "bg": "footnoteTarget", "kind": "text", "baseline": true,
+        "css": [".footnotes li:target, .footnote-ref a:target|background"] },
+      { "id": "diagram-label-node", "element": "diagram label on node", "fg": "diagram.text", "bg": "diagram.node", "kind": "text",
+        "mermaid": ["primaryColor", "primaryTextColor", "mainBkg", "actorBkg", "actorTextColor", "labelBoxBkgColor", "labelTextColor"] },
+      { "id": "diagram-label-secondary", "element": "diagram label on secondary", "fg": "diagram.text", "bg": "diagram.secondary", "kind": "text",
+        "mermaid": ["secondaryColor", "secondaryTextColor", "activationBkgColor"] },
+      { "id": "diagram-label-tertiary", "element": "diagram label on tertiary", "fg": "diagram.text", "bg": "diagram.tertiary", "kind": "text",
+        "mermaid": ["tertiaryColor", "tertiaryTextColor"] },
+      { "id": "diagram-label-note", "element": "diagram label on note", "fg": "diagram.text", "bg": "diagram.note", "kind": "text",
+        "mermaid": ["noteBkgColor", "noteTextColor"] },
+      { "id": "diagram-label-edge", "element": "diagram label on edge label", "fg": "diagram.text", "bg": "background", "kind": "text",
+        "css": [".mermaid-output .messageText|stroke"],
+        "mermaid": ["background", "edgeLabelBackground", "textColor", "loopTextColor", "signalColor", "signalTextColor"] },
+      { "id": "diagram-cluster-label", "element": "diagram cluster label", "fg": "heading", "bg": "diagram.tertiary", "kind": "text",
+        "mermaid": ["clusterBkg"] },
+      { "id": "diagram-title", "element": "diagram title", "fg": "heading", "bg": "background", "kind": "text",
+        "mermaid": ["titleColor", "pieTitleTextColor"] },
+      { "id": "sequence-number", "element": "sequence number", "fg": "background", "bg": "diagram.text", "kind": "text",
+        "mermaid": ["sequenceNumberColor"] },
+      { "id": "pie-label-1", "element": "pie slice 1 label", "fg": "background", "bg": "accent", "kind": "text", "mermaid": ["pieSectionTextColor"] },
+      { "id": "pie-label-2", "element": "pie slice 2 label", "fg": "background", "bg": "function", "kind": "text" },
+      { "id": "pie-label-3", "element": "pie slice 3 label", "fg": "background", "bg": "string", "kind": "text" },
+      { "id": "pie-label-4", "element": "pie slice 4 label", "fg": "background", "bg": "number", "kind": "text" },
+      { "id": "pie-label-5", "element": "pie slice 5 label", "fg": "background", "bg": "type", "kind": "text" },
+      { "id": "pie-label-6", "element": "pie slice 6 label", "fg": "background", "bg": "link", "kind": "text" },
+      { "id": "pie-slice-1", "element": "pie slice 1", "fg": "accent", "bg": "background", "kind": "nontext", "mermaid": ["pie1", "git0"] },
+      { "id": "pie-slice-2", "element": "pie slice 2", "fg": "function", "bg": "background", "kind": "nontext", "mermaid": ["pie2", "git1"] },
+      { "id": "pie-slice-3", "element": "pie slice 3", "fg": "string", "bg": "background", "kind": "nontext", "mermaid": ["pie3", "git2"] },
+      { "id": "pie-slice-4", "element": "pie slice 4", "fg": "number", "bg": "background", "kind": "nontext", "mermaid": ["pie4", "git3"] },
+      { "id": "pie-slice-5", "element": "pie slice 5", "fg": "type", "bg": "background", "kind": "nontext", "mermaid": ["pie5"] },
+      { "id": "pie-slice-6", "element": "pie slice 6", "fg": "link", "bg": "background", "kind": "nontext", "mermaid": ["pie6"] },
+      { "id": "pdf-text", "element": "PDF text on white paper", "fg": "text", "bg": "paper", "kind": "text", "modes": ["light"] },
+      { "id": "pdf-muted", "element": "PDF muted on white paper", "fg": "muted", "bg": "paper", "kind": "text", "modes": ["light"] },
+      { "id": "pdf-headings", "element": "PDF headings on white paper", "fg": "heading", "bg": "paper", "kind": "text", "modes": ["light"] },
+      { "id": "pdf-links", "element": "PDF links on white paper", "fg": "link", "bg": "paper", "kind": "text", "modes": ["light"] },
+      { "id": "list-marker", "element": "list marker", "fg": "accent", "bg": "background", "kind": "nontext", "css": ["li::marker|color"] },
+      { "id": "task-checkbox", "element": "task checkbox", "fg": "accent", "bg": "background", "kind": "nontext", "css": [".task-list-item input|accent-color"] },
+      { "id": "blockquote-bar", "element": "blockquote bar", "fg": "quote", "bg": "background", "kind": "nontext", "css": ["blockquote|border-left"] },
+      { "id": "diagram-lines", "element": "diagram lines", "fg": "diagram.line", "bg": "background", "kind": "nontext",
+        "mermaid": ["lineColor", "actorLineColor"] },
+      { "id": "diagram-node-border", "element": "diagram node border", "fg": "diagram.nodeBorder", "bg": "diagram.node", "kind": "nontext",
+        "mermaid": ["primaryBorderColor", "secondaryBorderColor", "tertiaryBorderColor", "nodeBorder", "noteBorderColor", "actorBorder", "labelBoxBorderColor", "activationBorderColor"] }
+    ],
+    "decorative": [
+      { "reason": "--border hairlines: rules, underlines, grid lines and edges (#152: the text carries the structure, WCAG 1.4.11)",
+        "css": ["h1|border-bottom", "h2|border-bottom", "hr|background", ".footnotes|border-top", ":not(pre) > code|box-shadow",
+                ".front-matter|border", "details.front-matter th, details.front-matter td|border-top", ".front-matter pre|border",
+                "th, td|border", ".image-placeholder|border", ".remote-images-bar|border-bottom"],
+        "mermaid": ["clusterBorder"] },
+      { "reason": "a stroke in the page colour that separates pie slices; it carries no information",
+        "mermaid": ["pieStrokeColor"] }
+    ],
+    "options": {
+      "h1Decoration": {
+        "none": { "pairs": [] },
+        "shortRule": { "pairs": [
+          { "element": "h1 short rule", "fg": "{{color}}", "bg": "background", "kind": "nontext" }
+        ] },
+        "gradientBar": { "pairs": [
+          { "element": "h1 gradient bar start", "fg": "{{from}}", "bg": "background", "kind": "nontext" },
+          { "element": "h1 gradient bar end", "fg": "{{to}}", "bg": "background", "kind": "nontext" }
+        ] }
+      },
+      "h2Decoration": {
+        "none": { "pairs": [] },
+        "dot": { "pairs": [
+          { "element": "h2 dot", "fg": "{{color}}", "bg": "background", "kind": "nontext" }
+        ] }
+      },
+      "blockquoteStyle": {
+        "bar": { "pairs": [] },
+        "panel": { "replaces": ["blockquote-text", "blockquote-bar"], "pairs": [
+          { "element": "blockquote text on its panel", "fg": "text", "bg": "surface", "kind": "text" },
+          { "element": "link in a panel quote", "fg": "link", "bg": "surface", "kind": "text" },
+          { "element": "marker, checkbox or rule in a panel quote", "fg": "accent", "bg": "surface", "kind": "nontext" }
+        ] }
+      },
+      "hrStyle": {
+        "line": { "pairs": [
+          { "element": "rule", "fg": "{{color}}", "bg": "background", "kind": "nontext" }
+        ] },
+        "shortCentered": { "pairs": [
+          { "element": "rule", "fg": "{{color}}", "bg": "background", "kind": "nontext" }
+        ] },
+        "gradient": { "pairs": [
+          { "element": "rule gradient stop", "fg": "{{colors}}", "bg": "background", "kind": "nontext" }
+        ] }
+      },
+      "tableHeader": {
+        "surface": { "replaces": ["table-header"], "pairs": [
+          { "element": "table header", "fg": "text", "bg": "surface", "kind": "text" }
+        ] },
+        "accentRule": { "replaces": ["table-header"], "pairs": [
+          { "element": "table header", "fg": "text", "bg": "background", "kind": "text" },
+          { "element": "table header rule", "fg": "{{color}}", "bg": "background", "kind": "nontext" }
+        ] },
+        "filled": { "replaces": ["table-header"], "decorative": ["{{border}}"], "pairs": [
+          { "element": "filled table header", "fg": "{{text}}", "bg": "{{background}}", "kind": "text" }
+        ] }
+      },
+      "listMarker": {
+        "role": { "replaces": ["list-marker"], "pairs": [
+          { "element": "list marker", "fg": "{{color}}", "bg": "background", "kind": "nontext" }
+        ] }
+      },
+      "inlineCode": {
+        "role": { "pairs": [
+          { "element": "inline code (coloured)", "fg": "{{color}}", "bg": "chip", "kind": "text" }
+        ] }
+      }
+    }
+  }
+}

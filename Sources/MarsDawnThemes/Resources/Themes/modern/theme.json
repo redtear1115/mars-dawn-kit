@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "id": "modern",
+  "version": "1.0.0",
+  "name": { "en": "Modern" },
+  "summary": { "en": "Clean and familiar" },
+  "fontDesign": "sans",
+  "scenarios": ["technical-docs"],
+  "light": {
+    "background": "#FFFFFF", "surface": "#F6F8FA", "text": "#1F2328", "muted": "#59636E",
+    "border": "#D1D9E0", "heading": "#1F2328", "accent": "#0969DA", "link": "#0969DA", "quote": "#8C939A",
+    "syntax": { "keyword": "#CF222E", "string": "#0A3069", "comment": "#59636E", "number": "#0550AE", "function": "#8250DF", "type": "#953800" },
+    "diagram": { "node": "#EEF4FC", "nodeBorder": "#0969DA", "text": "#1F2328", "line": "#59636E", "secondary": "#F1ECFB", "tertiary": "#F6F8FA", "note": "#FFF8C5" }
+  },
+  "dark": {
+    "background": "#0D1117", "surface": "#151B23", "text": "#E6EDF3", "muted": "#9198A1",
+    "border": "#30363D", "heading": "#F0F6FC", "accent": "#4493F8", "link": "#4493F8", "quote": "#5B636C",
+    "syntax": { "keyword": "#FF7B72", "string": "#A5D6FF", "comment": "#9198A1", "number": "#79C0FF", "function": "#D2A8FF", "type": "#FFA657" },
+    "diagram": { "node": "#172233", "nodeBorder": "#4493F8", "text": "#E6EDF3", "line": "#9198A1", "secondary": "#221B33", "tertiary": "#151B23", "note": "#2E2A12" }
+  },
+  "style": {
+    "headingWeight": 700,
+    "radius": 6,
+    "h1": { "letterSpacing": -0.015 },
+    "h2": { "letterSpacing": -0.015 },
+    "blockquote": { "style": { "type": "bar", "width": 4 } },
+    "hr": { "style": { "type": "line", "color": "quote" } },
+    "listMarker": "muted"
+  }
+}

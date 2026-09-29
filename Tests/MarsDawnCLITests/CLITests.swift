@@ -3,6 +3,7 @@ import AppKit
 import ArgumentParser
 import Foundation
 import MarsDawnKit
+import MarsDawnThemes
 import Testing
 @testable import marsdawn
 
@@ -37,6 +38,36 @@ struct CLITests {
     @Test func rejectsUnknownThemesAndPapers() {
         #expect(throws: (any Error).self) { try MarsDawnCommand.Export.parse(["plan.md", "--theme", "neon"]) }
         #expect(throws: (any Error).self) { try MarsDawnCommand.Export.parse(["plan.md", "--paper", "a5"]) }
+    }
+
+    /// kit #126 (design §7.4): `--theme` and `$MARSDAWN_THEME` resolve through the registry's
+    /// built-ins only. An installed theme the process registry does hold (positive fixture: it
+    /// resolves through `PreviewTheme.named`) is still not a `--theme` value, and the built-ins
+    /// resolve to exactly the same themes as before.
+    @Test func themeResolvesBuiltInsOnlyEvenWhenTheProcessHasInstalledThemes() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("cli-themes-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let dawn = try String(contentsOf: #require(ThemeDocumentLoader.builtInURL(id: "dawn")), encoding: .utf8)
+        try FileManager.default.createDirectory(at: folder.appendingPathComponent("olympus-dusk"), withIntermediateDirectories: true)
+        try Data(dawn.replacingOccurrences(of: #""id": "dawn""#, with: #""id": "olympus-dusk""#).utf8)
+            .write(to: folder.appendingPathComponent("olympus-dusk/theme.json"))
+        let registry = ThemeRegistry()
+        #expect(registry.loadInstalled(from: folder).map(\.id) == ["olympus-dusk"])
+
+        try ThemeRegistry.$override.withValue(registry) {
+            #expect(PreviewTheme.named("olympus-dusk").id == "olympus-dusk", "positive fixture: the process registry has it")
+            #expect(PreviewTheme.all.map(\.id).contains("olympus-dusk"))
+
+            #expect(throws: (any Error).self) { try MarsDawnCommand.Export.parse(["plan.md", "--theme", "olympus-dusk"]) }
+            #expect(PreviewTheme(argument: "olympus-dusk") == nil)
+            let command = try MarsDawnCommand.Export.parse(["plan.md"])
+            #expect(command.resolvedTheme(environment: ["MARSDAWN_THEME": "olympus-dusk"]) == .dawn)
+            #expect(PreviewTheme.allValueStrings == ["dawn", "classic", "modern", "vivid"])
+            for builtIn in [PreviewTheme.dawn, .classic, .modern, .vivid] {
+                #expect(PreviewTheme(argument: builtIn.id) == builtIn)
+                #expect(try MarsDawnCommand.Export.parse(["plan.md", "--theme", builtIn.id]).resolvedTheme(environment: [:]) == builtIn)
+            }
+        }
     }
 
     @Test func missingInputIsReportedBeforeAnythingElse() {

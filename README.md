@@ -58,6 +58,31 @@ swift run marsdawn export notes.md -o notes.pdf --theme classic --paper a4
     line — `fenceLine` plus Mermaid's line number from its message — present only when Mermaid's
     message names one, which not every error does).
   - It renders on its own: the MarsDawn app does not have to be installed. Only `open` needs the app.
+- `theme validate <file> [--require-complete] [--json]` checks a `theme.json` against every rule
+  a MarsDawn theme must meet, the same validator the app uses: exit `0` valid, `1` invalid (each
+  problem listed with its rule id; under `issues` in `--json`). Only a regular file of at most
+  16 KB is read: a symlink, a folder, a FIFO or a device is refused without being opened.
+  `--require-complete` also requires the syntax and diagram colours, as a published theme must have.
+- `theme css <file> [--json]` prints the CSS the preview serves for a valid theme, byte for byte:
+  its palette block (`:root[data-theme="<id>"]` light variables, and the dark ones under
+  `prefers-color-scheme: dark`), then its generated style rules, all scoped to its id. `--json`
+  prints `{"ok": true, "id", "variables", "rules"}`: `variables` is the theme's block of the served
+  `themes.css`, `rules` its part of the rules spliced into `preview.css` (empty for a theme with no
+  style options), each exactly as served. The file is read and validated exactly as `theme validate`
+  does, and an invalid one gets the same output and exit code `1`.
+- `theme preview <file> --appearance light|dark -o out.png [--width N] [--force] [--json]` renders
+  the kit's fixed sample document (headings, lists, a quote, a table, code, a Mermaid diagram, math
+  and a rule) with a theme to a PNG, offscreen, through the same WebKit page `export` uses, with web
+  content off: it loads nothing from the network.
+  - The theme is validated first, exactly as `theme validate` does; an invalid one exits `1` and
+    nothing is written.
+  - The PNG is `--width` pixels wide (`600`–`2000`, default `1200`) and as tall as the sample, at
+    most `8000`.
+  - `-o` must name a file in a folder that exists. A symlink there is never followed or replaced,
+    and anything else that isn't a regular file is refused, `--force` included (exit `64`,
+    `output_symlink`, `output_not_a_file` or `output_folder_missing` in `--json`). An existing file
+    is only replaced with `--force` (otherwise exit `4`).
+  - `--json` prints `ok`, `output`, `id`, `appearance`, `width` and `height`.
 - `skill [--install] [--dir PATH] [--force] [--json]` prints the agent skill (`SKILL.md`) that
   matches this version of `marsdawn` — the same text as [skill/SKILL.md](skill/SKILL.md), never one
   describing an option the installed CLI lacks.
@@ -75,7 +100,7 @@ swift run marsdawn export notes.md -o notes.pdf --theme classic --paper a4
     (`"installed"`, `"unchanged"` or `"replaced"`).
 - `--version` prints the release number and nothing else, so a package manager can compare it against its own. Bumping it is part of cutting a release; see [RELEASING.md](RELEASING.md).
 - `--generate-completion-script bash|zsh|fish` writes a shell completion script to stdout.
-- Exit codes: 2 input not found, 3 MarsDawn not installed (`open` only), 4 output exists, 5 export failed, 6 this MarsDawn can't take a folder (`open` only), 64 usage error (including `skill --install`'s `skill_differs` and `skill_unsafe_symlink`, and `open --wait`'s `wait_out_of_range`).
+- Exit codes: 1 invalid theme (`theme` commands only), 2 input not found, 3 MarsDawn not installed (`open` only), 4 output exists, 5 export failed, 6 this MarsDawn can't take a folder (`open` only), 64 usage error (including `skill --install`'s `skill_differs` and `skill_unsafe_symlink`, `open --wait`'s `wait_out_of_range`, and `theme preview`'s `output_folder_missing`, `output_symlink` and `output_not_a_file`).
 - `MARSDAWN_APP_PATH` overrides where the tool looks for the MarsDawn app. It exists for testing, so
   it's only honoured for a bundle whose `CFBundleIdentifier` is `dev.southern-light.marsdawn` or
   starts with `dev.southern-light.marsdawn.` (a throwaway verification copy); anything else is
@@ -84,7 +109,7 @@ swift run marsdawn export notes.md -o notes.pdf --theme classic --paper a4
 ## Use as a package
 
 ```swift
-.package(url: "https://github.com/redtear1115/mars-dawn-kit.git", exact: "0.5.4"),
+.package(url: "https://github.com/redtear1115/mars-dawn-kit.git", exact: "0.6.1"),
 ```
 
 ## License

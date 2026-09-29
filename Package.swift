@@ -19,9 +19,17 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.5.0"),
     ],
     targets: [
+        // Platform-neutral theme data: schema, style-option vocabulary and the CSS generator.
+        // Foundation only -- no WebKit/AppKit -- so it (and a future validator, #125) can build on
+        // Linux for the website's simulator/CI.
+        .target(
+            name: "MarsDawnThemes",
+            resources: [.copy("Resources/Themes"), .process("Resources/ThemeStyles.json")]
+        ),
         .target(
             name: "MarsDawnKit",
             dependencies: [
+                "MarsDawnThemes",
                 .product(name: "Markdown", package: "swift-markdown"),
                 .product(name: "cmark-gfm", package: "swift-cmark"),
                 .product(name: "cmark-gfm-extensions", package: "swift-cmark"),
@@ -42,6 +50,7 @@ let package = Package(
             name: "MarsDawnKitTests",
             dependencies: [
                 "MarsDawnKit",
+                "MarsDawnThemes",
                 .product(name: "cmark-gfm", package: "swift-cmark"),
                 .product(name: "cmark-gfm-extensions", package: "swift-cmark"),
             ]
@@ -52,5 +61,13 @@ let package = Package(
             resources: [.copy("MermaidCorpus")]
         ),
         .testTarget(name: "MarsDawnCLITests", dependencies: ["marsdawn"]),
+        // The validator's own tests (kit #125): Foundation only, like MarsDawnThemes itself, so a
+        // runner without WebKit could run them. The fixtures are one valid theme per case and one
+        // invalid theme per rule.
+        .testTarget(
+            name: "MarsDawnThemesTests",
+            dependencies: ["MarsDawnThemes"],
+            resources: [.copy("ThemeFixtures")]
+        ),
     ]
 )

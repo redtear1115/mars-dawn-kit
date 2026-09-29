@@ -4,6 +4,7 @@ import ArgumentParser
 import Foundation
 import MarsDawnExport
 import MarsDawnKit
+import MarsDawnThemes
 
 /// `marsdawn`: open Markdown in MarsDawn, or export it to PDF, from a shell or an LLM agent.
 struct MarsDawnCommand: AsyncParsableCommand {
@@ -13,13 +14,14 @@ struct MarsDawnCommand: AsyncParsableCommand {
         discussion: """
         export renders on its own and needs nothing else installed. open hands the files to the \
         MarsDawn app, so it needs the app, which is not publicly available yet.
-        Pass --json for machine-readable results. Exit codes: 0 success, \(CLIFailure.Code.inputNotFound.rawValue) input not found, \
+        Pass --json for machine-readable results. Exit codes: 0 success, 1 invalid theme (theme commands only), \
+        \(CLIFailure.Code.inputNotFound.rawValue) input not found, \
         \(CLIFailure.Code.appNotInstalled.rawValue) MarsDawn not installed (open only), \(CLIFailure.Code.outputExists.rawValue) output exists \
         (use --force), \(CLIFailure.Code.exportFailed.rawValue) export failed, \(CLIFailure.Code.appCannotOpenFolders.rawValue) this MarsDawn \
-        can't show a folder (open only), 64 usage error.
+        can't show a folder (open only), 64 usage error (including theme preview's refused -o).
         """,
         version: MarsDawnCLI.version,
-        subcommands: [Open.self, Export.self, Skill.self]
+        subcommands: [Open.self, Export.self, Skill.self, Theme.self]
     )
 }
 
@@ -102,6 +104,7 @@ func cliExitCode(for error: Error) -> Int32 {
     if let failure = error as? CLIFailure { return failure.code.rawValue }
     if error is WaitRangeFailure { return WaitRangeFailure.exitCode }
     if error is SkillInstallFailure { return SkillInstallFailure.exitCode }
+    if error is OutputPathFailure { return OutputPathFailure.exitCode }
     return MarsDawnCommand.exitCode(for: error).rawValue
 }
 
@@ -270,13 +273,16 @@ func existingDirectory(_ path: String) throws -> URL {
     return url
 }
 
+/// `--theme` and `$MARSDAWN_THEME` resolve through the theme registry's built-ins only (kit #126,
+/// design §7.4): the CLI can't read the app's container without a privacy prompt, so it never
+/// loads installed themes, and it doesn't resolve them even if something in the process did.
 extension PreviewTheme: ExpressibleByArgument {
     public init?(argument: String) {
-        guard let theme = PreviewTheme.all.first(where: { $0.id == argument.lowercased() }) else { return nil }
+        guard let theme = ThemeRegistry.builtIns.themes.first(where: { $0.id == argument.lowercased() }) else { return nil }
         self = theme
     }
 
-    public static var allValueStrings: [String] { all.map(\.id) }
+    public static var allValueStrings: [String] { ThemeRegistry.builtIns.themes.map(\.id) }
     public var defaultValueDescription: String { id }
 }
 
@@ -685,6 +691,430 @@ extension MarsDawnCommand {
                 text: text
             )
         }
+    }
+}
+
+// MARK: - theme validate
+
+extension MarsDawnCommand {
+    struct Theme: ParsableCommand {
+        static let configuration = CommandConfiguration(
+            abstract: "Work with MarsDawn theme files.",
+            subcommands: [Validate.self, CSS.self, Preview.self]
+        )
+
+        struct Validate: ParsableCommand {
+            static let configuration = CommandConfiguration(
+                abstract: "Check a theme.json against every rule a MarsDawn theme must meet.",
+                discussion: """
+                Runs the same validator the app uses when it installs a theme: the schema, colours, \
+                numbers and style options, display strings, the contrast of every colour pair the \
+                preview draws, and the thresholds of the scenarios the theme declares. \
+                --require-complete is the check for publishing a theme: the syntax and diagram \
+                colours, optional otherwise (the app fills them from Dawn), must all be in the file. \
+                Exit codes: 0 valid, 1 invalid (each problem is listed with its rule id), \
+                \(CLIFailure.Code.inputNotFound.rawValue) input not found, 64 usage error. Only a \
+                regular file of at most \(ThemeValidator.maxFileBytes) bytes is read: a symlink, a \
+                folder, a FIFO or a device is refused without being opened.
+                """
+            )
+
+            @Argument(help: ArgumentHelp("The theme.json to check.", valueName: "file"))
+            var file: String
+
+            @Flag(help: "Require every colour group (syntax and diagram) in the file, as a published theme must have.")
+            var requireComplete = false
+
+            @OptionGroup var output: OutputOptions
+
+            func run() throws {
+                let status = try Self.run(path: file, json: output.json, requireComplete: requireComplete)
+                if status != 0 { throw ExitCode(status) }
+            }
+
+            /// The command's logic with its output sink as a parameter (as `Skill.run`), so tests
+            /// can read what it prints without touching the process's stdout. A missing file throws
+            /// the CLI-wide `input_not_found` (exit 2), like every other command; anything else wrong
+            /// with the file or its content is a validation result (exit 1).
+            static func run(path: String, json: Bool, requireComplete: Bool = false, write: (String) -> Void = { print($0) }) throws -> Int32 {
+                let report = try ThemeInput.validate(path: path, requireComplete: requireComplete)
+                if json {
+                    write(ThemeValidateOutput(report).jsonText)
+                } else if let theme = report.theme {
+                    write("valid: \(theme.id)")
+                } else {
+                    ThemeInput.writeInvalid(report, json: false, write: write)
+                }
+                return report.theme == nil ? 1 : 0
+            }
+        }
+    }
+}
+
+/// The one way every `theme` subcommand gets a theme from a path (kit #139): `ThemeFileReader`'s
+/// file rules, then `ThemeValidator` on the bytes read. `theme css` and `theme preview` use exactly
+/// this, so they refuse what `theme validate` refuses, with the same rule ids and exit codes, and
+/// what they generate or render from is only ever a `ValidatedTheme`.
+enum ThemeInput {
+    /// A missing file throws the CLI-wide `input_not_found` (exit 2); anything else wrong with the
+    /// file or its content is in the report (exit 1).
+    static func validate(path: String, requireComplete: Bool = false) throws -> ThemeValidationReport {
+        switch ThemeFileReader.read(path: path) {
+        case .success(let data): return ThemeValidator.validate(data: data, requireComplete: requireComplete)
+        case .failure(.notFound): throw CLIFailure(code: .inputNotFound, message: "No such file: \(path)")
+        case .failure(.refused(let issue)): return ThemeValidationReport(issues: [issue], theme: nil)
+        }
+    }
+
+    /// Prints an invalid report exactly as `theme validate` does.
+    static func writeInvalid(_ report: ThemeValidationReport, json: Bool, write: (String) -> Void) {
+        if json {
+            write(ThemeValidateOutput(report).jsonText)
+        } else {
+            let count = report.issues.count
+            write((["invalid: \(count) problem\(count == 1 ? "" : "s")"] + report.issues.map { "  \($0)" }).joined(separator: "\n"))
+        }
+    }
+}
+
+// MARK: - theme css
+
+extension MarsDawnCommand.Theme {
+    struct CSS: ParsableCommand {
+        static let configuration = CommandConfiguration(
+            commandName: "css",
+            abstract: "Print the CSS MarsDawn's preview serves for a theme.json.",
+            discussion: """
+            Validates the file exactly as theme validate does, then prints the theme's palette \
+            block (its light variables, and its dark variables under prefers-color-scheme: dark) \
+            followed by its generated style rules, all scoped to its id: byte for byte what the \
+            preview serves for it. --json prints {"ok": true, "id", "variables", "rules"}, where \
+            variables is the palette block and rules the style rules (empty for a theme with no \
+            style options), each exactly as served. An invalid theme prints its problems as theme \
+            validate does. Exit codes: 0 printed, 1 invalid, \
+            \(CLIFailure.Code.inputNotFound.rawValue) input not found, 64 usage error.
+            """
+        )
+
+        @Argument(help: ArgumentHelp("The theme.json to generate CSS for.", valueName: "file"))
+        var file: String
+
+        @OptionGroup var output: OutputOptions
+
+        func run() throws {
+            let status = try Self.run(path: file, json: output.json)
+            if status != 0 { throw ExitCode(status) }
+        }
+
+        /// The command's logic with its output sink as a parameter, like `Validate.run`. `write`
+        /// gets the whole output in one call, with no newline added: the text form is the CSS
+        /// itself, ending in a newline.
+        static func run(path: String, json: Bool, write: (String) -> Void = { print($0, terminator: "") }) throws -> Int32 {
+            let report = try ThemeInput.validate(path: path)
+            guard let theme = report.theme else {
+                ThemeInput.writeInvalid(report, json: json) { write($0 + "\n") }
+                return 1
+            }
+            let css: ThemeCSSOutput
+            do throws(ThemeCSSGenerator.Refusal) {
+                css = ThemeCSSOutput(id: theme.id, variables: try ThemeCSSGenerator.variables(for: theme),
+                                     rules: try ThemeCSSGenerator.rules(for: theme).css)
+            } catch {
+                // A validated theme the generator still refuses: the kit's own fault, reported as
+                // an invalid result (the refusal carries no text from the file).
+                ThemeInput.writeInvalid(ThemeValidationReport(issues: [ThemeIssue(rule: "css.refused", path: "", message: error.description)], theme: nil),
+                                        json: json) { write($0 + "\n") }
+                return 1
+            }
+            write(json ? css.jsonText + "\n" : css.text)
+            return 0
+        }
+    }
+}
+
+/// `theme css`'s output (kit #139). `variables` is the theme's block of `themes.css` and `rules`
+/// its part of the rules spliced into `preview.css`, each byte for byte as the preview serves
+/// them, so a port of the generator can be checked against these two strings exactly.
+struct ThemeCSSOutput: Codable, Equatable {
+    var ok = true
+    var id: String
+    var variables: String
+    var rules: String
+
+    /// The stylesheet as text: the palette block, a newline, then the rules (which end in one).
+    var text: String { variables + "\n" + rules }
+
+    var jsonText: String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        let data = (try? encoder.encode(self)) ?? Data(#"{"ok":false,"issues":[]}"#.utf8)
+        return String(decoding: data, as: UTF8.self)
+    }
+}
+
+// MARK: - theme preview
+
+extension MarsDawnCommand.Theme {
+    struct Preview: AsyncParsableCommand {
+        static let configuration = CommandConfiguration(
+            abstract: "Render MarsDawn's sample document with a theme.json to a PNG.",
+            discussion: """
+            Validates the file exactly as theme validate does, then renders the kit's fixed sample \
+            document (headings, lists, a quote, a table, code, a Mermaid diagram, math and a rule) \
+            with that theme, in the light or dark palette, offscreen through the same WebKit page \
+            export uses. Nothing is loaded from the network. The PNG is --width pixels wide \
+            (\(ThemePreviewRenderer.widthRange.lowerBound)–\(ThemePreviewRenderer.widthRange.upperBound), \
+            default \(ThemePreviewRenderer.defaultWidth)) and as tall as the sample, at most \
+            \(ThemePreviewRenderer.maxHeight). -o must name a file in a folder that exists; a \
+            symlink or anything other than a regular file at that path is refused, even with \
+            --force. Exit codes: 0 written, 1 invalid theme, \
+            \(CLIFailure.Code.inputNotFound.rawValue) input not found, \
+            \(CLIFailure.Code.outputExists.rawValue) output exists (use --force), \
+            \(CLIFailure.Code.exportFailed.rawValue) rendering failed, 64 usage error (including \
+            an -o that is refused).
+            """
+        )
+
+        @Argument(help: ArgumentHelp("The theme.json to preview.", valueName: "file"))
+        var file: String
+
+        @Option(help: "Which palette to render: light or dark.")
+        var appearance: ThemePreviewRenderer.Appearance
+
+        @Option(name: .shortAndLong, help: ArgumentHelp("Where to write the PNG.", valueName: "out.png"))
+        var output: String
+
+        @Option(help: ArgumentHelp(
+            "Image width in pixels, \(ThemePreviewRenderer.widthRange.lowerBound)–\(ThemePreviewRenderer.widthRange.upperBound).",
+            valueName: "n"
+        ))
+        var width = ThemePreviewRenderer.defaultWidth
+
+        @Flag(help: "Replace the output file if it already exists.")
+        var force = false
+
+        @OptionGroup var options: OutputOptions
+
+        func validate() throws {
+            guard ThemePreviewRenderer.widthRange.contains(width) else {
+                throw ValidationError(
+                    "--width must be between \(ThemePreviewRenderer.widthRange.lowerBound) and "
+                        + "\(ThemePreviewRenderer.widthRange.upperBound), but \(width) was given."
+                )
+            }
+        }
+
+        @MainActor
+        func run() async throws {
+            let status = try await Self.run(
+                path: file, appearance: appearance, output: output, width: width, force: force, json: options.json
+            )
+            if status != 0 { throw ExitCode(status) }
+        }
+
+        /// The command's logic with its output sink as a parameter. The theme is validated first:
+        /// an invalid one is reported (exit 1) before the output path is looked at or anything is
+        /// rendered. `inspect` is for tests (see `ThemePreviewRenderer.render`).
+        @MainActor
+        static func run(
+            path: String,
+            appearance: ThemePreviewRenderer.Appearance,
+            output: String,
+            width: Int = ThemePreviewRenderer.defaultWidth,
+            force: Bool = false,
+            json: Bool,
+            write: (String) -> Void = { print($0) },
+            inspect: ((PreviewWKWebView) async throws -> Void)? = nil
+        ) async throws -> Int32 {
+            guard ThemePreviewRenderer.widthRange.contains(width) else {
+                throw ValidationError("--width must be between \(ThemePreviewRenderer.widthRange.lowerBound) and \(ThemePreviewRenderer.widthRange.upperBound), but \(width) was given.")
+            }
+            let report = try ThemeInput.validate(path: path)
+            guard let theme = report.theme else {
+                ThemeInput.writeInvalid(report, json: json, write: write)
+                return 1
+            }
+            let destination = try OutputFile.check(output, force: force)
+            let result: ThemePreviewRenderer.Result
+            do {
+                result = try await ThemePreviewRenderer.render(theme: theme, appearance: appearance, width: width, inspect: inspect)
+            } catch {
+                throw CLIFailure(code: .exportFailed, message: "Preview failed: \(error.localizedDescription)")
+            }
+            try OutputFile.write(result.png, to: destination, force: force)
+            let fields: [String: Any] = [
+                "ok": true,
+                "output": destination.path,
+                "id": theme.id,
+                "appearance": appearance.rawValue,
+                "width": result.width,
+                "height": result.height,
+            ]
+            write(json ? jsonString(fields) : "Wrote \(destination.path) (\(theme.id), \(appearance.rawValue), \(result.width)×\(result.height))")
+            return 0
+        }
+    }
+}
+
+extension ThemePreviewRenderer.Appearance: ExpressibleByArgument {}
+
+/// `theme preview -o` refused a path it will not write to (kit #139): a usage error like
+/// `SkillInstallFailure`, exit 64, with its own machine-readable kind for `--json`.
+struct OutputPathFailure: Error, CustomStringConvertible {
+    enum Kind: String {
+        /// The folder the file would go in isn't there (or isn't a folder).
+        case folderMissing = "output_folder_missing"
+        /// A symlink is at the path. Never followed and never replaced, `--force` included.
+        case symlink = "output_symlink"
+        /// Something that isn't a regular file (a folder, a FIFO, a device) is at the path.
+        case notAFile = "output_not_a_file"
+    }
+
+    let kind: Kind
+    let message: String
+    var description: String { message }
+    static let exitCode: Int32 = 64
+}
+
+/// Where `theme preview` writes (kit #139): only a regular file, in a folder that exists, never
+/// through a symlink. The bytes go to a new file made with `O_CREAT | O_EXCL | O_NOFOLLOW` beside
+/// the destination, which is then renamed over it -- `rename` replaces the directory entry and
+/// never follows a link there, and without `--force` the rename is exclusive (`RENAME_EXCL`), so
+/// a file that appears in the meantime is not replaced either.
+enum OutputFile {
+    static func check(_ path: String, force: Bool) throws -> URL {
+        let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath).standardizedFileURL
+        let folder = url.deletingLastPathComponent()
+        var isDirectory: ObjCBool = false
+        guard !url.lastPathComponent.isEmpty, url.path != "/",
+              FileManager.default.fileExists(atPath: folder.path, isDirectory: &isDirectory), isDirectory.boolValue
+        else {
+            throw OutputPathFailure(kind: .folderMissing, message: "The folder for \(url.path) doesn't exist. Create it first; theme preview doesn't.")
+        }
+        var info = stat()
+        if lstat(url.path, &info) == 0 {
+            switch info.st_mode & S_IFMT {
+            case S_IFLNK:
+                throw OutputPathFailure(kind: .symlink, message: "\(url.path) is a symlink. theme preview never writes through one; name the file itself.")
+            case S_IFREG:
+                if !force { throw CLIFailure(code: .outputExists, message: "\(url.path) already exists. Pass --force to replace it.") }
+            default:
+                throw OutputPathFailure(kind: .notAFile, message: "\(url.path) is not a regular file.")
+            }
+        }
+        return url
+    }
+
+    static func write(_ data: Data, to url: URL, force: Bool) throws {
+        let folder = url.deletingLastPathComponent()
+        let temporary = folder.appendingPathComponent(".\(url.lastPathComponent).\(UUID().uuidString).tmp")
+        let fd = open(temporary.path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0o644)
+        guard fd >= 0 else {
+            throw CLIFailure(code: .exportFailed, message: "Couldn’t write beside \(url.path).")
+        }
+        var written = 0
+        let ok = data.withUnsafeBytes { raw -> Bool in
+            while written < raw.count {
+                let count = Darwin.write(fd, raw.baseAddress! + written, raw.count - written)
+                if count < 0 {
+                    if errno == EINTR { continue }
+                    return false
+                }
+                written += count
+            }
+            return true
+        }
+        close(fd)
+        guard ok else {
+            unlink(temporary.path)
+            throw CLIFailure(code: .exportFailed, message: "Couldn’t write beside \(url.path).")
+        }
+        let renamed = force
+            ? rename(temporary.path, url.path)
+            : renamex_np(temporary.path, url.path, UInt32(RENAME_EXCL))
+        guard renamed == 0 else {
+            let error = errno
+            unlink(temporary.path)
+            if error == EEXIST { throw CLIFailure(code: .outputExists, message: "\(url.path) already exists. Pass --force to replace it.") }
+            throw CLIFailure(code: .exportFailed, message: "Couldn’t write \(url.path).")
+        }
+    }
+}
+
+/// `theme validate --json`'s output, written with `JSONEncoder` (security review M4), so every
+/// string -- including the already-quoted parts of a message -- is escaped by the encoder, never
+/// assembled by hand.
+struct ThemeValidateOutput: Codable, Equatable {
+    var ok: Bool
+    var id: String?
+    var issues: [ThemeIssue]
+
+    init(_ report: ThemeValidationReport) {
+        ok = report.theme != nil
+        id = report.theme?.id
+        issues = report.issues
+    }
+
+    var jsonText: String {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        let data = (try? encoder.encode(self)) ?? Data(#"{"ok":false,"issues":[]}"#.utf8)
+        return String(decoding: data, as: UTF8.self)
+    }
+}
+
+/// Reads a theme file for `theme validate` (security review L2): `lstat` first, and only a regular
+/// file is opened -- a symlink, folder, FIFO, socket or device (`/dev/zero`) is refused without an
+/// `open`, so nothing can block or stream forever. The file is then opened with `O_NOFOLLOW` and
+/// `O_NONBLOCK`, checked again with `fstat` to be the same regular file `lstat` saw, and read up to
+/// one byte past the size cap.
+enum ThemeFileReader {
+    enum Refusal: Error {
+        /// Nothing at that path: the CLI-wide `input_not_found`, not a validation result.
+        case notFound
+        case refused(ThemeIssue)
+    }
+
+    private static func refuse(_ rule: String, _ message: String) -> Refusal {
+        .refused(ThemeIssue(rule: rule, path: "", message: message))
+    }
+
+    static func read(path: String) -> Result<Data, Refusal> {
+        var before = stat()
+        guard lstat(path, &before) == 0 else {
+            return .failure(errno == ENOENT ? .notFound : refuse("file.unreadable", "the file can't be read"))
+        }
+        switch before.st_mode & S_IFMT {
+        case S_IFREG: break
+        case S_IFLNK: return .failure(refuse("file.notRegular", "is a symlink; pass the file itself"))
+        case S_IFDIR: return .failure(refuse("file.notRegular", "is a folder, not a file"))
+        default: return .failure(refuse("file.notRegular", "is not a regular file (a FIFO, socket or device)"))
+        }
+        let fd = open(path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
+        guard fd >= 0 else { return .failure(refuse("file.unreadable", "the file can't be read")) }
+        defer { close(fd) }
+        var after = stat()
+        guard fstat(fd, &after) == 0, after.st_mode & S_IFMT == S_IFREG,
+              after.st_dev == before.st_dev, after.st_ino == before.st_ino
+        else { return .failure(refuse("file.notRegular", "changed while it was being opened")) }
+
+        let limit = ThemeValidator.maxFileBytes + 1
+        var data = Data()
+        var buffer = [UInt8](repeating: 0, count: 4096)
+        while data.count < limit {
+            let wanted = min(buffer.count, limit - data.count)
+            let got = buffer.withUnsafeMutableBytes { Darwin.read(fd, $0.baseAddress, wanted) }
+            if got < 0 {
+                if errno == EINTR { continue }
+                return .failure(refuse("file.unreadable", "the file can't be read"))
+            }
+            if got == 0 { break }
+            data.append(contentsOf: buffer[0..<got])
+        }
+        if data.count > ThemeValidator.maxFileBytes {
+            return .failure(refuse("file.tooLarge", "the file is larger than \(ThemeValidator.maxFileBytes) bytes"))
+        }
+        return .success(data)
     }
 }
 #endif

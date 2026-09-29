@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "id": "minimal",
+  "version": "1.0.0",
+  "name": {
+    "en": "Minimal"
+  },
+  "summary": {
+    "en": "A copy of Dawn for the validator's fixtures"
+  },
+  "fontDesign": "sans",
+  "scenarios": [
+    "notes-sharing"
+  ],
+  "light": {
+    "background": "#FFFDFB",
+    "surface": "#F6F0EC",
+    "text": "#26211F",
+    "muted": "#6F6660",
+    "border": "#EADFD8",
+    "heading": "#26211F",
+    "accent": "#C8471B",
+    "link": "#B03C0C",
+    "quote": "#D97A4A"
+  },
+  "dark": {
+    "background": "#1C1A1F",
+    "surface": "#262229",
+    "text": "#EBE4DF",
+    "muted": "#A39992",
+    "border": "#3A343A",
+    "heading": "#F4EEEA",
+    "accent": "#FF8A50",
+    "link": "#FF9E6B",
+    "quote": "#E08A5C"
+  }
+}

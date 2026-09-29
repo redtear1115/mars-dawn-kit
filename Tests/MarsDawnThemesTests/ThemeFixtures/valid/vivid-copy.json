@@ -1,0 +1,112 @@
+{
+  "schemaVersion": 1,
+  "id": "vivid-copy",
+  "version": "1.0.0",
+  "name": {
+    "en": "Vivid Copy"
+  },
+  "summary": {
+    "en": "Playful, bright and rounded"
+  },
+  "fontDesign": "rounded",
+  "scenarios": [
+    "notes-sharing"
+  ],
+  "light": {
+    "background": "#FFFDF8",
+    "surface": "#F3EEFF",
+    "text": "#2D2A32",
+    "muted": "#6B6475",
+    "border": "#E6DCFB",
+    "heading": "#5B3BE0",
+    "accent": "#D5316B",
+    "link": "#087481",
+    "quote": "#FFB020",
+    "syntax": {
+      "keyword": "#B8246A",
+      "string": "#07734F",
+      "comment": "#70697C",
+      "number": "#A44D06",
+      "function": "#5B3BE0",
+      "type": "#087481"
+    },
+    "diagram": {
+      "node": "#EFE9FF",
+      "nodeBorder": "#6C4BF4",
+      "text": "#2D2A32",
+      "line": "#E8457A",
+      "secondary": "#E0F7F4",
+      "tertiary": "#FFF1F6",
+      "note": "#FFF1CC"
+    }
+  },
+  "dark": {
+    "background": "#1A1625",
+    "surface": "#251F36",
+    "text": "#F1ECFA",
+    "muted": "#AFA6BE",
+    "border": "#3A3150",
+    "heading": "#B69CFF",
+    "accent": "#FF7AA2",
+    "link": "#3DD6D0",
+    "quote": "#FFC857",
+    "syntax": {
+      "keyword": "#FF7AB8",
+      "string": "#5BE3A8",
+      "comment": "#948BA6",
+      "number": "#FFA657",
+      "function": "#B69CFF",
+      "type": "#3DD6D0"
+    },
+    "diagram": {
+      "node": "#2E2548",
+      "nodeBorder": "#B69CFF",
+      "text": "#F1ECFA",
+      "line": "#FF7AA2",
+      "secondary": "#1D3534",
+      "tertiary": "#2A1F2E",
+      "note": "#3D3420"
+    }
+  },
+  "style": {
+    "headingWeight": 800,
+    "radius": 14,
+    "h1": {
+      "decoration": {
+        "type": "gradientBar",
+        "from": "accent",
+        "to": "heading"
+      }
+    },
+    "h2": {
+      "decoration": {
+        "type": "dot",
+        "color": "accent"
+      }
+    },
+    "blockquote": {
+      "style": {
+        "type": "panel"
+      }
+    },
+    "inlineCode": "keyword",
+    "table": {
+      "header": {
+        "type": "filled",
+        "background": "heading",
+        "text": "background"
+      },
+      "rounded": true
+    },
+    "hr": {
+      "style": {
+        "type": "gradient",
+        "colors": [
+          "accent",
+          "heading",
+          "link"
+        ]
+      }
+    }
+  }
+}
