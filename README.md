@@ -109,7 +109,7 @@ swift run marsdawn export notes.md -o notes.pdf --theme classic --paper a4
 ## Use as a package
 
 ```swift
-.package(url: "https://github.com/redtear1115/mars-dawn-kit.git", exact: "0.5.4"),
+.package(url: "https://github.com/redtear1115/mars-dawn-kit.git", exact: "0.6.1"),
 ```
 
 ## License
