@@ -109,10 +109,10 @@ swift run marsdawn export notes.md -o notes.pdf --theme classic --paper a4
 ## Use as a package
 
 ```swift
-.package(url: "https://github.com/redtear1115/mars-dawn-kit.git", exact: "0.6.1"),
+.package(url: "https://github.com/redtear1115/mars-dawn-kit.git", exact: "0.6.2"),
 ```
 
-### Checking a theme before installing it (unreleased)
+### Checking a theme before installing it
 
 `ThemeValidation.validate(data:)` checks the bytes of a `theme.json` the way
 `ThemeRegistry.loadInstalled` will: the size cap (`ThemeValidation.maxFileBytes`), every rule
