@@ -186,4 +186,14 @@ struct InlineMarksTests {
             }
         }
     }
+
+    /// A container with marks still treats its soft breaks as #129 does: CJK lines join, and
+    /// `softBreaksAsLineBreaks` gives a `<br>`.
+    @Test func softBreaksInAMarkedContainerFollowTheSoftBreakRules() {
+        #expect(inline("==標記==中文\n第二行") == "<mark>標記</mark>中文第二行")
+        #expect(inline("==a== b\nc") == "<mark>a</mark> b\nc")
+        var options = MarkdownRenderer.Options()
+        options.softBreaksAsLineBreaks = true
+        #expect(MarkdownRenderer.render("==a==\nb", options: options).contains("<mark>a</mark><br>\nb"))
+    }
 }
