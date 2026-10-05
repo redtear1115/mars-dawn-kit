@@ -30,18 +30,27 @@ public enum MarkdownRenderer {
         /// The accessible name of a footnote's way back to where it was referenced, followed by
         /// the footnote's number (#44). The app passes a localised string.
         public var footnoteBackLabel: String
+        /// Renders every soft break (a newline inside a paragraph) as `<br>`, as HackMD and GitHub
+        /// comments do, instead of leaving it to the browser to show as a space (#129). `false`
+        /// (the default) is CommonMark.
+        ///
+        /// Independently of this, a soft break between two CJK characters renders as nothing when
+        /// the option is off (`CJKLineJoining`); with it on, the line break is kept.
+        public var softBreaksAsLineBreaks: Bool
 
         public init(
             maxBytes: Int? = nil,
             maxNodes: Int = ParseLimits.defaultMaxNodes,
             frontMatterLabel: String = "Document info",
             footnoteBackLabel: String = "Back to reference",
+            softBreaksAsLineBreaks: Bool = false,
             resolveImageSource: @escaping @Sendable (String) -> String = { $0 }
         ) {
             self.maxBytes = maxBytes
             self.maxNodes = maxNodes
             self.frontMatterLabel = frontMatterLabel
             self.footnoteBackLabel = footnoteBackLabel
+            self.softBreaksAsLineBreaks = softBreaksAsLineBreaks
             self.resolveImageSource = resolveImageSource
         }
 
@@ -312,11 +321,23 @@ private struct HTMLVisitor: MarkupVisitor {
     }
 
     private mutating func visitChildren(_ markup: any Markup) -> String {
+        let children = Array(markup.children)
         var html = ""
-        for child in markup.children {
-            html += visit(child)
+        for index in children.indices {
+            html += visitInline(children, at: index)
         }
         return html
+    }
+
+    /// `children[index]` rendered, a soft break by what stands either side of it (#129).
+    private mutating func visitInline(_ children: [any Markup], at index: Int) -> String {
+        guard children[index] is SoftBreak else { return visit(children[index]) }
+        if options.softBreaksAsLineBreaks { return "<br>\n" }
+        let joins = CJKLineJoining.joins(
+            before: index > 0 ? children[index - 1] : nil,
+            after: index + 1 < children.count ? children[index + 1] : nil
+        )
+        return joins ? "" : "\n"
     }
 
     private func lineAttribute(_ markup: any Markup) -> String {
@@ -582,8 +603,10 @@ private struct HTMLVisitor: MarkupVisitor {
         neutralizingLinkTags(inlineHTML.rawHTML)
     }
 
+    /// Reached only for a soft break outside any container's children; `visitInline` decides the
+    /// ones inside, where the neighbouring characters are known.
     mutating func visitSoftBreak(_ softBreak: SoftBreak) -> String {
-        "\n"
+        options.softBreaksAsLineBreaks ? "<br>\n" : "\n"
     }
 
     mutating func visitLineBreak(_ lineBreak: LineBreak) -> String {

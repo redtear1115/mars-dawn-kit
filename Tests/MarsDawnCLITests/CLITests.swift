@@ -17,15 +17,30 @@ struct CLITests {
         #expect(!command.force && !command.allowRemoteImages && !command.options.json)
     }
 
+    /// `--breaks` is the renderer's `softBreaksAsLineBreaks` (#129): off unless asked for.
+    @Test func exportBreaksIsOffUnlessAskedFor() throws {
+        #expect(try MarsDawnCommand.Export.parse(["plan.md"]).breaks == false)
+        #expect(try MarsDawnCommand.Export.parse(["plan.md", "--breaks"]).breaks)
+        #expect(try MarsDawnCommand.Export.parse(["--breaks", "plan.md", "--json"]).breaks)
+        #expect(throws: (any Error).self) { try MarsDawnCommand.Export.parse(["plan.md", "--breaks=yes"]) }
+    }
+
+    /// The help a person reads before exporting says what `--breaks` does.
+    @Test func exportHelpDescribesBreaks() {
+        let help = MarsDawnCommand.Export.helpMessage()
+        #expect(help.contains("--breaks"))
+        #expect(help.contains("HackMD"))
+    }
+
     @Test func exportParsesEveryOption() throws {
         let command = try MarsDawnCommand.Export.parse([
             "plan.md", "-o", "/tmp/out.pdf", "--theme", "Classic", "--paper", "letter",
-            "--allow-remote-images", "--force", "--json",
+            "--allow-remote-images", "--breaks", "--force", "--json",
         ])
         #expect(command.outputURL(for: URL(fileURLWithPath: "/x/plan.md")).path == "/tmp/out.pdf")
         #expect(command.resolvedTheme(environment: [:]).id == "classic")
         #expect(command.paper == .letter)
-        #expect(command.force && command.allowRemoteImages && command.options.json)
+        #expect(command.force && command.allowRemoteImages && command.breaks && command.options.json)
     }
 
     @Test func themeFallsBackToEnvironmentThenDawn() throws {

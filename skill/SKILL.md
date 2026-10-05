@@ -26,8 +26,11 @@ marsdawn export input.md --json
 ```
 
 Options: `-o out.pdf` (default: beside the input), `--theme dawn|classic|modern|vivid`,
-`--paper a4|letter`, `--force` to replace an existing PDF, and
-`--allow-remote-images` to load web images, which are left out by default.
+`--paper a4|letter`, `--force` to replace an existing PDF,
+`--allow-remote-images` to load web images, which are left out by default, and
+`--breaks` to turn every newline inside a paragraph into a line break, as HackMD does. Without it
+a newline is a space, except between two Chinese or Japanese characters, where it is
+dropped.
 
 On success it exits 0 and prints one JSON line:
 

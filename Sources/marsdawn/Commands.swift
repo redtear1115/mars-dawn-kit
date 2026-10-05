@@ -597,7 +597,9 @@ extension MarsDawnCommand {
             discussion: """
             Runs on its own: the MarsDawn app does not have to be installed. Relative images \
             resolve against the input file's folder. Web images are left out unless \
-            --allow-remote-images is given.
+            --allow-remote-images is given. A newline inside a paragraph is a space, as in \
+            CommonMark, unless --breaks is given, and without it a newline between two Chinese \
+            or Japanese characters is dropped.
             """
         )
 
@@ -615,6 +617,9 @@ extension MarsDawnCommand {
 
         @Flag(help: "Load images from the web while rendering.")
         var allowRemoteImages = false
+
+        @Flag(help: "Render every newline inside a paragraph as a line break, as HackMD does.")
+        var breaks = false
 
         @Flag(help: "Replace the output file if it already exists.")
         var force = false
@@ -661,7 +666,8 @@ extension MarsDawnCommand {
                     theme: resolvedTheme(),
                     baseDirectory: input.deletingLastPathComponent(),
                     allowRemoteImages: allowRemoteImages,
-                    paper: paper
+                    paper: paper,
+                    softBreaksAsLineBreaks: breaks
                 )
                 if FileManager.default.fileExists(atPath: destination.path) {
                     _ = try FileManager.default.replaceItemAt(destination, withItemAt: temporary)
