@@ -113,10 +113,14 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
     ///   number (`MarkdownRenderer.Options.footnoteBackLabel`). Defaults to the renderer's own
     ///   English default; the app passes the same localised string it uses for the preview and
     ///   Quick Look (#100).
+    /// - Parameter softBreaksAsLineBreaks: `MarkdownRenderer.Options.softBreaksAsLineBreaks`: a
+    ///   newline inside a paragraph becomes a line break (#129). The app passes the setting it
+    ///   gives the preview and Quick Look, so the three agree.
     public func prepare(
         markdown: String,
         theme: PreviewTheme,
-        footnoteBackLabel: String = MarkdownRenderer.Options().footnoteBackLabel
+        footnoteBackLabel: String = MarkdownRenderer.Options().footnoteBackLabel,
+        softBreaksAsLineBreaks: Bool = false
     ) async throws {
         // The network rules go on before the page loads; without them, nothing loads.
         let rules: WKContentRuleList
@@ -158,7 +162,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         ))
 
         let baseDirectory = assets.baseDirectory
-        let options = MarkdownRenderer.Options(footnoteBackLabel: footnoteBackLabel) { source in
+        let options = MarkdownRenderer.Options(footnoteBackLabel: footnoteBackLabel, softBreaksAsLineBreaks: softBreaksAsLineBreaks) { source in
             DocumentAssetSchemeHandler.previewURL(forImageSource: source, baseDirectory: baseDirectory) ?? source
         }
         // One deadline covers rendering, updating the page and waiting for its content.
@@ -284,8 +288,10 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
     /// WebKit supplies page images asynchronously, so the operation always runs through
     /// `runModal(for:)`; a synchronous `run()` on the main thread never finishes paginating.
     ///
-    /// - Parameter footnoteBackLabel: Passed straight to `prepare(markdown:theme:footnoteBackLabel:)`
-    ///   (#100).
+    /// - Parameters:
+    ///   - footnoteBackLabel: Passed straight to `prepare(markdown:theme:footnoteBackLabel:softBreaksAsLineBreaks:)`
+    ///     (#100).
+    ///   - softBreaksAsLineBreaks: Likewise (#129).
     @discardableResult
     public static func run(
         markdown: String,
@@ -294,13 +300,15 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         allowRemoteImages: Bool,
         scopeRoot: URL? = nil,
         footnoteBackLabel: String = MarkdownRenderer.Options().footnoteBackLabel,
+        softBreaksAsLineBreaks: Bool = false,
         printInfo: NSPrintInfo,
         window: NSWindow?,
         configure: (NSPrintInfo, NSPrintOperation) -> Void = { _, _ in }
     ) async throws -> Bool {
         try await runReportingDiagrams(
             markdown: markdown, theme: theme, baseDirectory: baseDirectory, allowRemoteImages: allowRemoteImages,
-            scopeRoot: scopeRoot, footnoteBackLabel: footnoteBackLabel, printInfo: printInfo, window: window, configure: configure
+            scopeRoot: scopeRoot, footnoteBackLabel: footnoteBackLabel, softBreaksAsLineBreaks: softBreaksAsLineBreaks,
+            printInfo: printInfo, window: window, configure: configure
         ).completed
     }
 
@@ -319,13 +327,15 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         allowRemoteImages: Bool,
         scopeRoot: URL? = nil,
         footnoteBackLabel: String = MarkdownRenderer.Options().footnoteBackLabel,
+        softBreaksAsLineBreaks: Bool = false,
         printInfo: NSPrintInfo,
         window: NSWindow?,
         configure: (NSPrintInfo, NSPrintOperation) -> Void = { _, _ in }
     ) async throws -> (completed: Bool, diagramErrors: [String]) {
         let result = try await runReportingDiagramDetails(
             markdown: markdown, theme: theme, baseDirectory: baseDirectory, allowRemoteImages: allowRemoteImages,
-            scopeRoot: scopeRoot, footnoteBackLabel: footnoteBackLabel, printInfo: printInfo, window: window, configure: configure
+            scopeRoot: scopeRoot, footnoteBackLabel: footnoteBackLabel, softBreaksAsLineBreaks: softBreaksAsLineBreaks,
+            printInfo: printInfo, window: window, configure: configure
         )
         return (result.completed, result.diagramErrors)
     }
@@ -339,6 +349,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         allowRemoteImages: Bool,
         scopeRoot: URL? = nil,
         footnoteBackLabel: String = MarkdownRenderer.Options().footnoteBackLabel,
+        softBreaksAsLineBreaks: Bool = false,
         printInfo: NSPrintInfo,
         window: NSWindow?,
         configure: (NSPrintInfo, NSPrintOperation) -> Void = { _, _ in }
@@ -350,7 +361,9 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         )
         active.insert(exporter)
         defer { active.remove(exporter) }
-        try await exporter.prepare(markdown: markdown, theme: theme, footnoteBackLabel: footnoteBackLabel)
+        try await exporter.prepare(
+            markdown: markdown, theme: theme, footnoteBackLabel: footnoteBackLabel, softBreaksAsLineBreaks: softBreaksAsLineBreaks
+        )
         let operation = exporter.printOperation(printInfo: printInfo)
         configure(operation.printInfo, operation)
         let host = window ?? exporter.hiddenWindow()
@@ -396,8 +409,10 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
 
     /// Exports `markdown` straight to a PDF file, with no panels. Needs a running AppKit event loop.
     ///
-    /// - Parameter footnoteBackLabel: Passed straight to `prepare(markdown:theme:footnoteBackLabel:)`
-    ///   (#100).
+    /// - Parameters:
+    ///   - footnoteBackLabel: Passed straight to `prepare(markdown:theme:footnoteBackLabel:softBreaksAsLineBreaks:)`
+    ///     (#100).
+    ///   - softBreaksAsLineBreaks: Likewise (#129).
     public static func exportPDF(
         markdown: String,
         to url: URL,
@@ -406,7 +421,8 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         allowRemoteImages: Bool,
         paper: Paper = .a4,
         scopeRoot: URL? = nil,
-        footnoteBackLabel: String = MarkdownRenderer.Options().footnoteBackLabel
+        footnoteBackLabel: String = MarkdownRenderer.Options().footnoteBackLabel,
+        softBreaksAsLineBreaks: Bool = false
     ) async throws -> PDFResult {
         let printInfo = NSPrintInfo()
         printInfo.paperSize = paper.size
@@ -414,7 +430,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         let result = try await runReportingDiagramDetails(
             markdown: markdown, theme: theme, baseDirectory: baseDirectory,
             allowRemoteImages: allowRemoteImages, scopeRoot: scopeRoot, footnoteBackLabel: footnoteBackLabel,
-            printInfo: printInfo, window: nil
+            softBreaksAsLineBreaks: softBreaksAsLineBreaks, printInfo: printInfo, window: nil
         ) { info, operation in
             info.jobDisposition = .save
             info.dictionary()[NSPrintInfo.AttributeKey.jobSavingURL] = url

@@ -108,6 +108,13 @@ struct RendererDigestTests {
     /// 38 of the 7,996 renders changed, every one only in a `<code class="language-…">`
     /// attribute whose info string held a `!` or `=` (e.g. "```![i](data:…" lost `language-idata…`),
     /// and the rest of each changed line is byte-identical.
+    ///
+    /// Re-checked for the CJK soft-break join (#129), the one change that alters default output
+    /// for CJK text. Every render of this corpus (3,998 documents, each rendered twice) was
+    /// dumped on a0e9792 (before #130) and with the change and diffed: the two dumps are byte-identical, so the
+    /// value stands. That is not for want of CJK: the corpus has `日本語`, but never as the last
+    /// and the first characters of two lines of one paragraph (no document holds `日本語\n日本語`),
+    /// which is the only place the join changes anything. `SoftBreakTests` covers it instead.
     @Test func ordinaryOutputMatchesTheDigestBeforeFrontMatter() {
         #expect(Self.digest(documents: 4000, strings: 20000)
             == "ce233c6d25719ae19d2b86c5ad43b7afb65501964ab57901d203dc9960a554c7")
