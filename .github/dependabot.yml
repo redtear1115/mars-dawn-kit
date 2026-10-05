@@ -4,3 +4,9 @@ updates:
     directory: /
     schedule:
       interval: weekly
+  # Package.swift's dependencies (swift-markdown, swift-cmark, swift-argument-parser). The app
+  # pins the kit by exact version, so a bump here reaches it only through a kit release.
+  - package-ecosystem: swift
+    directory: /
+    schedule:
+      interval: weekly
