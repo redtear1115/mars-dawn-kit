@@ -80,7 +80,29 @@ struct SourceBytes: Sendable {
         guard bytes[start] == tilde && bytes[start + 1] != tilde && bytes[end - 1] == tilde && bytes[end - 2] != tilde
         else { return false }
         let inner = String(decoding: bytes[(start + 1)..<(end - 1)], as: UTF8.self)
+        // The bytes between the tildes must say what the node shows. After a hard break cmark
+        // reports later inlines on the paragraph's first line, so the range can land on other
+        // text that happens to sit between single tildes; then it is a `~~del~~` as before.
+        // Markup or escapes inside (`~*a*~`, `~\~a~`) fail this too and stay `<del>`.
+        let shown = node.children.map { ($0 as? any PlainTextConvertibleMarkup)?.plainText ?? "\u{FFFC}" }.joined()
+        guard Self.smartPunctuationSpelledOut(inner) == Self.smartPunctuationSpelledOut(shown) else { return false }
         return !inner.unicodeScalars.contains { $0.properties.isWhitespace }
+    }
+
+    /// `string` with the renderer's smart punctuation spelled the ASCII way it was written.
+    private static func smartPunctuationSpelledOut(_ string: String) -> String {
+        var result = ""
+        for scalar in string.unicodeScalars {
+            switch scalar {
+            case "\u{201C}", "\u{201D}": result += "\""
+            case "\u{2018}", "\u{2019}": result += "'"
+            case "\u{2013}": result += "--"
+            case "\u{2014}": result += "---"
+            case "\u{2026}": result += "..."
+            default: result.unicodeScalars.append(scalar)
+            }
+        }
+        return result
     }
 }
 

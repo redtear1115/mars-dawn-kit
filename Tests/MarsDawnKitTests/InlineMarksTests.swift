@@ -236,4 +236,21 @@ struct InlineMarksTests {
         let seconds = Double(elapsed.components.seconds) + Double(elapsed.components.attoseconds) / 1e18
         #expect(seconds < budget, "\(seconds) s")
     }
+
+    /// After a hard break cmark puts later inlines on the paragraph's first line; a `~~del~~`
+    /// whose shifted range lands between single tildes must stay `<del>` (#155 review).
+    @Test(arguments: [
+        ("，\\\n~~中~~，  \na~~a~~bbb\n", "a<del>a</del>bbb"),
+        ("> a\\\n> _4_\\\n> ~~e~~，~~a~~b\n", "<del>e</del>，<del>a</del>b"),
+    ])
+    func aStrikethroughAfterAHardBreakStaysDel(markdown: String, expected: String) {
+        let html = MarkdownRenderer.render(markdown)
+        #expect(html.contains(expected), "\(html)")
+        #expect(!html.contains("<sub>"), "\(html)")
+    }
+
+    @Test func aSubscriptAfterAHardBreakIsStillOne() {
+        #expect(MarkdownRenderer.render("x  \nH~2~O\n").contains("H<sub>2</sub>O"))
+        #expect(MarkdownRenderer.render("x\\\nH~2~O and ~~gone~~\n").contains("H<sub>2</sub>O and <del>gone</del>"))
+    }
 }
