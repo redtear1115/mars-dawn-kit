@@ -123,6 +123,32 @@ jobs:
           fi
           echo "The tag and the binary agree."
 
+  pdf-goldens:
+    # Tier 4 of the PDF corpus (redtear1115/mars-dawn#2): per-OS-build goldens. Its own job, so a
+    # runner-image update shows up as a distinct, clearly labelled failure instead of failing
+    # inside the `test` matrix, whose PDFCorpus run skips the goldens (they need
+    # MARSDAWN_PDF_GOLDENS). Goldens are recorded on macOS 26 only; see the "Record PDF goldens"
+    # workflow and the README's "The PDF export golden corpus" for the drift policy.
+    runs-on: macos-26
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Use Xcode 26
+        run: |
+          set -euo pipefail
+          app=$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)
+          echo "Selecting $app"
+          sudo xcode-select -s "$app"
+      - run: swift --version
+      - name: Compare the PDF corpus's text with its goldens
+        run: swift test --no-parallel --filter PDFCorpus/golden
+        env:
+          MARSDAWN_PDF_GOLDENS: "1"
+
   ios:
     # The core library still supports iOS 17; make sure it keeps building for it.
     runs-on: macos-26
