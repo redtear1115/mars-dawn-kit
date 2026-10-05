@@ -58,7 +58,7 @@ let package = Package(
         .testTarget(
             name: "MarsDawnExportTests",
             dependencies: ["MarsDawnExport", "MarsDawnKit"],
-            resources: [.copy("MermaidCorpus")]
+            resources: [.copy("MermaidCorpus"), .copy("Corpus")]
         ),
         .testTarget(name: "MarsDawnCLITests", dependencies: ["marsdawn"]),
         // The validator's own tests (kit #125): Foundation only, like MarsDawnThemes itself, so a

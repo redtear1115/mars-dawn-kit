@@ -1,0 +1,31 @@
+# 標題HDCJK01：你好世界 Heading
+
+繁體中文段落標記ZHT01，這是一段測試文字，包含全形標點：「引號」、逗號，句號。分號；問號？驚嘆號！
+
+简体中文段落标记ZHS02，这是一段测试文字，包含全角标点："引号"、逗号，句号。分号；问号？惊叹号！
+
+日本語のパラグラフJPN03です。全角句読点のテスト、これは「括弧」とマルです。ありがとうございます。
+
+한국어 단락입니다 KOR04. 전각 문장 부호 테스트, 이것은 "따옴표"와 마침표입니다. 감사합니다.
+
+MixedABC123測試全形與Latin混排MIXCJK05，句號。逗號，冒號：分號；問號？驚嘆號！
+
+## 表格CJKTBL06 Table
+
+| 欄位CELLTBL07 | 值CELLTBL08 |
+|---|---|
+| 中文儲存格09 | English cell 10 |
+
+```swift
+// 中文注釋CODECJK11 comment inline with code
+let 変数名 = "日本語コメント12"
+func greet() -> String { return "こんにちは世界13" }
+```
+
+- 項目LISTCJK14
+- English item fifteen
+- 混合Mixed項目CJK16 with Latin text
+
+永和九年岁在癸丑暮春之初会于会稽山阴之兰亭修禊事也群贤毕至少长咸集此地有崇山峻封装换行标记岭茂林修竹又有清流激湍映带左右引以为流觞曲水列坐其次虽无丝竹管弦之盛一觞一咏亦足以畅叙幽情
+
+Last paragraph marker CJKENDMARK99.

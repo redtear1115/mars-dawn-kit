@@ -1,0 +1,6 @@
+{
+  "markers": ["FMBODYHEAD06", "FMBODYMARK07", "FMENDMARK99"],
+  "markersOnLastPage": ["FMENDMARK99"],
+  "absent": ["FMTITLE01", "FMAUTHOR02", "FMTAG03", "FMTAG04", "FMCUSTOM05"],
+  "notes": "YAML front matter with distinctive values that print hides entirely (title, author, tags, a custom field); none of them should appear anywhere in the exported PDF text. The body heading and paragraphs after the front matter render normally."
+}
