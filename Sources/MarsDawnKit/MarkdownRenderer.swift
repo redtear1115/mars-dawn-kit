@@ -293,6 +293,9 @@ private struct HTMLVisitor: MarkupVisitor {
     /// Every heading's `id`, in document order, worked out before any heading is written.
     private var headingIDs: [String] = []
     private var headingIndex = 0
+    /// Every heading's level and title, in the same order, for `[TOC]`.
+    private var tocEntries: [(level: Int, title: String)] = []
+    private var tocRendered = false
     private var tightListStack: [Bool] = []
 
     init(options: MarkdownRenderer.Options, lineOffset: Int, math: MathExtractor.Extraction,
@@ -324,26 +327,32 @@ private struct HTMLVisitor: MarkupVisitor {
     // MARK: Blocks
 
     mutating func visitDocument(_ document: Document) -> String {
-        headingIDs = MarkdownRenderer.headingIDs(forSlugs: headingSlugs(document))
+        let headings = headingNodes(document)
+        headingIDs = MarkdownRenderer.headingIDs(forSlugs: headings.map { slugify(slugSource($0.plainText)) })
+        tocEntries = headings.map { (min(max($0.level, 1), 6), tocTitle(of: $0)) }
         return visitChildren(document)
     }
 
-    /// Every heading's own slug, in the order `visit` meets them. Headings are blocks, so
-    /// inline nodes are never descended into.
-    private func headingSlugs(_ document: Document) -> [String] {
-        var slugs: [String] = []
+    /// Every heading, in the order `visit` meets them. Headings are blocks, so inline nodes
+    /// are never descended into.
+    private func headingNodes(_ document: Document) -> [Heading] {
+        var headings: [Heading] = []
         var stack: [any Markup] = Array(document.children).reversed()
         while let node = stack.popLast() {
             if let heading = node as? Heading {
-                slugs.append(slugify(slugSource(heading.plainText)))
+                headings.append(heading)
                 continue
             }
             stack.append(contentsOf: node.children.filter { !($0 is InlineMarkup) }.reversed())
         }
-        return slugs
+        return headings
     }
 
     mutating func visitParagraph(_ paragraph: Paragraph) -> String {
+        if !inNote, !tocRendered, isTOCMarker(paragraph) {
+            tocRendered = true
+            return tocHTML(lineAttribute: lineAttribute(paragraph))
+        }
         let inner = embedLinks(paragraph) ?? visitChildren(paragraph)
         if tightListStack.last == true, paragraph.parent is ListItem {
             return inner + "\n"
@@ -366,6 +375,68 @@ private struct HTMLVisitor: MarkupVisitor {
             }
         }
         return HackMDEmbeds.html(forLines: lines)
+    }
+
+    /// A paragraph of nothing but `[TOC]`, in any case. Plain text only: a link (`[TOC](x)`, or
+    /// `[TOC]` with a definition of that name) or any markup in it is not a marker.
+    private func isTOCMarker(_ paragraph: Paragraph) -> Bool {
+        guard paragraph.children.allSatisfy({ $0 is Text }) else { return false }
+        return paragraph.plainText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "[toc]"
+    }
+
+    /// A heading's text for the contents list: code spans without their backticks, images as
+    /// their alt text, inline HTML dropped, whitespace collapsed, math as the source written.
+    private func tocTitle(of heading: Heading) -> String {
+        func text(_ markup: any Markup) -> String {
+            switch markup {
+            case let text as Text: return text.string
+            case let code as InlineCode: return code.code
+            case let image as Image: return image.plainText
+            case is SoftBreak, is LineBreak: return " "
+            case is InlineHTML: return ""
+            default: return markup.children.map(text).joined()
+            }
+        }
+        return slugSource(text(heading)).split(whereSeparator: \.isWhitespace).joined(separator: " ")
+    }
+
+    /// The table of contents for `[TOC]`: a nested list linking to every heading by the `id`
+    /// it was given, so the anchors cannot drift from the headings. A level that is skipped
+    /// (`#` then `###`) nests one list deeper, not two. Headings with no text are left out.
+    /// Only the first `[TOC]` of a document is expanded, which bounds the output at one list
+    /// per document.
+    private func tocHTML(lineAttribute: String) -> String {
+        var html = "<div class=\"toc\"\(lineAttribute)>\n"
+        var levels: [Int] = []
+        func open() { if !html.hasSuffix("\n") { html += "\n" }; html += "<ul>\n" }
+        for (index, entry) in tocEntries.enumerated() where !entry.title.isEmpty && index < headingIDs.count {
+            if levels.isEmpty {
+                open()
+                levels = [entry.level]
+            } else if entry.level > levels[levels.count - 1] {
+                open()
+                levels.append(entry.level)
+            } else {
+                while levels.count > 1, levels[levels.count - 1] > entry.level {
+                    html += "</li>\n</ul>\n"
+                    levels.removeLast()
+                }
+                if levels[levels.count - 1] < entry.level {
+                    open()
+                    levels.append(entry.level)
+                } else {
+                    // On the root list a shallower heading than the first becomes its level.
+                    levels[levels.count - 1] = entry.level
+                    html += "</li>\n"
+                }
+            }
+            html += "<li><a href=\"#\(escapeAttribute(headingIDs[index]))\">\(escapeHTML(entry.title))</a>"
+        }
+        while !levels.isEmpty {
+            html += "</li>\n</ul>\n"
+            levels.removeLast()
+        }
+        return html + "</div>\n"
     }
 
     mutating func visitHeading(_ heading: Heading) -> String {
