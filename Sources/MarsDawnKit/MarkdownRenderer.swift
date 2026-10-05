@@ -412,9 +412,21 @@ private struct HTMLVisitor: MarkupVisitor {
     /// `<sup>` (#133). Pieces of text are rendered as a `Text` node's would be.
     private mutating func markedHTML(_ pieces: [InlineMarks.Piece], children: [any Markup]) -> String {
         var html = ""
+        // A text split into many pieces is checked against its source once, not once per piece.
+        var verbatim: [Int: Bool] = [:]
         for (index, piece) in pieces.enumerated() {
             switch piece {
-            case .text(let string, let child): html += textHTML(string, of: children[child])
+            case .text(let string, let child):
+                var searchable = false
+                if ImageSizes.mayHaveMatch(string) {
+                    if let known = verbatim[child] {
+                        searchable = known
+                    } else {
+                        searchable = (children[child] as? Text).map { ImageSizes.isVerbatim($0, source: source) } ?? false
+                        verbatim[child] = searchable
+                    }
+                }
+                html += textHTML(string, searchable: searchable)
             case .open(.mark): html += "<mark>"
             case .close(.mark): html += "</mark>"
             case .open(.sup): html += "<sup>"
@@ -640,15 +652,14 @@ private struct HTMLVisitor: MarkupVisitor {
     /// that looks like a placeholder but isn't one of this render's comes back as text and is
     /// escaped like the rest.
     mutating func visitText(_ text: Text) -> String {
-        textHTML(text.string, of: text)
+        textHTML(text.string, searchable: ImageSizes.mayHaveMatch(text.string) && ImageSizes.isVerbatim(text, source: source))
     }
 
-    /// `string`, which is `node`'s text or a piece of it, with any HackMD-sized image in it
-    /// written as an `<img>` (#131, `ImageSizes`), and the rest rendered as text.
-    private func textHTML(_ string: String, of node: any Markup) -> String {
-        guard ImageSizes.mayHaveMatch(string), let text = node as? Text, ImageSizes.isVerbatim(text, source: source) else {
-            return renderedText(string)
-        }
+    /// `string`, a `Text` node's text or a piece of it, with any HackMD-sized image in it written
+    /// as an `<img>` (#131, `ImageSizes`) when `searchable` (its node's source is verbatim), and
+    /// the rest rendered as text.
+    private func textHTML(_ string: String, searchable: Bool) -> String {
+        guard searchable else { return renderedText(string) }
         let matches = ImageSizes.matches(in: string)
         guard !matches.isEmpty else { return renderedText(string) }
         let bytes = Array(string.utf8)

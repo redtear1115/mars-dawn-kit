@@ -181,4 +181,18 @@ struct ImageSizeTests {
         #expect(html.components(separatedBy: "<img").count - 1 == 100_000)
         #expect(seconds < budget, "\(seconds) s")
     }
+
+    /// Marks split one text into many pieces; its source is still checked once (#152 review).
+    @Test(.timeLimit(.minutes(1)), arguments: ["![a](b =1)==x==", "![a](b =1)^x^", "![a] =1==x=="])
+    func manyMarkPiecesInOneTextRenderInLinearTime(unit: String) {
+        #if DEBUG
+        let budget = 10.0
+        #else
+        let budget = 1.0
+        #endif
+        let clock = ContinuousClock()
+        let elapsed = clock.measure { _ = render(String(repeating: unit, count: 8_000)) }
+        let seconds = Double(elapsed.components.seconds) + Double(elapsed.components.attoseconds) / 1e18
+        #expect(seconds < budget, "\(unit): \(seconds) s")
+    }
 }
