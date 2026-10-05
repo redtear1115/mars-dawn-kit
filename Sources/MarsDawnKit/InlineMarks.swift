@@ -123,20 +123,29 @@ struct EscapeMap: Sendable {
         self.flagsByPath = flagsByPath
     }
 
-    /// For `source`, the Markdown that was parsed. Parses again on the current worker when it
+    /// For `document`, parsed from `source`. Parses again on the current worker when `source`
     /// holds an escape; call it from inside a `MarkdownParsing.withDocument` body.
-    init(source: String, limits: ParseLimits) {
+    ///
+    /// The second tree is only trusted when it is the first one node for node: same types, same
+    /// child counts, same text once the stand-ins read as `=` and `^` again. Swapping a character
+    /// can change how cmark reads its surroundings (`<a b=\=>` is not a tag but `<a b=⹀>` is;
+    /// `[a&#61;b]` and `[a\=b]` become one label), and then no text's escapes can be read from
+    /// it: every text with a delimiter gets no marks rather than another text's escapes.
+    init(source: String, document: Document, limits: ParseLimits) {
         guard let standIns = Self.standIns(source) else {
             self = .none
             return
         }
         hasEscapes = true
+        let expected = Self.signature(of: document, restoringStandIns: false)
         // The stand-ins can make the text longer, never the tree bigger: lift only the byte cap.
         let relaxed = ParseLimits(maxDepth: limits.maxDepth, maxBytes: nil, maxNodes: limits.maxNodes)
         flagsByPath = MarkdownParsing.withDocument(standIns, options: relaxed) { outcome -> [[Int]: [Bool]]? in
-            guard case .document(let document) = outcome else { return nil }
+            guard case .document(let second) = outcome,
+                  Self.signature(of: second, restoringStandIns: true) == expected
+            else { return nil }
             var flags: [[Int]: [Bool]] = [:]
-            var stack: [(node: any Markup, path: [Int])] = [(document, [])]
+            var stack: [(node: any Markup, path: [Int])] = [(second, [])]
             while let (node, path) = stack.popLast() {
                 if let text = node as? Text {
                     var textFlags: [Bool] = []
@@ -154,6 +163,30 @@ struct EscapeMap: Sendable {
             }
             return flags
         }
+    }
+
+    /// Every node in depth-first order: its type and child count, and a text's string (the
+    /// stand-ins read back as `=` and `^` when `restoringStandIns`).
+    private static func signature(of document: Document, restoringStandIns: Bool) -> [String] {
+        var result: [String] = []
+        var stack: [any Markup] = [document]
+        while let node = stack.popLast() {
+            var entry = "\(type(of: node))/\(node.childCount)"
+            if let text = node as? Text {
+                var string = String.UnicodeScalarView()
+                for scalar in text.string.unicodeScalars {
+                    switch scalar {
+                    case escapedEquals where restoringStandIns: string.append("=")
+                    case escapedCaret where restoringStandIns: string.append("^")
+                    default: string.append(scalar)
+                    }
+                }
+                entry += "|" + String(string)
+            }
+            result.append(entry)
+            stack.append(contentsOf: node.children.reversed())
+        }
+        return result
     }
 
     /// For each `=` or `^` of `text` in order, whether it was escaped; nil when that can't be

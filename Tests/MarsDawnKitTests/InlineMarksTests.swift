@@ -309,4 +309,17 @@ struct InlineMarksTests {
         let html = MarkdownRenderer.render("x ==a== \\=\n\ny ==b==\n")
         #expect(html.contains("x <mark>a</mark> =") && html.contains("y <mark>b</mark>"), "\(html)")
     }
+
+    /// Where the stand-ins change how cmark reads the document, the second tree is not used, and
+    /// no escaped delimiter becomes a mark (#155 review): it is correct or unmarked, never wrong.
+    @Test(arguments: [
+        "p<a b=\\=> ==q== *e* \\=\\=f\\=\\=\n",
+        "[a&#61;b]: /u\n\nc [a\\=b] d ==x== *e* \\=\\=f\\=\\=\n",
+        "c [a\\=b] d ==x== *e* \\=\\=f\\=\\=\n\n[a&#61;b]: /u\n",
+        "p<a b=\\=> ^q^ *e* \\^f\\^\n",
+    ])
+    func whereTheTreesDifferNoEscapeBecomesAMark(markdown: String) {
+        let html = MarkdownRenderer.render(markdown)
+        #expect(!html.contains("<mark>f") && !html.contains("<sup>f"), "\(html)")
+    }
 }

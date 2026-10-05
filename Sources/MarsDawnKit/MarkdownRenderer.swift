@@ -158,7 +158,7 @@ public enum MarkdownRenderer {
     private static func renderResult(_ outcome: ParseOutcome, split: SplitSource, options: Options) -> RenderResult {
         switch outcome {
         case .document(let document):
-            let escapes = EscapeMap(source: split.parsedBody, limits: options.parseLimits)
+            let escapes = EscapeMap(source: split.parsedBody, document: document, limits: options.parseLimits)
             var visitor = HTMLVisitor(options: options, lineOffset: split.bodyLineOffset, math: split.math, footnotes: split.footnotes,
                                       source: split.parsedBody, escapes: escapes)
             let body = visitor.visit(document)
@@ -216,7 +216,7 @@ public enum MarkdownRenderer {
             guard case .document(let document) = outcome else {
                 return "<p>" + escapeHTML(markdown) + "</p>\n"
             }
-            let escapes = EscapeMap(source: markdown, limits: options.parseLimits)
+            let escapes = EscapeMap(source: markdown, document: document, limits: options.parseLimits)
             var visitor = HTMLVisitor(options: options, lineOffset: 0, math: split.math, footnotes: split.footnotes, source: markdown,
                                       escapes: escapes, inNote: true)
             return visitor.visit(document)
