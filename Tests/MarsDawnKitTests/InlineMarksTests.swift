@@ -289,4 +289,24 @@ struct InlineMarksTests {
             #expect(seconds < budget, "\(unit): \(seconds) s")
         }
     }
+
+    /// The stand-ins are punctuation like the characters they replace, so emphasis next to an
+    /// escape parses the same in both trees and the escapes are read from the right text.
+    @Test(arguments: [
+        ("a*\\=b* ==c==", "a*=b* <mark>c</mark>"),
+        ("\\=*a* ==b==", "=<em>a</em> <mark>b</mark>"),
+        ("*\\=* ^x^", "<em>=</em> <sup>x</sup>"),
+        ("_\\^_ \\==y\\==", "<em>^</em> ==y=="),
+        ("a&#61;*b* ==c==", "a=<em>b</em> <mark>c</mark>"),
+    ])
+    func escapesNextToEmphasisAreReadFromTheRightText(markdown: String, expected: String) {
+        #expect(inline(markdown) == expected)
+    }
+
+    /// A document's own stand-in character only costs its text the marks.
+    @Test func aWrittenStandInLeavesItsTextAlone() {
+        #expect(inline("\u{2E40} ==a== \\=") == "\u{2E40} ==a== =")
+        let html = MarkdownRenderer.render("x ==a== \\=\n\ny ==b==\n")
+        #expect(html.contains("x <mark>a</mark> =") && html.contains("y <mark>b</mark>"), "\(html)")
+    }
 }

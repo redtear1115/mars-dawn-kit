@@ -103,13 +103,17 @@ struct SourceBytes: Sendable {
 /// read from the text at the same path in it. Only a document that has such an escape is
 /// parsed twice.
 struct EscapeMap: Sendable {
-    static let escapedEquals: Unicode.Scalar = "\u{E010}"
-    static let escapedCaret: Unicode.Scalar = "\u{E011}"
+    /// Punctuation, as `=` and `^` are, so emphasis flanking next to a stand-in reads as it does
+    /// next to the character it replaces (a private-use character is not punctuation, and `a*\=b*`
+    /// would open emphasis in the second tree only). Rare enough that a document's own use of
+    /// one only costs that text its marks: the counts below then disagree.
+    static let escapedEquals: Unicode.Scalar = "\u{2E40}"
+    static let escapedCaret: Unicode.Scalar = "\u{2E41}"
 
     /// False when the document has no escaped or entity `=` or `^`: every one is a delimiter.
     private let hasEscapes: Bool
-    /// The escape flags of each text that has a stand-in, by path; nil if the second parse
-    /// was refused, and then no text with a delimiter is read.
+    /// The escape flags of each text that has a `=`, `^` or stand-in, by path; nil if the second
+    /// parse was refused, and then no text with a delimiter is read.
     private let flagsByPath: [[Int]: [Bool]]?
 
     static let none = EscapeMap(hasEscapes: false, flagsByPath: [:])
@@ -136,16 +140,14 @@ struct EscapeMap: Sendable {
             while let (node, path) = stack.popLast() {
                 if let text = node as? Text {
                     var textFlags: [Bool] = []
-                    var hasStandIn = false
                     for scalar in text.string.unicodeScalars {
                         if scalar == "=" || scalar == "^" {
                             textFlags.append(false)
                         } else if scalar == EscapeMap.escapedEquals || scalar == EscapeMap.escapedCaret {
                             textFlags.append(true)
-                            hasStandIn = true
                         }
                     }
-                    if hasStandIn { flags[path] = textFlags }
+                    if !textFlags.isEmpty { flags[path] = textFlags }
                     continue
                 }
                 for (index, child) in node.children.enumerated() { stack.append((child, path + [index])) }
@@ -159,8 +161,10 @@ struct EscapeMap: Sendable {
     func flags(for text: Text, delimiterCount: Int) -> [Bool]? {
         guard hasEscapes else { return Array(repeating: false, count: delimiterCount) }
         guard let flagsByPath else { return nil }
-        guard let flags = flagsByPath[Self.path(of: text)] else { return Array(repeating: false, count: delimiterCount) }
-        return flags.count == delimiterCount ? flags : nil
+        // Every text with a delimiter was recorded; a missing one, or a count that differs, means
+        // the trees didn't line up there, and the text is left without marks.
+        guard let flags = flagsByPath[Self.path(of: text)], flags.count == delimiterCount else { return nil }
+        return flags
     }
 
     private static func path(of node: any Markup) -> [Int] {
