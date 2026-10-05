@@ -248,6 +248,56 @@
     );
   }
 
+  // Sequence diagram `rect rgb(...)` bands (redtear1115/mars-dawn-kit#119). The label halo
+  // (`.messageText { stroke: var(--bg) !important }` in preview.css) would show as a page-colour
+  // outline on a band, and Mermaid draws the band as a sibling of the label, not an ancestor, so
+  // CSS can't reach it. Mermaid 12 draws each band as `<rect class="rect" fill="...">` (the only
+  // thing it gives that class; drawBackgroundRect, lowered to the SVG's first child), so after the
+  // SVG is in the page every label takes the colour you actually see behind it: the bands that
+  // contain the label's centre, outermost to innermost, composited over the page colour (a band
+  // may be translucent, e.g. rgba(0,0,255,.1), and nested bands stack). Labels outside any band
+  // are left alone and keep --bg. Inline styles are part of the SVG, so the colours survive the
+  // diagram cache, a theme switch (which re-renders) and PDF export.
+  function parseColor(value) {
+    const m = /^rgba?\(([^)]+)\)$/.exec((value || "").trim());
+    if (!m) return null;
+    const n = m[1].split(/[\s,\/]+/).filter(Boolean).map(Number);
+    if (n.length < 3 || n.slice(0, 3).some((x) => !Number.isFinite(x))) return null;
+    return [n[0], n[1], n[2], n.length > 3 && Number.isFinite(n[3]) ? n[3] : 1];
+  }
+
+  function matchSequenceBands(output) {
+    const bands = [...output.querySelectorAll("svg rect.rect")];
+    if (!bands.length) return;
+    const labels = output.querySelectorAll("svg .messageText");
+    if (!labels.length) return;
+    const boxes = bands.map((rect) => {
+      const box = rect.getBoundingClientRect();
+      return { box, area: box.width * box.height, color: parseColor(getComputedStyle(rect).fill) };
+    }).filter((b) => b.color && b.color[3] > 0 && b.area > 0)
+      .sort((a, b) => b.area - a.area);
+    if (!boxes.length) return;
+    for (const label of labels) {
+      label.style.removeProperty("stroke");
+      const base = parseColor(getComputedStyle(label).stroke);
+      const r = label.getBoundingClientRect();
+      if (!base || (r.width === 0 && r.height === 0)) continue;
+      const cx = r.left + r.width / 2;
+      const cy = r.top + r.height / 2;
+      let color = base;
+      let inside = false;
+      for (const { box, color: fill } of boxes) {
+        if (cx < box.left || cx > box.right || cy < box.top || cy > box.bottom) continue;
+        inside = true;
+        const a = fill[3];
+        color = [0, 1, 2].map((i) => fill[i] * a + color[i] * (1 - a));
+      }
+      if (!inside) continue;
+      const [cr, cg, cb] = color.map((x) => Math.round(x));
+      label.style.setProperty("stroke", `rgb(${cr}, ${cg}, ${cb})`, "important");
+    }
+  }
+
   async function renderMermaid(block, placeholderSVG) {
     const source = block.querySelector(".mermaid-source")?.textContent ?? "";
     const target = document.createElement("div");
@@ -258,6 +308,7 @@
     if (cached) {
       target.innerHTML = cached;
       block.classList.add("rendered");
+      matchSequenceBands(target);
       return;
     }
     // Keep the previous diagram on screen while the edited one renders (no flicker).
@@ -274,6 +325,7 @@
       if (!block.isConnected) return;
       target.innerHTML = svg;
       block.classList.add("rendered");
+      matchSequenceBands(target);
       block.classList.remove("stale", "error");
       block.removeAttribute("data-error");
       block.removeAttribute("data-raw-error");
