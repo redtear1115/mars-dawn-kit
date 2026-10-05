@@ -394,6 +394,8 @@ private struct HTMLVisitor: MarkupVisitor {
         let language = codeBlock.language?
             .split(whereSeparator: \.isWhitespace).first
             .map(String.init)?
+            // HackMD suffixes (`js=`, `js=101`, `js!`, `js=+`) follow the language; none is rendered.
+            .prefix { $0 != "=" && $0 != "!" }
             .filter { $0.isLetter || $0.isNumber || "_+#.-".contains($0) } ?? ""
 
         if language.lowercased() == "mermaid" {

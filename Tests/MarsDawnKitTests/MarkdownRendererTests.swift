@@ -105,6 +105,23 @@ struct MarkdownRendererTests {
         #expect(violations.isEmpty, "\(violations.count) violations, e.g. \(violations.prefix(3))")
     }
 
+    /// HackMD's `js=`, `js=101`, `js!` and `js=+` info strings name JavaScript; the suffix is dropped.
+    @Test(arguments: ["js", "js=", "js=101", "js!", "js=+"])
+    func hackMDFenceSuffixesAreNotPartOfTheLanguage(info: String) {
+        let html = MarkdownRenderer.render("```\(info)\nlet a = 1\n```\n")
+        #expect(html.contains(#"<code class="language-js">let a = 1"#))
+    }
+
+    @Test func hackMDSuffixOnMermaidStillMakesADiagram() {
+        let html = MarkdownRenderer.render("```mermaid=\ngraph TD\n  A-->B\n```\n")
+        #expect(html.contains(#"<div class="mermaid-block""#))
+    }
+
+    @Test func aFenceWhoseInfoStartsWithTheSuffixHasNoLanguage() {
+        let html = MarkdownRenderer.render("```=101\nx\n```\n")
+        #expect(html.contains("<code>x"))
+    }
+
     @Test func mermaidBlocksAreMarkedForTheDiagramRenderer() {
         let html = MarkdownRenderer.render("```mermaid\ngraph TD\n  A-->B\n```\n")
         #expect(html.contains(#"<div class="mermaid-block" data-line="1">"#))
