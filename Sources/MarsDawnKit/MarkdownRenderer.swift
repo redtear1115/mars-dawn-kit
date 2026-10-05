@@ -414,7 +414,7 @@ private struct HTMLVisitor: MarkupVisitor {
         var html = ""
         for (index, piece) in pieces.enumerated() {
             switch piece {
-            case .text(let string, _): html += renderedText(string)
+            case .text(let string, let child): html += textHTML(string, of: children[child])
             case .open(.mark): html += "<mark>"
             case .close(.mark): html += "</mark>"
             case .open(.sup): html += "<sup>"
@@ -640,7 +640,34 @@ private struct HTMLVisitor: MarkupVisitor {
     /// that looks like a placeholder but isn't one of this render's comes back as text and is
     /// escaped like the rest.
     mutating func visitText(_ text: Text) -> String {
-        renderedText(text.string)
+        textHTML(text.string, of: text)
+    }
+
+    /// `string`, which is `node`'s text or a piece of it, with any HackMD-sized image in it
+    /// written as an `<img>` (#131, `ImageSizes`), and the rest rendered as text.
+    private func textHTML(_ string: String, of node: any Markup) -> String {
+        guard ImageSizes.mayHaveMatch(string), let text = node as? Text, ImageSizes.isVerbatim(text, source: source) else {
+            return renderedText(string)
+        }
+        let matches = ImageSizes.matches(in: string)
+        guard !matches.isEmpty else { return renderedText(string) }
+        let bytes = Array(string.utf8)
+        var html = ""
+        var copied = 0
+        for match in matches {
+            html += renderedText(String(decoding: bytes[copied..<match.range.lowerBound], as: UTF8.self))
+            html += sizedImageHTML(match)
+            copied = match.range.upperBound
+        }
+        return html + renderedText(String(decoding: bytes[copied...], as: UTF8.self))
+    }
+
+    /// The `<img>` for a sized image, under the same source policy as `visitImage`.
+    private func sizedImageHTML(_ match: ImageSizes.Match) -> String {
+        let source = sanitizedURL(options.resolveImageSource(match.source), allowData: true)
+        let width = match.width.map { " width=\"\($0)\"" } ?? ""
+        let height = match.height.map { " height=\"\($0)\"" } ?? ""
+        return "<img src=\"\(escapeAttribute(source))\" alt=\"\(escapeAttribute(match.alt))\"\(width)\(height)>"
     }
 
     private func renderedText(_ string: String) -> String {
