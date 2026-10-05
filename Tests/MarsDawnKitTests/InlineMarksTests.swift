@@ -19,6 +19,11 @@ struct InlineMarksTests {
         ("H~2~O", "H<sub>2</sub>O"),
         ("~~strike~~", "<del>strike</del>"),
         ("~~a~~ ~b~", "<del>a</del> <sub>b</sub>"),
+        // Whitespace inside: not a subscript, so the single-tilde strikethrough GFM gives it.
+        ("~a b~", "<del>a b</del>"),
+        ("This ~is struck~ text", "This <del>is struck</del> text"),
+        ("~a\u{3000}b~", "<del>a\u{3000}b</del>"),
+        ("~a **b** c~", "<del>a <strong>b</strong> c</del>"),
         ("e=mc^2^ and H~2~O", "e=mc<sup>2</sup> and H<sub>2</sub>O"),
     ])
     func theThreeMarks(markdown: String, html: String) {

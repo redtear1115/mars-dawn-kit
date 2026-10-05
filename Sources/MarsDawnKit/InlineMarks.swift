@@ -69,12 +69,18 @@ struct SourceBytes: Sendable {
     /// when link reference definitions took its first lines, so a node's range can point at the
     /// wrong line. A single tilde is only believed when the source has one at both ends of the
     /// range; anything else, a misplaced range included, is a `~~del~~` as before.
+    ///
+    /// A subscript has no whitespace inside (#133, as markdown-it-sub has it), so `~a b~` and
+    /// `This ~is struck~ text` stay the single-tilde strikethrough GFM gives them.
     func isSingleTilde(_ node: any Markup) -> Bool {
         guard let range = node.range, let start = offset(of: range.lowerBound), let end = offset(of: range.upperBound),
               start + 1 < end, end <= bytes.count
         else { return false }
         let tilde = UInt8(ascii: "~")
-        return bytes[start] == tilde && bytes[start + 1] != tilde && bytes[end - 1] == tilde && bytes[end - 2] != tilde
+        guard bytes[start] == tilde && bytes[start + 1] != tilde && bytes[end - 1] == tilde && bytes[end - 2] != tilde
+        else { return false }
+        let inner = String(decoding: bytes[(start + 1)..<(end - 1)], as: UTF8.self)
+        return !inner.unicodeScalars.contains { $0.properties.isWhitespace }
     }
 }
 
