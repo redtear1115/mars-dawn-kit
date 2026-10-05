@@ -246,6 +246,15 @@ img { max-width: 100%; }
   overflow-x: auto;
 }
 .mermaid-error::before { content: "Mermaid: "; }
+/* A diagram past the per-update limit: its source stays shown (it is not `.rendered`) with this
+   note under it. Printed, it wraps like the error message. */
+.mermaid-skipped-note {
+  display: block;
+  margin-top: 6px;
+  font: italic 12px var(--font-mono);
+  opacity: 0.8;
+  text-align: left;
+}
 
 /* Sequence diagram message labels (redtear1115/mars-dawn-kit#112): a message between
    non-adjacent participants centres its label over the arrow, and Mermaid draws the
@@ -338,6 +347,7 @@ img { max-width: 100%; }
      Paper has no scrollbar, so the same `pre` clipped the "Expecting …" line at the page edge
      (redtear1115/mars-dawn#226, verifier round 1): wrap instead, so the whole message prints,
      even though a wrapped line no longer lines the "^" up under its column. */
+  .mermaid-skipped-note { overflow-wrap: anywhere; }
   .mermaid-error { white-space: pre-wrap; overflow-wrap: anywhere; overflow: visible; }
   /* Paper has no scrollbar, and TeX has no line breaking, so an expression wider than the
      column can only be cut. Cut it at the column, not at the paper's edge: `hidden` keeps

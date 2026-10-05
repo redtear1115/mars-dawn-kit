@@ -33,3 +33,6 @@
 
 /* reviewed by the owner's reviewer (Grok, kit #84, 2026-09-22) */
 "Not loaded: unencrypted connection (http)" = "불러오지 않음: 암호화되지 않은 연결(http)";
+
+/* Note under a Mermaid diagram left as source because the document has too many (mars-dawn-kit#95). */
+"Not rendered: too many diagrams in this document. Source shown." = "렌더링되지 않음: 이 문서에 다이어그램이 너무 많습니다. 소스를 표시합니다.";

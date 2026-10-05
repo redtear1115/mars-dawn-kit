@@ -258,7 +258,16 @@ public enum PreviewWebView {
     /// JavaScript that replaces the preview content with a freshly rendered fragment.
     /// `lineCount` lets scroll sync map the document's end.
     public nonisolated static func updateScript(html: String, lineCount: Int = 0) -> String {
-        "window.MarsDawn && MarsDawn.update(\(jsonStringLiteral(html)), \(lineCount));"
+        // The note's wording travels with every update, so each host (app, Quick Look, export)
+        // shows the kit's own localization without a separate call.
+        "window.MarsDawn && MarsDawn.setLabels({ diagramLimitNote: \(jsonStringLiteral(diagramLimitNoteLabel)) }); "
+            + "window.MarsDawn && MarsDawn.update(\(jsonStringLiteral(html)), \(lineCount));"
+    }
+
+    /// Note shown under a Mermaid diagram that was left as source because the document has too
+    /// many diagrams (mars-dawn-kit#95). The kit owns this wording, as with the http image label.
+    public nonisolated static var diagramLimitNoteLabel: String {
+        String(localized: "Not rendered: too many diagrams in this document. Source shown.", bundle: .module)
     }
 
     /// JavaScript that scrolls the preview to a (fractional, 1-based) source line.

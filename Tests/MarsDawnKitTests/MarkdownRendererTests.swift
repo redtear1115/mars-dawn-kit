@@ -195,7 +195,8 @@ struct MarkdownRendererTests {
 
     @Test func updateScriptEscapesContent() {
         let script = PreviewWebView.updateScript(html: "</script>\"\n")
-        #expect(script.hasPrefix("window.MarsDawn && MarsDawn.update(\""))
+        // The label statement (#95) comes first, then the update itself.
+        #expect(script.contains("window.MarsDawn && MarsDawn.update(\""))
         #expect(!script.contains("\n"))
     }
 }

@@ -225,7 +225,8 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
     /// Internal, not private, so `MathExportTests` can watch it return on a page whose math was
     /// skipped rather than rendered.
     func waitForContent(until deadline: ContinuousClock.Instant) async throws {
-        // Diagrams settle as "rendered" or "error"; "stale" means an older diagram is still shown.
+        // Diagrams settle as "rendered", "error" or "skipped" (over the per-update limit, left as
+        // source with a note); "stale" means an older diagram is still shown.
         // Math settles as "math-done", which preview.js sets whether KaTeX rendered the
         // expression, showed an error for it or skipped it for being too long or too numerous.
         // So this waits for every expression to have been dealt with and can't hang on one.
@@ -234,7 +235,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         // The KaTeX fonts are covered by the `document.fonts` check like any other font.
         let script = """
         const diagramsReady = [...document.querySelectorAll(".mermaid-block")]
-          .every((b) => (b.classList.contains("rendered") || b.classList.contains("error")) && !b.classList.contains("stale"));
+          .every((b) => (b.classList.contains("rendered") || b.classList.contains("error") || b.classList.contains("skipped")) && !b.classList.contains("stale"));
         const mathReady = document.querySelectorAll(".math-inline:not(.math-done), .math-block:not(.math-done)").length === 0;
         const imagesReady = [...document.images].every((img) => img.complete);
         return diagramsReady && mathReady && imagesReady && document.fonts.status === "loaded";

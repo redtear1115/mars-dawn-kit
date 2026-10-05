@@ -187,15 +187,15 @@ struct PreviewMathPageTests {
         #expect(elements[1].katex == 1)
     }
 
-    /// The per-update cap. The renderer can't emit this many (the extractor stops at the same
-    /// number), so the fragment is pushed straight to the page, as `PreviewDOMFilterTests` does.
-    @Test func onlyTheFirstTwoThousandExpressionsPerUpdateAreRendered() async throws {
+    /// The per-update cap. The page's cap (1000) is below the extractor's (2000), so a rendered document can
+    /// exceed it; the fragment is pushed straight to the page here, as `PreviewDOMFilterTests` does.
+    @Test func onlyTheFirstThousandExpressionsPerUpdateAreRendered() async throws {
         let webView = try await loadedPreview()
-        let spans = (0..<2100).map { #"<span class="math-inline">x_{\#($0)}</span>"# }.joined()
+        let spans = (0..<1100).map { #"<span class="math-inline">x_{\#($0)}</span>"# }.joined()
         try await update("<p data-line=\"1\">\(spans)</p>", in: webView)
 
-        #expect(try await count(of: ".math-inline", in: webView) == 2100)
-        #expect(try await count(of: ".math-inline .katex", in: webView) == 2000)
+        #expect(try await count(of: ".math-inline", in: webView) == 1100)
+        #expect(try await count(of: ".math-inline .katex", in: webView) == 1000)
         #expect(try await count(of: ".math-inline.math-skipped", in: webView) == 100)
         // Rendered, skipped — every one of them is done.
         #expect(try await count(of: ".math-inline:not(.math-done)", in: webView) == 0)

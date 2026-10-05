@@ -33,3 +33,6 @@
 
 /* reviewed by the owner's reviewer (Grok, kit #84, 2026-09-22) */
 "Not loaded: unencrypted connection (http)" = "Non chargée : connexion non chiffrée (http)";
+
+/* Note under a Mermaid diagram left as source because the document has too many (mars-dawn-kit#95). */
+"Not rendered: too many diagrams in this document. Source shown." = "Non rendu : ce document contient trop de diagrammes. Source affichée.";
