@@ -341,26 +341,75 @@ private struct HTMLVisitor: MarkupVisitor {
     /// `children[index]` rendered, a soft break by what stands either side of it (#129).
     private mutating func visitInline(_ children: [any Markup], at index: Int) -> String {
         guard children[index] is SoftBreak else { return visit(children[index]) }
-        if options.softBreaksAsLineBreaks { return "<br>\n" }
-        let joins = CJKLineJoining.joins(
-            before: index > 0 ? children[index - 1] : nil,
-            after: index + 1 < children.count ? children[index + 1] : nil
+        return softBreak(
+            before: index > 0 ? visibleEdge(of: children[index - 1], last: true) : nil,
+            after: index + 1 < children.count ? visibleEdge(of: children[index + 1], last: false) : nil
         )
-        return joins ? "" : "\n"
+    }
+
+    /// A soft break between the characters a reader sees either side of it: nothing between two
+    /// CJK characters, `<br>` when soft breaks are line breaks, a newline otherwise (#129).
+    private func softBreak(before: Unicode.Scalar?, after: Unicode.Scalar?) -> String {
+        if options.softBreaksAsLineBreaks { return "<br>\n" }
+        guard let before, let after else { return "\n" }
+        return CJKLineJoining.isCJK(before) && CJKLineJoining.isCJK(after) ? "" : "\n"
+    }
+
+    /// The last (`last` true) or first character `node` shows, or nil if it shows none there (an
+    /// image, a break). Paired `==` and `^` are tags, not characters (#133), so a container with
+    /// marks is read through its pieces; `CJKLineJoining` alone would see the delimiters.
+    private func visibleEdge(of node: any Markup, last: Bool) -> Unicode.Scalar? {
+        switch node {
+        case let text as Text:
+            return last ? text.string.unicodeScalars.last : text.string.unicodeScalars.first
+        case let code as InlineCode:
+            return last ? code.code.unicodeScalars.last : code.code.unicodeScalars.first
+        case is Image, is SoftBreak, is LineBreak, is InlineHTML, is SymbolLink:
+            return nil
+        default:
+            let children = Array(node.children)
+            guard !children.isEmpty else { return nil }
+            let isAutolink = node is Link && source.startsWithAngleBracket(node)
+            if node is InlineContainer, let pieces = InlineMarks.pieces(of: children, source: source, scanText: !isAutolink) {
+                return visibleEdge(of: pieces, children: children, from: last ? pieces.count - 1 : 0, last: last)
+            }
+            return visibleEdge(of: children[last ? children.count - 1 : 0], last: last)
+        }
+    }
+
+    /// The first character shown walking from `pieces[start]` towards the edge `last` names: back
+    /// when `last`, forward otherwise. Mark tags show nothing and are passed over.
+    private func visibleEdge(of pieces: [InlineMarks.Piece], children: [any Markup], from start: Int, last: Bool) -> Unicode.Scalar? {
+        var index = start
+        while pieces.indices.contains(index) {
+            switch pieces[index] {
+            case .open, .close:
+                break
+            case .text(let string, _):
+                if let scalar = last ? string.unicodeScalars.last : string.unicodeScalars.first { return scalar }
+            case .node(let child):
+                return visibleEdge(of: children[child], last: last)
+            }
+            index += last ? -1 : 1
+        }
+        return nil
     }
 
     /// An inline container's children with its `==mark==` and `^sup^` written as `<mark>` and
     /// `<sup>` (#133). Pieces of text are rendered as a `Text` node's would be.
     private mutating func markedHTML(_ pieces: [InlineMarks.Piece], children: [any Markup]) -> String {
         var html = ""
-        for piece in pieces {
+        for (index, piece) in pieces.enumerated() {
             switch piece {
             case .text(let string, _): html += renderedText(string)
             case .open(.mark): html += "<mark>"
             case .close(.mark): html += "</mark>"
             case .open(.sup): html += "<sup>"
             case .close(.sup): html += "</sup>"
-            case .node(let child): html += visitInline(children, at: child)
+            case .node(let child) where children[child] is SoftBreak:
+                html += softBreak(before: visibleEdge(of: pieces, children: children, from: index - 1, last: true),
+                                  after: visibleEdge(of: pieces, children: children, from: index + 1, last: false))
+            case .node(let child): html += visit(children[child])
             }
         }
         return html

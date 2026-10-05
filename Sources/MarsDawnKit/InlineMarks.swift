@@ -271,11 +271,17 @@ enum InlineMarks {
     private static func output(_ atoms: [Atom], matches: [Int: Int]) -> [Piece] {
         let closers = Set(matches.values)
         var pieces: [Piece] = []
-        var run = String.UnicodeScalarView()
+        // Scalars collect in an array and become a String once per run: appending scalar by
+        // scalar to a String.UnicodeScalarView took quadratic time on a long text.
+        var run: [Unicode.Scalar] = []
         var runChild = -1
         func flush() {
-            if !run.isEmpty { pieces.append(.text(String(run), child: runChild)) }
-            run = String.UnicodeScalarView()
+            if !run.isEmpty {
+                var text = String.UnicodeScalarView()
+                text.append(contentsOf: run)
+                pieces.append(.text(String(text), child: runChild))
+            }
+            run.removeAll(keepingCapacity: true)
         }
         func add(_ scalars: [Unicode.Scalar], child: Int) {
             if child != runChild { flush(); runChild = child }

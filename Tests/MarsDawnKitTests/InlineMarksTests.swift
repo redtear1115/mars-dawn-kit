@@ -196,4 +196,44 @@ struct InlineMarksTests {
         options.softBreaksAsLineBreaks = true
         #expect(MarkdownRenderer.render("==a==\nb", options: options).contains("<mark>a</mark><br>\nb"))
     }
+
+    /// At a mark's edge the character a reader sees is inside the mark, so CJK lines still join
+    /// (#155 review): the delimiters are tags, not characters. Unpaired ones show and don't join.
+    @Test(arguments: [
+        ("==標記==\n第二行", "<mark>標記</mark>第二行"),
+        ("第一行\n==標記==", "第一行<mark>標記</mark>"),
+        ("中文==標記==\n第二行", "中文<mark>標記</mark>第二行"),
+        ("x^上^\n中文", "x<sup>上</sup>中文"),
+        ("中文\n^上^", "中文<sup>上</sup>"),
+        ("==**粗體**==\n中文", "<mark><strong>粗體</strong></mark>中文"),
+        ("[==連結==](u)\n中文", "<a href=\"u\"><mark>連結</mark></a>中文"),
+        ("**粗體**\n中文", "<strong>粗體</strong>中文"),
+        ("==中文==\nabc", "<mark>中文</mark>\nabc"),
+        ("中文==\n第二行", "中文==\n第二行"),
+        ("==中\n文==", "<mark>中文</mark>"),
+    ])
+    func cjkLinesJoinAtAMarksEdge(markdown: String, expected: String) {
+        #expect(inline(markdown) == expected)
+    }
+
+    @Test func withTheOptionOnEverySoftBreakIsALineBreakAtMarkEdgesToo() {
+        var options = MarkdownRenderer.Options()
+        options.softBreaksAsLineBreaks = true
+        #expect(MarkdownRenderer.render("==標記==\n第二行", options: options).contains("<mark>標記</mark><br>\n第二行"))
+        #expect(MarkdownRenderer.render("[==連結==](u)\n中文", options: options).contains("</a><br>\n中文"))
+    }
+
+    /// Splitting one long text around a mark is linear (#155 review: it was quadratic).
+    @Test(.timeLimit(.minutes(1)))
+    func aLongTextWithAMarkRendersInLinearTime() {
+        #if DEBUG
+        let budget = 10.0
+        #else
+        let budget = 1.0
+        #endif
+        let clock = ContinuousClock()
+        let elapsed = clock.measure { _ = MarkdownRenderer.render(String(repeating: "abcdefghi ", count: 64_000) + "==x==") }
+        let seconds = Double(elapsed.components.seconds) + Double(elapsed.components.attoseconds) / 1e18
+        #expect(seconds < budget, "\(seconds) s")
+    }
 }
