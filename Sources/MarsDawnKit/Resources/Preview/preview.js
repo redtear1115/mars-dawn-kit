@@ -153,10 +153,35 @@
     }
   }
 
-  function highlightCode(root) {
+  // Cost caps (mars-dawn-kit#95). Measured in Quick Look's WebContent process on 1 MB
+  // documents (peak phys_footprint): prose ~135 MB, but one 1 MB fenced `javascript` block 821 MB
+  // and 1 MB of mixed code blocks 572 MB. That is ~0.55-0.7 MB of memory per KB highlighted, so
+  // the budget below bounds the highlighting overhead of the worst page at roughly 150-180 MB.
+  // A block over `maxHighlightBlockChars` is left as plain text: a source file that size is
+  // read, not coloured, and one block is where the 821 MB came from. Realistic documents are
+  // untouched: a 3,000-line file is ~100 KB. The total is across the page, counted from what is
+  // already highlighted plus what this update adds, so editing never exhausts it. Characters,
+  // not bytes: `textContent.length`, within a factor of 3 of the byte count for any script.
+  // Skipped code stays an ordinary escaped `<pre><code>`; nothing is hidden and nothing is
+  // reported, because it simply lacks colour (in PDF export too: same page).
+  const maxHighlightBlockChars = 128 * 1024;
+  const maxHighlightTotalChars = 256 * 1024;
+
+  function highlightedChars() {
+    let total = 0;
+    content().querySelectorAll("pre > code.hljs").forEach((code) => { total += code.textContent.length; });
+    return total;
+  }
+
+  // `budget.used` is shared by every call of one update, so the total is page-wide.
+  function highlightCode(root, budget = { used: highlightedChars() }) {
     root.querySelectorAll("pre > code[class*='language-']").forEach((code) => {
       const lang = code.className.replace(/^.*language-/, "").split(/\s/)[0];
-      if (window.hljs && hljs.getLanguage(lang)) hljs.highlightElement(code);
+      if (!(window.hljs && hljs.getLanguage(lang))) return;
+      const size = code.textContent.length;
+      if (size > maxHighlightBlockChars || budget.used + size > maxHighlightTotalChars) return;
+      budget.used += size;
+      hljs.highlightElement(code);
     });
   }
 
@@ -184,8 +209,13 @@
   // S5-4: an expression longer than this stays as its source text, and only this many are
   // rendered per update; the rest stay as source too. Either way the element is marked done,
   // so the exporter's readiness check always terminates.
+  //
+  // The count was 2000, which the Quick Look measurement (mars-dawn-kit#95) put at 654 MB peak
+  // in WebContent against ~135 MB for prose: ~0.26 MB per rendered expression (KaTeX's HTML plus
+  // its MathML copy). 1000 bounds that near 400 MB. It is still well past real documents: a
+  // dense mathematics paper has a few hundred expressions, a textbook chapter around 1000.
   const maxMathLength = 10000;
-  const maxMathPerUpdate = 2000;
+  const maxMathPerUpdate = 1000;
 
   // Written out per class: `:not()` binds to one compound selector, so ".math-inline,
   // .math-block:not(.math-done)" would leave every inline expression pending forever and
@@ -296,6 +326,34 @@
       const [cr, cg, cb] = color.map((x) => Math.round(x));
       label.style.setProperty("stroke", `rgb(${cr}, ${cg}, ${cb})`, "important");
     }
+  }
+
+  // At most this many diagrams are rendered per update; the rest keep their source and say so
+  // (mars-dawn-kit#95). 500 diagrams measured 324 MB in WebContent against ~135 MB for prose,
+  // ~0.38 MB per diagram, so 100 bounds the cost near 175 MB. A long technical document has
+  // dozens of diagrams; 100 leaves those untouched. The skipped block is neither "rendered" nor
+  // "error", so the exporter's readiness wait accepts the "skipped" class too.
+  const maxMermaidPerUpdate = 100;
+  // Localised by the host through `setLabels` (sent ahead of every update); this is only the fallback.
+  let diagramLimitNote = "Not rendered: too many diagrams in this document. Source shown.";
+
+  // Returns the pairs to render; the rest are left as source with a note.
+  function capMermaid(pairs) {
+    pairs.slice(maxMermaidPerUpdate).forEach(([block]) => {
+      block.classList.add("skipped");
+      if (block.querySelector(".mermaid-skipped-note")) return;
+      const note = document.createElement("div");
+      note.className = "mermaid-skipped-note";
+      note.setAttribute("role", "note");
+      note.textContent = diagramLimitNote;
+      block.appendChild(note);
+    });
+    return pairs.slice(0, maxMermaidPerUpdate);
+  }
+
+  function clearMermaidSkip(block) {
+    block.classList.remove("skipped");
+    block.querySelector(".mermaid-skipped-note")?.remove();
   }
 
   async function renderMermaid(block, placeholderSVG) {
@@ -752,8 +810,9 @@
 
     refreshRemoteBar();
     const pending = [];
+    const highlightBudget = { used: highlightedChars() };
     for (const el of fresh) {
-      highlightCode(el);
+      highlightCode(el, highlightBudget);
       const blocks = el.classList.contains("mermaid-block") ? [el] : el.querySelectorAll(".mermaid-block");
       for (const block of blocks) pending.push([block, staleSVGs.shift()]);
     }
@@ -761,7 +820,7 @@
     // changed keeps the KaTeX output it already has.
     renderMath();
     reapplySync();
-    pendingWork = renderMermaidSequentially(pending);
+    pendingWork = renderMermaidSequentially(capMermaid(pending));
     if (pending.length) {
       pendingWork.then(() => {
         invalidateAnchors();
@@ -772,13 +831,14 @@
 
   // Redraw diagrams in place (keeps scroll position); old SVGs stay visible until replaced.
   function rerenderDiagrams() {
-    const pending = [...content().querySelectorAll(".mermaid-block")].map((block) => {
+    const all = [...content().querySelectorAll(".mermaid-block")].map((block) => {
+      clearMermaidSkip(block);
       const output = block.querySelector(".mermaid-output");
       const previous = output?.innerHTML;
       output?.remove();
       return [block, previous];
     });
-    renderMermaidSequentially(pending).then(() => {
+    renderMermaidSequentially(capMermaid(all)).then(() => {
       invalidateAnchors();
       reapplySync();
     });
@@ -824,5 +884,9 @@
     window.scrollTo(0, y);
   }
 
-  window.MarsDawn = { update, setTheme, setThemes, scrollToLine, setAssetState, setRemoteImageState, restoreScroll, idle };
+  function setLabels(labels) {
+    if (labels && typeof labels.diagramLimitNote === "string") diagramLimitNote = labels.diagramLimitNote;
+  }
+
+  window.MarsDawn = { update, setLabels, setTheme, setThemes, scrollToLine, setAssetState, setRemoteImageState, restoreScroll, idle };
 })();

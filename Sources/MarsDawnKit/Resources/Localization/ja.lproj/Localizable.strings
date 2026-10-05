@@ -12,3 +12,6 @@
 "Web image" = "Web イメージ";
 "Image not available" = "イメージを表示できません";
 "Not loaded: unencrypted connection (http)" = "読み込まれていません：暗号化されていない接続（http）";
+
+/* Note under a Mermaid diagram left as source because the document has too many (mars-dawn-kit#95). */
+"Not rendered: too many diagrams in this document. Source shown." = "レンダリングされていません：この書類の図が多すぎます。ソースを表示しています。";
