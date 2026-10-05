@@ -160,5 +160,25 @@ struct PreviewCostCapTests {
         #expect(try await count(".mermaid-skipped-note", in: webView) == 2)
         #expect(try await count(".mermaid-block.skipped", in: webView) == 2)
     }
+
+    /// Diagrams added over several edits can all be drawn, each update under the limit. A theme
+    /// change then redraws them all at once, and the ones past the limit must show their source
+    /// rather than nothing at all.
+    @Test func aThemeChangeShowsTheSourceOfDiagramsThatWereDrawnBefore() async throws {
+        let webView = try await loadedPreview()
+        try await render(diagrams(100), in: webView)
+        try await render(diagrams(130), in: webView)
+        #expect(try await count(".mermaid-block.skipped", in: webView) == 0)
+        _ = try await webView.evaluateJavaScript(PreviewWebView.themeScript(.classic))
+        _ = try? await webView.callAsyncJavaScript("return await MarsDawn.idle();", contentWorld: .page)
+        try await Task.sleep(for: .seconds(3))
+        #expect(try await count(".mermaid-block.skipped", in: webView) == 30)
+        #expect(try await count(".mermaid-block.skipped.rendered", in: webView) == 0)
+        let shown = try await value("""
+            [...document.querySelectorAll(".mermaid-block.skipped .mermaid-source")]
+              .filter((el) => getComputedStyle(el).display !== "none" && el.getBoundingClientRect().height > 0).length
+            """, in: webView) as? Int
+        #expect(shown == 30)
+    }
 }
 #endif

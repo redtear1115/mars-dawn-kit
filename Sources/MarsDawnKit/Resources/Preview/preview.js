@@ -340,6 +340,10 @@
   // Returns the pairs to render; the rest are left as source with a note.
   function capMermaid(pairs) {
     pairs.slice(maxMermaidPerUpdate).forEach(([block]) => {
+      // A block can arrive here already drawn: a theme change redraws every diagram, including
+      // ones that edits brought in under earlier updates' limits. Its output is gone, and a
+      // leftover `rendered` would keep preview.css hiding the source the note says is shown.
+      block.classList.remove("rendered", "stale");
       block.classList.add("skipped");
       if (block.querySelector(".mermaid-skipped-note")) return;
       const note = document.createElement("div");
