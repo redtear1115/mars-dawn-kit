@@ -49,6 +49,15 @@ struct SourceBytes: Sendable {
         return offset <= bytes.count ? offset : nil
     }
 
+    /// The bytes a one-line range covers (its end column is exclusive), or nil. Only for a check
+    /// that refuses what doesn't match (`ImageSizes.isVerbatim`): cmark's ranges can be wrong.
+    func slice(_ range: SourceRange?) -> ArraySlice<UInt8>? {
+        guard let range, range.lowerBound.line == range.upperBound.line,
+              let start = offset(of: range.lowerBound), let end = offset(of: range.upperBound), start <= end
+        else { return nil }
+        return bytes[start..<end]
+    }
+
     /// Whether a strikethrough was written with one tilde (`~sub~`), judged from its source.
     ///
     /// cmark-gfm gives the first line of a paragraph the line number the paragraph began on, even

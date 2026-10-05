@@ -412,9 +412,21 @@ private struct HTMLVisitor: MarkupVisitor {
     /// `<sup>` (#133). Pieces of text are rendered as a `Text` node's would be.
     private mutating func markedHTML(_ pieces: [InlineMarks.Piece], children: [any Markup]) -> String {
         var html = ""
+        // A text split into many pieces is checked against its source once, not once per piece.
+        var verbatim: [Int: Bool] = [:]
         for (index, piece) in pieces.enumerated() {
             switch piece {
-            case .text(let string, _): html += renderedText(string)
+            case .text(let string, let child):
+                var searchable = false
+                if ImageSizes.mayHaveMatch(string) {
+                    if let known = verbatim[child] {
+                        searchable = known
+                    } else {
+                        searchable = (children[child] as? Text).map { ImageSizes.isVerbatim($0, source: source) } ?? false
+                        verbatim[child] = searchable
+                    }
+                }
+                html += textHTML(string, searchable: searchable)
             case .open(.mark): html += "<mark>"
             case .close(.mark): html += "</mark>"
             case .open(.sup): html += "<sup>"
@@ -640,7 +652,33 @@ private struct HTMLVisitor: MarkupVisitor {
     /// that looks like a placeholder but isn't one of this render's comes back as text and is
     /// escaped like the rest.
     mutating func visitText(_ text: Text) -> String {
-        renderedText(text.string)
+        textHTML(text.string, searchable: ImageSizes.mayHaveMatch(text.string) && ImageSizes.isVerbatim(text, source: source))
+    }
+
+    /// `string`, a `Text` node's text or a piece of it, with any HackMD-sized image in it written
+    /// as an `<img>` (#131, `ImageSizes`) when `searchable` (its node's source is verbatim), and
+    /// the rest rendered as text.
+    private func textHTML(_ string: String, searchable: Bool) -> String {
+        guard searchable else { return renderedText(string) }
+        let matches = ImageSizes.matches(in: string)
+        guard !matches.isEmpty else { return renderedText(string) }
+        let bytes = Array(string.utf8)
+        var html = ""
+        var copied = 0
+        for match in matches {
+            html += renderedText(String(decoding: bytes[copied..<match.range.lowerBound], as: UTF8.self))
+            html += sizedImageHTML(match)
+            copied = match.range.upperBound
+        }
+        return html + renderedText(String(decoding: bytes[copied...], as: UTF8.self))
+    }
+
+    /// The `<img>` for a sized image, under the same source policy as `visitImage`.
+    private func sizedImageHTML(_ match: ImageSizes.Match) -> String {
+        let source = sanitizedURL(options.resolveImageSource(match.source), allowData: true)
+        let width = match.width.map { " width=\"\($0)\"" } ?? ""
+        let height = match.height.map { " height=\"\($0)\"" } ?? ""
+        return "<img src=\"\(escapeAttribute(source))\" alt=\"\(escapeAttribute(match.alt))\"\(width)\(height)>"
     }
 
     private func renderedText(_ string: String) -> String {
