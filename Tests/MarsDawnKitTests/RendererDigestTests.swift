@@ -102,9 +102,15 @@ struct RendererDigestTests {
     /// `id`, and every changed `id` had been empty. The new output has no empty `id`.
     /// Re-checked for the two- and three-pass rules (#48 rounds 2 and 3): each dump is
     /// byte-identical to the first rule's, so the value stands.
+    ///
+    /// Retaken for #130 (a fence's language is read before `=` or `!`, for HackMD's `js=101`).
+    /// The value before was 02ad803e…6ecdd0. Every render was dumped before and after and diffed:
+    /// 38 of the 7,996 renders changed, every one only in a `<code class="language-…">`
+    /// attribute whose info string held a `!` or `=` (e.g. "```![i](data:…" lost `language-idata…`),
+    /// and the rest of each changed line is byte-identical.
     @Test func ordinaryOutputMatchesTheDigestBeforeFrontMatter() {
         #expect(Self.digest(documents: 4000, strings: 20000)
-            == "02ad803eda6815ec96d16e58b1c1143d96d07b5a4bb8223673cff88e9f6ecdd0")
+            == "ce233c6d25719ae19d2b86c5ad43b7afb65501964ab57901d203dc9960a554c7")
     }
 
     /// The skip has to be exercising something, or the digest above would prove nothing about
