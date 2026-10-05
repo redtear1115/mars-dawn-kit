@@ -84,6 +84,7 @@ On failure with `--json` it prints `{"ok": false, "error": <kind>, "message": ..
 | 4 | `output_exists` | The PDF (or `theme preview`'s PNG) already exists. Pass --force to replace it, or -o to write elsewhere. |
 | 5 | `export_failed` | Rendering failed. |
 | 6 | `app_cannot_open_folders` | This MarsDawn can't show a folder, so nothing was opened. Only `open` returns this. |
+| 7 | `skill_install_failed` | `skill --install` couldn't create the folder or write the file, or the final rename failed. An existing SKILL.md is left as it was. Only `skill --install` returns this. |
 | 64 | — | Usage error: a bad option or value. Printed as text on stderr, never as JSON, except `theme preview`'s refused -o (`output_folder_missing`, `output_symlink`, `output_not_a_file`). |
 
 ## Review: open what you wrote
@@ -142,8 +143,9 @@ extension MarsDawnCommand {
             yet. A byte-identical file already there is left alone, reported as unchanged. A \
             different one is only replaced with --force, so a local edit to the skill is never \
             overwritten silently; without --force it exits 64 (skill_differs in --json) and says \
-            what to do instead. --dir <path> installs to <path>/SKILL.md instead, for another \
-            agent's skill folder.
+            what to do instead. If the folder or file can't be written, it exits 7 \
+            (skill_install_failed in --json). --dir <path> installs to <path>/SKILL.md instead, for \
+            another agent's skill folder.
             """
         )
 
@@ -221,9 +223,15 @@ enum SkillInstaller {
     /// --dir" (verifier round 3). Kept apart from `defaultDirectory` below so a test can call it
     /// directly to check the `$HOME` logic itself, even once `defaultDirectory` has been
     /// overridden or poisoned; it only builds a `URL`, so calling it touches no filesystem.
+    ///
+    /// An empty, whitespace-only or relative `$HOME` counts as unset: `URL(fileURLWithPath: "")`
+    /// is the current directory, which would install relative to wherever the command ran.
     static func productionDefaultDirectory() -> URL {
-        let home = ProcessInfo.processInfo.environment["HOME"].map { URL(fileURLWithPath: $0, isDirectory: true) }
-            ?? FileManager.default.homeDirectoryForCurrentUser
+        var home = FileManager.default.homeDirectoryForCurrentUser
+        if let environmentHome = ProcessInfo.processInfo.environment["HOME"],
+           !environmentHome.trimmingCharacters(in: .whitespaces).isEmpty, environmentHome.hasPrefix("/") {
+            home = URL(fileURLWithPath: environmentHome, isDirectory: true)
+        }
         return home.appendingPathComponent(".claude/skills/marsdawn", isDirectory: true)
     }
 
@@ -250,8 +258,17 @@ enum SkillInstaller {
         case .typeSocket: "a socket"
         case .typeCharacterSpecial: "a character device"
         case .typeBlockSpecial: "a block device"
-        default: "not a plain file"
+        default: "something else"
         }
+    }
+
+    /// The real `rename(2)`; `install` takes it as a parameter so a test can fail only the swap.
+    static func systemRename(_ from: String, _ to: String) -> Int32 { Darwin.rename(from, to) }
+
+    /// A write or rename that failed, as the documented `skill_install_failed` (exit 7) rather
+    /// than whatever an unhandled error would print.
+    static func ioFailure(_ message: String) -> CLIFailure {
+        CLIFailure(code: .skillInstallFailed, message: message)
     }
 
     /// Installs `MarsDawnSkill.text` at `<dir ?? defaultDirectory()>/SKILL.md`, atomically: a temp
@@ -260,9 +277,13 @@ enum SkillInstaller {
     /// and — critically for `--force` — a failed rename never loses what was at `target`: nothing
     /// ever deletes it first, `rename(2)` replaces it atomically or the call fails and it's
     /// untouched.
-    static func install(dir: String?, force: Bool, fileManager: FileManager = .default) throws -> Installed {
+    static func install(dir: String?, force: Bool, fileManager: FileManager = .default, rename: (String, String) -> Int32 = systemRename) throws -> Installed {
         let directory = dir.map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath).standardizedFileURL } ?? defaultDirectory()
-        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        do {
+            try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        } catch {
+            throw ioFailure("Couldn't create \(directory.path): \(error.localizedDescription)")
+        }
         let resolvedDirectory = directory.resolvingSymlinksInPath().standardizedFileURL
         let target = directory.appendingPathComponent("SKILL.md")
 
@@ -338,7 +359,11 @@ enum SkillInstaller {
         }
 
         let temporary = directory.appendingPathComponent(".SKILL.md.\(UUID().uuidString).tmp")
-        try newData.write(to: temporary)
+        do {
+            try newData.write(to: temporary)
+        } catch {
+            throw ioFailure("Couldn't write \(temporary.path): \(error.localizedDescription)")
+        }
         defer { try? fileManager.removeItem(at: temporary) }
         // POSIX `rename(2)`, not `FileManager.moveItem`/`replaceItemAt`: on the same filesystem
         // (guaranteed above — the temp file lives right next to `target`) it atomically replaces
@@ -351,11 +376,7 @@ enum SkillInstaller {
         // `moveItem` after the delete would have lost the user's existing file for good.
         guard rename(temporary.path, target.path) == 0 else {
             let code = errno
-            throw NSError(
-                domain: NSPOSIXErrorDomain,
-                code: Int(code),
-                userInfo: [NSLocalizedDescriptionKey: "Couldn't install the skill: rename(2) from \(temporary.path) to \(target.path) failed: \(String(cString: strerror(code)))"]
-            )
+            throw ioFailure("Couldn't install the skill: rename(2) from \(temporary.path) to \(target.path) failed: \(String(cString: strerror(code)))")
         }
         return Installed(path: target.path, action: targetIsAFile ? .replaced : .installed)
     }

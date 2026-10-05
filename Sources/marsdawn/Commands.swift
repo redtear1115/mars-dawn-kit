@@ -18,7 +18,7 @@ struct MarsDawnCommand: AsyncParsableCommand {
         \(CLIFailure.Code.inputNotFound.rawValue) input not found, \
         \(CLIFailure.Code.appNotInstalled.rawValue) MarsDawn not installed (open only), \(CLIFailure.Code.outputExists.rawValue) output exists \
         (use --force), \(CLIFailure.Code.exportFailed.rawValue) export failed, \(CLIFailure.Code.appCannotOpenFolders.rawValue) this MarsDawn \
-        can't show a folder (open only), 64 usage error (including theme preview's refused -o).
+        can't show a folder (open only), \(CLIFailure.Code.skillInstallFailed.rawValue) skill --install couldn't write the file, 64 usage error (including theme preview's refused -o).
         """,
         version: MarsDawnCLI.version,
         subcommands: [Open.self, Export.self, Skill.self, Theme.self]
@@ -59,6 +59,7 @@ struct CLIFailure: Error, CustomStringConvertible {
         case outputExists = 4
         case exportFailed = 5
         case appCannotOpenFolders = 6
+        case skillInstallFailed = 7
 
         var kind: String {
             switch self {
@@ -67,6 +68,7 @@ struct CLIFailure: Error, CustomStringConvertible {
             case .outputExists: "output_exists"
             case .exportFailed: "export_failed"
             case .appCannotOpenFolders: "app_cannot_open_folders"
+            case .skillInstallFailed: "skill_install_failed"
             }
         }
     }

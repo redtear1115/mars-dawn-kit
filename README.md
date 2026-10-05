@@ -93,14 +93,16 @@ swift run marsdawn export notes.md -o notes.pdf --theme classic --paper a4
     overwritten silently — without `--force` it exits `64` and says what's there and how to
     replace it (`error: "skill_differs"` in `--json`). Refuses the same way, `error:
     "skill_unsafe_symlink"`, if the target path is a symlink pointing outside the folder it's
-    meant to stay in.
+    meant to stay in. If the folder can't be created or the file can't be written or renamed into
+    place, it exits `7` (`error: "skill_install_failed"` in `--json`); an existing `SKILL.md` is
+    left as it was.
   - `--dir PATH` installs to `PATH/SKILL.md` instead of `~/.claude/skills/marsdawn/SKILL.md`, for
     another agent's skill folder. Only applies with `--install`.
   - `--json` (only with `--install`) prints `ok`, `path` and `action`
     (`"installed"`, `"unchanged"` or `"replaced"`).
 - `--version` prints the release number and nothing else, so a package manager can compare it against its own. Bumping it is part of cutting a release; see [RELEASING.md](RELEASING.md).
 - `--generate-completion-script bash|zsh|fish` writes a shell completion script to stdout.
-- Exit codes: 1 invalid theme (`theme` commands only), 2 input not found, 3 MarsDawn not installed (`open` only), 4 output exists, 5 export failed, 6 this MarsDawn can't take a folder (`open` only), 64 usage error (including `skill --install`'s `skill_differs` and `skill_unsafe_symlink`, `open --wait`'s `wait_out_of_range`, and `theme preview`'s `output_folder_missing`, `output_symlink` and `output_not_a_file`).
+- Exit codes: 1 invalid theme (`theme` commands only), 2 input not found, 3 MarsDawn not installed (`open` only), 4 output exists, 5 export failed, 6 this MarsDawn can't take a folder (`open` only), 7 `skill --install` couldn't write the skill (`skill_install_failed`), 64 usage error (including `skill --install`'s `skill_differs` and `skill_unsafe_symlink`, `skill_target_not_a_file` (refused even with `--force`) and `skill_unreadable` (refused without `--force`), `open --wait`'s `wait_out_of_range`, and `theme preview`'s `output_folder_missing`, `output_symlink` and `output_not_a_file`).
 - `MARSDAWN_APP_PATH` overrides where the tool looks for the MarsDawn app. It exists for testing, so
   it's only honoured for a bundle whose `CFBundleIdentifier` is `dev.southern-light.marsdawn` or
   starts with `dev.southern-light.marsdawn.` (a throwaway verification copy); anything else is
