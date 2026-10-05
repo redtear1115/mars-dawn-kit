@@ -178,4 +178,12 @@ struct RemoteImagePolicyTests {
         #expect(script.hasPrefix("window.MarsDawn && MarsDawn.setRemoteImageState({"))
         #expect(script.contains(#""blocked":true"#))
     }
+
+    /// The preview factory carries #129's option, so export and the preview agree on it.
+    @Test func thePreviewFactoryCarriesTheSoftBreakOption() {
+        #expect(!MarkdownRenderer.Options.preview(baseDirectory: nil).softBreaksAsLineBreaks)
+        let options = MarkdownRenderer.Options.preview(baseDirectory: nil, softBreaksAsLineBreaks: true)
+        #expect(options.softBreaksAsLineBreaks)
+        #expect(MarkdownRenderer.render("a\nb", options: options).contains("a<br>\nb"))
+    }
 }
