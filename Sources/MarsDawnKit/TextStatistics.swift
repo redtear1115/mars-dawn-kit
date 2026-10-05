@@ -428,7 +428,7 @@ struct VisibleHTMLText {
     }
 
     /// The UTF-8 an entity at `b[at]` stands for and its length, or nil to show `&` as written.
-    private static func entity(_ b: [UInt8], at start: Int) -> ([UInt8], Int)? {
+    static func entity(_ b: [UInt8], at start: Int) -> ([UInt8], Int)? {
         var end = start + 1
         while end < b.count, end - start <= 32, b[end] != UInt8(ascii: ";") {
             let c = b[end]

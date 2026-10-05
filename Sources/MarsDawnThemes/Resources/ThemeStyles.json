@@ -70,7 +70,7 @@
   },
 
   "pairs": {
-    "_comment": "Composed colour pairs (design 4.5/6.3, kit #125). A pair is a foreground drawn on the background it actually sits on: kind text needs 4.5:1, nontext 3:1. Colour tokens are palette fields (background, surface, text, muted, border, heading, accent, link, quote), syntax fields (keyword, string, comment, number, function, type), diagram.<field>, or the derived chip (inline-code background), frontMatter, footnoteTarget and paper (#FFFFFF, PDF). css lists the preview.css declarations a pair accounts for, as 'selector|property'; mermaid lists the preview.js themeVariables it accounts for. A nontext pair whose foreground is border is a decorative hairline, which #152 exempts.",
+    "_comment": "Composed colour pairs (design 4.5/6.3, kit #125). A pair is a foreground drawn on the background it actually sits on: kind text needs 4.5:1, nontext 3:1. Colour tokens are palette fields (background, surface, text, muted, border, heading, accent, link, quote), syntax fields (keyword, string, comment, number, function, type), diagram.<field>, or the derived chip (inline-code background), frontMatter, footnoteTarget, mark (the <mark> highlight) and paper (#FFFFFF, PDF). css lists the preview.css declarations a pair accounts for, as 'selector|property'; mermaid lists the preview.js themeVariables it accounts for. A nontext pair whose foreground is border is a decorative hairline, which #152 exempts.",
     "shared": [
       { "id": "body-text", "element": "body text", "fg": "text", "bg": "background", "kind": "text", "baseline": true,
         "css": ["html|background", "body|background", "body|color", ".math-block|color", ".math-inline|color"] },
@@ -108,6 +108,8 @@
         "css": [".mermaid-error|color", ".math-error|color"] },
       { "id": "footnote-target", "element": "body text on a footnote highlight", "fg": "text", "bg": "footnoteTarget", "kind": "text", "baseline": true,
         "css": [".footnotes li:target, .footnote-ref a:target|background"] },
+      { "id": "mark-text", "element": "body text on a ==mark== highlight", "fg": "text", "bg": "mark", "kind": "text", "baseline": true,
+        "css": ["mark|background"] },
       { "id": "diagram-label-node", "element": "diagram label on node", "fg": "diagram.text", "bg": "diagram.node", "kind": "text",
         "mermaid": ["primaryColor", "primaryTextColor", "mainBkg", "actorBkg", "actorTextColor", "labelBoxBkgColor", "labelTextColor"] },
       { "id": "diagram-label-secondary", "element": "diagram label on secondary", "fg": "diagram.text", "bg": "diagram.secondary", "kind": "text",
