@@ -33,8 +33,6 @@ struct SoftBreakTests {
         ("日本語\nです", "日本語です"),                 // Han then Hiragana
         ("ひらがな\nカタカナ", "ひらがなカタカナ"),      // Hiragana then Katakana
         ("ｶﾀｶﾅ\nｶﾀｶﾅ", "ｶﾀｶﾅｶﾀｶﾅ"),                  // halfwidth Katakana
-        ("한국어\n문장", "한국어문장"),                  // Hangul syllables
-        ("ㄱㄴㄷ\nㅏㅓ", "ㄱㄴㄷㅏㅓ"),                  // Hangul compatibility Jamo
         ("你好。\n再见", "你好。再见"),                  // ideographic full stop
         ("你好\n「再见」", "你好「再见」"),              // corner brackets
         ("你好、\n再见", "你好、再见"),                  // ideographic comma
@@ -48,8 +46,10 @@ struct SoftBreakTests {
     }
 
     /// Mixed CJK and Latin keeps what CommonMark does: the break stays, and a browser shows a
-    /// space. The same for digits, and for a CJK character beside the ideographic space.
+    /// space. The same for digits, for a CJK character beside the ideographic space, and for
+    /// Korean, which spaces its words.
     @Test(arguments: [
+        "한국어\n문장", "ㄱㄴㄷ\nㅏㅓ", "ﾡﾢ\nﾣﾤ", "日本語\n한국어",
         "日本語\nabc", "abc\n日本語", "日本語\n123", "第 3\n日本語", "日本語\n\u{3000}日本語", "日本語\u{3000}\n日本語",
         "日本語\n😀", "😀\n日本語", "日本語\n$x$",
     ])
