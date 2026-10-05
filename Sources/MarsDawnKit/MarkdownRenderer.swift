@@ -344,11 +344,28 @@ private struct HTMLVisitor: MarkupVisitor {
     }
 
     mutating func visitParagraph(_ paragraph: Paragraph) -> String {
-        let inner = visitChildren(paragraph)
+        let inner = embedLinks(paragraph) ?? visitChildren(paragraph)
         if tightListStack.last == true, paragraph.parent is ListItem {
             return inner + "\n"
         }
         return "<p\(lineAttribute(paragraph))>\(inner)</p>\n"
+    }
+
+    /// The links for a paragraph that is nothing but HackMD embed tags, one per line (`HackMDEmbeds`).
+    /// Only text and autolinks may be in it: any other markup means it is not a tag line.
+    private func embedLinks(_ paragraph: Paragraph) -> String? {
+        // Cheap test first: this runs for every paragraph.
+        guard let first = paragraph.child(at: 0) as? Text, first.string.hasPrefix("{%") else { return nil }
+        var lines = [""]
+        for child in paragraph.children {
+            switch child {
+            case let text as Text: lines[lines.count - 1] += text.string
+            case let link as Link: lines[lines.count - 1] += link.plainText
+            case is SoftBreak, is LineBreak: lines.append("")
+            default: return nil
+            }
+        }
+        return HackMDEmbeds.html(forLines: lines)
     }
 
     mutating func visitHeading(_ heading: Heading) -> String {
