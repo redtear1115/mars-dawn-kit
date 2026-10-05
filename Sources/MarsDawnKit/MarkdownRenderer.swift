@@ -158,7 +158,9 @@ public enum MarkdownRenderer {
     private static func renderResult(_ outcome: ParseOutcome, split: SplitSource, options: Options) -> RenderResult {
         switch outcome {
         case .document(let document):
-            var visitor = HTMLVisitor(options: options, lineOffset: split.bodyLineOffset, math: split.math, footnotes: split.footnotes, source: split.parsedBody)
+            let escapes = EscapeMap(source: split.parsedBody, limits: options.parseLimits)
+            var visitor = HTMLVisitor(options: options, lineOffset: split.bodyLineOffset, math: split.math, footnotes: split.footnotes,
+                                      source: split.parsedBody, escapes: escapes)
             let body = visitor.visit(document)
             return RenderResult(html: split.frontMatterHTML + body + footnotesHTML(split, options: options), fallback: nil)
         case .tooDeep(let depth):
@@ -214,7 +216,9 @@ public enum MarkdownRenderer {
             guard case .document(let document) = outcome else {
                 return "<p>" + escapeHTML(markdown) + "</p>\n"
             }
-            var visitor = HTMLVisitor(options: options, lineOffset: 0, math: split.math, footnotes: split.footnotes, source: markdown, inNote: true)
+            let escapes = EscapeMap(source: markdown, limits: options.parseLimits)
+            var visitor = HTMLVisitor(options: options, lineOffset: 0, math: split.math, footnotes: split.footnotes, source: markdown,
+                                      escapes: escapes, inNote: true)
             return visitor.visit(document)
         }
         guard !appending.isEmpty else { return rendered }
@@ -301,6 +305,8 @@ private struct HTMLVisitor: MarkupVisitor {
     let inNote: Bool
     /// The Markdown that was parsed, for what only its characters say (`~` versus `~~`, `\=`).
     let source: SourceBytes
+    /// Which `=` and `^` were escaped, for `InlineMarks` (#133).
+    let escapes: EscapeMap
     /// Every heading's `id`, in document order, worked out before any heading is written.
     private var headingIDs: [String] = []
     private var headingIndex = 0
@@ -310,9 +316,10 @@ private struct HTMLVisitor: MarkupVisitor {
     private var tightListStack: [Bool] = []
 
     init(options: MarkdownRenderer.Options, lineOffset: Int, math: MathExtractor.Extraction,
-         footnotes: FootnoteExtraction, source: String, inNote: Bool = false) {
+         footnotes: FootnoteExtraction, source: String, escapes: EscapeMap = .none, inNote: Bool = false) {
         self.options = options
         self.source = SourceBytes(source)
+        self.escapes = escapes
         self.lineOffset = lineOffset
         self.math = math
         self.footnotes = footnotes
@@ -326,9 +333,8 @@ private struct HTMLVisitor: MarkupVisitor {
     private mutating func visitChildren(_ markup: any Markup) -> String {
         let children = Array(markup.children)
         // `<` first: an autolink's text is its URL, and `^` or `==` in it is not a mark.
-        let isAutolink = markup is Link && source.startsWithAngleBracket(markup)
         if markup is InlineContainer,
-           let pieces = InlineMarks.pieces(of: children, source: source, scanText: !isAutolink) {
+           let pieces = InlineMarks.pieces(of: children, escapes: escapes, scanText: !Self.isAutolink(markup)) {
             return markedHTML(pieces, children: children)
         }
         var html = ""
@@ -336,6 +342,14 @@ private struct HTMLVisitor: MarkupVisitor {
             html += visitInline(children, at: index)
         }
         return html
+    }
+
+    /// Whether `markup` is a link whose text is its address (`<https://x>`, `<a@b.c>`, `www.x`):
+    /// `^` or `==` in an address is not a mark. Read from the link itself, not source positions.
+    private static func isAutolink(_ markup: any Markup) -> Bool {
+        guard let link = markup as? Link, let destination = link.destination else { return false }
+        let text = link.plainText
+        return destination == text || destination == "mailto:" + text || destination == "http://" + text
     }
 
     /// `children[index]` rendered, a soft break by what stands either side of it (#129).
@@ -369,8 +383,7 @@ private struct HTMLVisitor: MarkupVisitor {
         default:
             let children = Array(node.children)
             guard !children.isEmpty else { return nil }
-            let isAutolink = node is Link && source.startsWithAngleBracket(node)
-            if node is InlineContainer, let pieces = InlineMarks.pieces(of: children, source: source, scanText: !isAutolink) {
+            if node is InlineContainer, let pieces = InlineMarks.pieces(of: children, escapes: escapes, scanText: !Self.isAutolink(node)) {
                 return visibleEdge(of: pieces, children: children, from: last ? pieces.count - 1 : 0, last: last)
             }
             return visibleEdge(of: children[last ? children.count - 1 : 0], last: last)

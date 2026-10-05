@@ -10,12 +10,12 @@ import Markdown
 // cmark's own flanking rules already refuse `a ~ b ~ c` and a delimiter with space just inside.
 //
 // `==` and `^` are plain text to cmark, so they are found in `Text` nodes, which swift-markdown
-// has already merged and unescaped (`\=` and `&amp;` are inside the same node as the text next to
-// them). The escape is only visible in the source, so each text's delimiters are located there:
-// the k-th `=` or `^` of the decoded string is the k-th of its source slice, escaped when a
-// backslash stands before it. Code spans, code blocks, raw HTML, link destinations and math are
-// never `Text` (math is a placeholder with no delimiter in it), so none of them is touched.
-// A text whose source can't be read or whose delimiters don't line up is left as it is.
+// has already merged and unescaped (`\=` and `&#61;` are inside the same node as the text next
+// to them). Which of a text's `=` and `^` were escaped is read from a second parse in which
+// they are stand-ins (`EscapeMap`), not from source positions, which cmark gets wrong after a
+// hard break and inside containers. Code spans, code blocks, raw HTML, link destinations and
+// math are never `Text` (math is a placeholder with no delimiter in it), so none of them is
+// touched. A text whose escapes can't be read is left as it is.
 //
 // Matching works on the children of one inline container, so a mark can enclose emphasis or
 // links (`==a **b** c==`) but never reaches out of the container it began in, and the tags it
@@ -49,20 +49,6 @@ struct SourceBytes: Sendable {
         return offset <= bytes.count ? offset : nil
     }
 
-    /// Whether the node's source starts with `<`, as an autolink's does.
-    func startsWithAngleBracket(_ node: any Markup) -> Bool {
-        guard let start = node.range?.lowerBound, let offset = offset(of: start), offset < bytes.count else { return false }
-        return bytes[offset] == UInt8(ascii: "<")
-    }
-
-    /// The bytes a one-line range covers (its end column is exclusive), or nil.
-    func slice(_ range: SourceRange?) -> ArraySlice<UInt8>? {
-        guard let range, range.lowerBound.line == range.upperBound.line,
-              let start = offset(of: range.lowerBound), let end = offset(of: range.upperBound), start <= end
-        else { return nil }
-        return bytes[start..<end]
-    }
-
     /// Whether a strikethrough was written with one tilde (`~sub~`), judged from its source.
     ///
     /// cmark-gfm gives the first line of a paragraph the line number the paragraph began on, even
@@ -90,7 +76,7 @@ struct SourceBytes: Sendable {
     }
 
     /// `string` with the renderer's smart punctuation spelled the ASCII way it was written.
-    private static func smartPunctuationSpelledOut(_ string: String) -> String {
+    static func smartPunctuationSpelledOut(_ string: String) -> String {
         var result = ""
         for scalar in string.unicodeScalars {
             switch scalar {
@@ -103,6 +89,128 @@ struct SourceBytes: Sendable {
             }
         }
         return result
+    }
+}
+
+/// Which `=` and `^` of each text the author escaped (`\=`, `\^`) or wrote as an entity
+/// (`&#61;`, `&Hat;`), so they never act as delimiters.
+///
+/// A text's string comes unescaped, and source positions can't say where it came from (cmark
+/// reports the inlines after a hard break on the paragraph's first line, with the container
+/// prefixes it stripped not counted), so the document is parsed a second time with every
+/// escaped or entity `=` and `^` swapped for a private-use stand-in. Neither character is
+/// CommonMark syntax, so the second tree has the first one's shape, and each text's escapes are
+/// read from the text at the same path in it. Only a document that has such an escape is
+/// parsed twice.
+struct EscapeMap: Sendable {
+    static let escapedEquals: Unicode.Scalar = "\u{E010}"
+    static let escapedCaret: Unicode.Scalar = "\u{E011}"
+
+    /// False when the document has no escaped or entity `=` or `^`: every one is a delimiter.
+    private let hasEscapes: Bool
+    /// The escape flags of each text that has a stand-in, by path; nil if the second parse
+    /// was refused, and then no text with a delimiter is read.
+    private let flagsByPath: [[Int]: [Bool]]?
+
+    static let none = EscapeMap(hasEscapes: false, flagsByPath: [:])
+
+    private init(hasEscapes: Bool, flagsByPath: [[Int]: [Bool]]?) {
+        self.hasEscapes = hasEscapes
+        self.flagsByPath = flagsByPath
+    }
+
+    /// For `source`, the Markdown that was parsed. Parses again on the current worker when it
+    /// holds an escape; call it from inside a `MarkdownParsing.withDocument` body.
+    init(source: String, limits: ParseLimits) {
+        guard let standIns = Self.standIns(source) else {
+            self = .none
+            return
+        }
+        hasEscapes = true
+        // The stand-ins can make the text longer, never the tree bigger: lift only the byte cap.
+        let relaxed = ParseLimits(maxDepth: limits.maxDepth, maxBytes: nil, maxNodes: limits.maxNodes)
+        flagsByPath = MarkdownParsing.withDocument(standIns, options: relaxed) { outcome -> [[Int]: [Bool]]? in
+            guard case .document(let document) = outcome else { return nil }
+            var flags: [[Int]: [Bool]] = [:]
+            var stack: [(node: any Markup, path: [Int])] = [(document, [])]
+            while let (node, path) = stack.popLast() {
+                if let text = node as? Text {
+                    var textFlags: [Bool] = []
+                    var hasStandIn = false
+                    for scalar in text.string.unicodeScalars {
+                        if scalar == "=" || scalar == "^" {
+                            textFlags.append(false)
+                        } else if scalar == EscapeMap.escapedEquals || scalar == EscapeMap.escapedCaret {
+                            textFlags.append(true)
+                            hasStandIn = true
+                        }
+                    }
+                    if hasStandIn { flags[path] = textFlags }
+                    continue
+                }
+                for (index, child) in node.children.enumerated() { stack.append((child, path + [index])) }
+            }
+            return flags
+        }
+    }
+
+    /// For each `=` or `^` of `text` in order, whether it was escaped; nil when that can't be
+    /// read, and then the text has no delimiters.
+    func flags(for text: Text, delimiterCount: Int) -> [Bool]? {
+        guard hasEscapes else { return Array(repeating: false, count: delimiterCount) }
+        guard let flagsByPath else { return nil }
+        guard let flags = flagsByPath[Self.path(of: text)] else { return Array(repeating: false, count: delimiterCount) }
+        return flags.count == delimiterCount ? flags : nil
+    }
+
+    private static func path(of node: any Markup) -> [Int] {
+        var path: [Int] = []
+        var current: any Markup = node
+        while let parent = current.parent {
+            path.append(current.indexInParent)
+            current = parent
+        }
+        return path.reversed()
+    }
+
+    /// `source` with each escaped or entity `=` and `^` swapped for its stand-in, or nil if it
+    /// has none. A backslash escape is a backslash before ASCII punctuation, as cmark reads it.
+    static func standIns(_ source: String) -> String? {
+        let bytes = Array(source.utf8)
+        guard bytes.contains(UInt8(ascii: "\\")) || bytes.contains(UInt8(ascii: "&")) else { return nil }
+        var out: [UInt8] = []
+        out.reserveCapacity(bytes.count + 16)
+        var changed = false
+        var index = 0
+        while index < bytes.count {
+            let byte = bytes[index]
+            if byte == UInt8(ascii: "\\"), index + 1 < bytes.count, isASCIIPunctuation(bytes[index + 1]) {
+                let next = bytes[index + 1]
+                if next == UInt8(ascii: "=") || next == UInt8(ascii: "^") {
+                    out.append(contentsOf: String(next == UInt8(ascii: "=") ? escapedEquals : escapedCaret).utf8)
+                    changed = true
+                } else {
+                    out.append(byte)
+                    out.append(next)
+                }
+                index += 2
+                continue
+            }
+            if byte == UInt8(ascii: "&"), let (decoded, length) = VisibleHTMLText.entity(bytes, at: index),
+               decoded == [UInt8(ascii: "=")] || decoded == [UInt8(ascii: "^")] {
+                out.append(contentsOf: String(decoded == [UInt8(ascii: "=")] ? escapedEquals : escapedCaret).utf8)
+                changed = true
+                index += length
+                continue
+            }
+            out.append(byte)
+            index += 1
+        }
+        return changed ? String(decoding: out, as: UTF8.self) : nil
+    }
+
+    private static func isASCIIPunctuation(_ byte: UInt8) -> Bool {
+        (0x21...0x2F).contains(byte) || (0x3A...0x40).contains(byte) || (0x5B...0x60).contains(byte) || (0x7B...0x7E).contains(byte)
     }
 }
 
@@ -147,13 +255,13 @@ enum InlineMarks {
 
     /// The pieces of `children`, or nil if none of them holds a delimiter that pairs up.
     /// `scanText` is false inside an autolink, whose text is the URL.
-    static func pieces(of children: [any Markup], source: SourceBytes, scanText: Bool = true) -> [Piece]? {
+    static func pieces(of children: [any Markup], escapes: EscapeMap, scanText: Bool = true) -> [Piece]? {
         guard scanText, children.contains(where: { ($0 as? Text).map { mayHaveDelimiter($0.string) } ?? false }) else { return nil }
         var atoms: [Atom] = []
         for (index, child) in children.enumerated() {
             switch child {
             case let text as Text:
-                append(text, child: index, source: source, to: &atoms)
+                append(text, child: index, escapes: escapes, to: &atoms)
             case is SoftBreak, is LineBreak:
                 atoms.append(.space(child: index))
             default:
@@ -167,9 +275,9 @@ enum InlineMarks {
     }
 
     /// Splits one text into scalars and delimiter runs.
-    private static func append(_ text: Text, child: Int, source: SourceBytes, to atoms: inout [Atom]) {
+    private static func append(_ text: Text, child: Int, escapes: EscapeMap, to atoms: inout [Atom]) {
         let scalars = Array(text.string.unicodeScalars)
-        let escaped = escapedDelimiters(in: scalars, source: source.slice(text.range))
+        let escaped = escapes.flags(for: text, delimiterCount: scalars.reduce(0) { $0 + ($1 == "=" || $1 == "^" ? 1 : 0) })
         var index = 0
         var delimiterNumber = 0
         while index < scalars.count {
@@ -205,45 +313,9 @@ enum InlineMarks {
         }
     }
 
-    /// For each `=` or `^` of the decoded text in order, whether the source escapes it with a
-    /// backslash; nil when the source is unknown or has a different number of them (an entity
-    /// such as `&equals;` made one), so the text is left alone.
-    private static func escapedDelimiters(in scalars: [Unicode.Scalar], source: ArraySlice<UInt8>?) -> [Bool]? {
-        guard let source, plausible(source, for: scalars) else { return nil }
-        var escaped: [Bool] = []
-        var index = source.startIndex
-        while index < source.endIndex {
-            let byte = source[index]
-            if byte == UInt8(ascii: "\\"), index + 1 < source.endIndex, isASCIIPunctuation(source[index + 1]) {
-                let next = source[index + 1]
-                if next == UInt8(ascii: "=") || next == UInt8(ascii: "^") { escaped.append(true) }
-                index += 2
-                continue
-            }
-            if byte == UInt8(ascii: "=") || byte == UInt8(ascii: "^") { escaped.append(false) }
-            index += 1
-        }
-        let count = scalars.reduce(0) { $0 + ($1 == "=" || $1 == "^" ? 1 : 0) }
-        return escaped.count == count ? escaped : nil
-    }
 
-    /// Whether `source` can be where `scalars` came from: its ASCII letters and digits hold the
-    /// string's, in order. Catches a range that points at the wrong line (see `isSingleTilde`);
-    /// the source has more of them where an entity was written (`&amp;`), never fewer.
-    private static func plausible(_ source: ArraySlice<UInt8>, for scalars: [Unicode.Scalar]) -> Bool {
-        var index = source.startIndex
-        for scalar in scalars where scalar.isASCII && scalar.properties.isAlphabetic || ("0"..."9").contains(scalar) {
-            let byte = UInt8(ascii: scalar)
-            while index < source.endIndex, source[index] != byte { index += 1 }
-            guard index < source.endIndex else { return false }
-            index += 1
-        }
-        return true
-    }
 
-    private static func isASCIIPunctuation(_ byte: UInt8) -> Bool {
-        (0x21...0x2F).contains(byte) || (0x3A...0x40).contains(byte) || (0x5B...0x60).contains(byte) || (0x7B...0x7E).contains(byte)
-    }
+
 
     /// Sets each delimiter's `canOpen` (something that isn't whitespace follows) and `canClose`
     /// (something that isn't whitespace precedes), as for emphasis. A container's edges and a
@@ -267,21 +339,31 @@ enum InlineMarks {
     /// Opening atom index to closing atom index, for the pairs that close.
     private static func match(_ atoms: [Atom]) -> [Int: Int] {
         var matches: [Int: Int] = [:]
-        var open: [(kind: Kind, index: Int)] = []
+        // One stack of open delimiters per kind, by atom index. Closing a pair drops whatever of
+        // the other kind opened inside it, which sits on top of that stack; whitespace drops
+        // every open `^`. Each delimiter is pushed and dropped once, so this is linear (#155
+        // review: one shared stack swept on every space was quadratic).
+        var openMarks: [Int] = []
+        var openSups: [Int] = []
         for (index, atom) in atoms.enumerated() {
             switch atom {
             case .space:
                 // `^sup^` can't hold whitespace, so a `^` open before it never closes.
-                open.removeAll { $0.kind == .sup }
+                openSups.removeAll(keepingCapacity: true)
             case .scalar(let scalar, _) where scalar.properties.isWhitespace:
-                open.removeAll { $0.kind == .sup }
+                openSups.removeAll(keepingCapacity: true)
             case .delimiter(let kind, _, let canOpen, let canClose):
-                if canClose, let position = open.lastIndex(where: { $0.kind == kind }) {
-                    matches[open[position].index] = index
-                    // Anything opened inside the pair has no partner left.
-                    open.removeSubrange(position...)
+                if canClose, let opener = (kind == .mark ? openMarks : openSups).last {
+                    matches[opener] = index
+                    if kind == .mark {
+                        openMarks.removeLast()
+                        while let last = openSups.last, last > opener { openSups.removeLast() }
+                    } else {
+                        openSups.removeLast()
+                        while let last = openMarks.last, last > opener { openMarks.removeLast() }
+                    }
                 } else if canOpen {
-                    open.append((kind, index))
+                    if kind == .mark { openMarks.append(index) } else { openSups.append(index) }
                 }
             default:
                 break

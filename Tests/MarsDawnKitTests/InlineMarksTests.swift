@@ -135,15 +135,22 @@ struct InlineMarksTests {
     }
 
     /// cmark-gfm numbers every inline of a paragraph that began with link reference definitions
-    /// by the definition's line, so its ranges point at the wrong source. Marks that can't be
-    /// read from the source stay literal, and `~~` stays a `<del>`, never a `<sub>`: the known
-    /// gap of reading ranges, in a rare spot (definitions in the same paragraph as text).
-    @Test func aParagraphAfterReferenceDefinitionsFallsBackToLiteral() {
+    /// by the definition's line, so its ranges point at the wrong source. `==` and `^` don't
+    /// read source positions (`EscapeMap`), so they still mark; `~` does, so a `~sub~` there can't
+    /// be told from `~~del~~` and stays a `<del>`, never the other way round.
+    @Test func aParagraphAfterReferenceDefinitionsStillMarks() {
         let html = MarkdownRenderer.render("[ref]: /url \"t~\"\n[q](?a:b) ~~_~~ ~~x~~ ~y~ ==z==\n")
-        #expect(html.contains("<del>_</del> <del>x</del>"))
-        #expect(!html.contains("<sub>") && !html.contains("<mark>"))
+        #expect(html.contains("<del>_</del> <del>x</del> <del>y</del> <mark>z</mark>"), "\(html)")
+        #expect(!html.contains("<sub>"))
         // A blank line ends the definitions, and the paragraph after it reads as usual.
         #expect(MarkdownRenderer.render("[ref]: /u\n\n~~a~~ ~b~ ==c==\n").contains("<del>a</del> <sub>b</sub> <mark>c</mark>"))
+    }
+
+    /// Marks after a hard break, where cmark's positions are off too, and escapes there.
+    @Test func marksAndEscapesAfterAHardBreak() {
+        #expect(MarkdownRenderer.render("x  \n==y== ^2^\n").contains("<br>\n<mark>y</mark> <sup>2</sup>"))
+        #expect(MarkdownRenderer.render("> x\\\n> ==y== \\==z\\==\n").contains("<mark>y</mark> ==z=="))
+        #expect(MarkdownRenderer.render("- a  \n  b &#61;&#61;c&#61;&#61; ==d==\n").contains("b ==c== <mark>d</mark>"))
     }
 
     @Test func aFootnoteReferenceIsNotASup() {
@@ -252,5 +259,34 @@ struct InlineMarksTests {
     @Test func aSubscriptAfterAHardBreakIsStillOne() {
         #expect(MarkdownRenderer.render("x  \nH~2~O\n").contains("H<sub>2</sub>O"))
         #expect(MarkdownRenderer.render("x\\\nH~2~O and ~~gone~~\n").contains("H<sub>2</sub>O and <del>gone</del>"))
+    }
+
+    /// After a hard break in a container cmark can point a text's range at other bytes; their
+    /// `=` and `^` must not decide which of this text's delimiters were escaped (#155 review).
+    @Test(arguments: [
+        "> > > x\\\n> > > `==y==`\\==y\\==\n",
+        "> > > x\\\n> > > `^a^`\\^a\\^\n",
+        "> > > x\\\n> > > `==y==`&#61;&#61;y&#61;&#61;\n",
+    ])
+    func escapedDelimitersStayLiteralWhenARangeIsShifted(markdown: String) {
+        let html = MarkdownRenderer.render(markdown)
+        #expect(!html.contains("<mark>") && !html.contains("<sup>"), "\(html)")
+    }
+
+    /// Many `==` that never close: each delimiter is stacked and dropped once (#155 review: a
+    /// shared stack swept at every space was quadratic, 13.7 s for 1.28 MB).
+    @Test(.timeLimit(.minutes(1)))
+    func unclosedOpenersRenderInLinearTime() {
+        #if DEBUG
+        let budget = 10.0
+        #else
+        let budget = 1.0
+        #endif
+        let clock = ContinuousClock()
+        for unit in ["==a ", "x ==y z\n", "^a ==b "] {
+            let elapsed = clock.measure { _ = MarkdownRenderer.render(String(repeating: unit, count: 80_000) + "==x==") }
+            let seconds = Double(elapsed.components.seconds) + Double(elapsed.components.attoseconds) / 1e18
+            #expect(seconds < budget, "\(unit): \(seconds) s")
+        }
     }
 }
