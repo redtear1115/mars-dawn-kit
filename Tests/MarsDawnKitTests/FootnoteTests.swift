@@ -211,10 +211,12 @@ struct FootnoteTests {
         #expect(with.words == 4)
     }
 
-    /// cmark-gfm reports line 0 for a footnote reference in this shape (a table whose rows end
-    /// in different line breaks), and indexing the line before it trapped (0.6.2 and earlier).
-    /// Found by #152's differential corpus; minimised from a generated document.
-    @Test(arguments: ["[^1]\n|||\r-|-\n[^1]:", "[^1]\n|||\r-|-\n[^1]: n\n", "x [^1]\r\n| a | b |\r-|-\n[^1]: note\n"])
+    /// cmark-gfm reports line 0 for a footnote reference in a paragraph directly above a table
+    /// (the table extension splits it off without positions), and indexing the line before it
+    /// trapped (0.6.2 and earlier). Found by #152's differential corpus; the first case is
+    /// minimised from a generated document, the last is the ordinary shape (#161).
+    @Test(arguments: ["[^1]\n|||\r-|-\n[^1]:", "[^1]\n|||\r-|-\n[^1]: n\n", "x [^1]\r\n| a | b |\r-|-\n[^1]: note\n",
+                      "x [^1]\n| a | b |\n|---|---|\n| c | d |\n\n[^1]: note\n"])
     func aReferenceCmarkPutsOnLineZeroDoesNotTrap(markdown: String) {
         _ = MarkdownRenderer.render(markdown)
         _ = TextStatistics(markdownBody: markdown)
