@@ -618,7 +618,7 @@ struct HTMLDocumentSchemeHandlerTests {
             #if DEBUG
             #expect(handler.readLog == [["site", "pages", "img", "a.png"], ["site", "shared", "logo.png"]])
             #endif
-            #expect(handler.requestLog == [.init(components: ["site", "shared", "logo.png"], outcome: .served(status: 200, bytes: nextFile.count))])
+            #expect(handler.requestLog == [.init(components: ["site", "shared", "logo.png"], outcome: .served(status: 200, bytes: nextFile.count), loadID: handler.currentLoadID)])
             return
         }
     }
@@ -638,6 +638,83 @@ struct HTMLDocumentSchemeHandlerTests {
         #expect(task.error != nil)
         #expect(task.response == nil)
         #expect(handler.requestLog.last?.outcome == .refused("stale session"))
+    }
+
+    // MARK: Load identifiers
+
+    @Test func requestLogEntriesAreSeparableByLoad() async throws {
+        let tree = try makeTree()
+        defer { try? FileManager.default.removeItem(at: tree.root) }
+        let handler = Handler()
+        #expect(handler.currentLoadID == nil)
+        let first = try begin(handler, tree)
+        let firstID = try #require(handler.currentLoadID)
+        #expect(try await request(handler, first, "/%2F/%2F/img/a.png").status == 200)
+        _ = try await request(handler, first, "/%2F/%2F/img/missing.png")
+        let second = try begin(handler, tree)
+        let secondID = try #require(handler.currentLoadID)
+        #expect(secondID != firstID && firstID < secondID)
+        #expect(try await request(handler, second, "/%2F/%2F/img/a.png").status == 200)
+        _ = try await request(handler, second, "/%2F/%2F/x.js")
+        // A request carrying the old token belongs to no load.
+        _ = try await request(handler, second, "/%2F/%2F/img/a.png", host: first.host())
+
+        #expect(handler.servedPaths(for: firstID) == [["site", "pages", "img", "a.png"]])
+        #expect(handler.unservedPaths(for: firstID) == [["site", "pages", "img", "missing.png"]])
+        #expect(handler.servedPaths(for: secondID) == [["site", "pages", "img", "a.png"]])
+        #expect(handler.unservedPaths(for: secondID) == [["site", "pages", "x.js"]])
+        // The unscoped accessors still span both loads.
+        #expect(handler.servedPaths.count == 2)
+        #expect(handler.unservedPaths.count == 2)
+        #expect(handler.requestLog.last?.loadID == nil)
+        #expect(handler.isComplete(for: firstID) && handler.isComplete(for: secondID))
+    }
+
+    /// The issue's case: `../assets/logo.png` above the scope root collapses at the token host
+    /// and is logged as `assets/logo.png`. It must be logged under the load that asked.
+    @Test func aCollapsedParentReferenceIsLoggedUnderItsLoad() async throws {
+        let tree = try makeTree()
+        defer { try? FileManager.default.removeItem(at: tree.root) }
+        let handler = Handler()
+        // Running scope: the document's own folder, so the document sits at the root.
+        let narrow = try handler.beginLoad(document: Data(), documentURL: tree.document, scopeRoot: tree.url("site/pages"), policy: .running)
+        let narrowID = try #require(handler.currentLoadID)
+        let collapsed = try await request(handler, narrow, "/assets/logo.png")
+        #expect(collapsed.error != nil)
+        _ = try begin(handler, tree)
+        let wideID = try #require(handler.currentLoadID)
+        #expect(handler.unservedPaths(for: narrowID) == [["assets", "logo.png"]])
+        #expect(handler.unservedPaths(for: wideID).isEmpty)
+        #expect(handler.requestLog.first { $0.components == ["assets", "logo.png"] }?.loadID == narrowID)
+    }
+
+    @Test func truncationIsDetectable() async throws {
+        let tree = try makeTree()
+        defer { try? FileManager.default.removeItem(at: tree.root) }
+        let handler = Handler()
+        let early = try begin(handler, tree)
+        let earlyID = try #require(handler.currentLoadID)
+        _ = try await request(handler, early, "/%2F/%2F/x.js")
+        let big = try begin(handler, tree)
+        let bigID = try #require(handler.currentLoadID)
+        for _ in 0..<Handler.logLimit {
+            _ = try await request(handler, big, "/%2F/%2F/x.js")
+        }
+        #expect(handler.requestLog.count == Handler.logLimit)
+        // The earlier load was pushed out whole; the big one is still whole at exactly the limit.
+        #expect(handler.unservedPaths(for: earlyID).isEmpty)
+        #expect(!handler.isComplete(for: earlyID))
+        #expect(handler.isComplete(for: bigID))
+        // One more and the big load loses its own first entry.
+        _ = try await request(handler, big, "/%2F/%2F/x.js")
+        #expect(handler.unservedPaths(for: bigID).count == Handler.logLimit)
+        #expect(!handler.isComplete(for: bigID))
+        // A load begun afterwards is unaffected.
+        let later = try begin(handler, tree)
+        let laterID = try #require(handler.currentLoadID)
+        _ = try await request(handler, later, "/%2F/%2F/img/a.png")
+        #expect(handler.isComplete(for: laterID))
+        #expect(handler.servedPaths(for: laterID).count == 1)
     }
 
     // MARK: WebKit resolution

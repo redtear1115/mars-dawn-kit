@@ -25,6 +25,18 @@ public final class HTMLDocumentSchemeHandler: NSObject, WKURLSchemeHandler {
     nonisolated static let placeholderSegment = "%2F"
     nonisolated static let pageName = "index.html"
 
+    /// Names one `beginLoad`. Every request-log entry carries the one of the load it belongs to,
+    /// so a caller can take exactly one load's entries (`servedPaths(for:)`, `unservedPaths(for:)`).
+    ///
+    /// An integer counter rather than a UUID: it is cheap, it needs no random source, and its order
+    /// is what lets the handler say, in constant space, which loads lost entries to `logLimit`
+    /// (see `isComplete(for:)`). It restarts at 1 for each handler, so compare IDs only between
+    /// loads of the same handler.
+    public struct LoadID: Hashable, Comparable, Sendable {
+        let rawValue: Int
+        public static func < (lhs: Self, rhs: Self) -> Bool { lhs.rawValue < rhs.rawValue }
+    }
+
     public enum LoadError: Error, Sendable {
         /// The document is over the size cap.
         case tooLarge
@@ -119,6 +131,7 @@ public final class HTMLDocumentSchemeHandler: NSObject, WKURLSchemeHandler {
     /// One `beginLoad`: its token, scope and budgets.
     @MainActor
     final class Session {
+        let loadID: LoadID
         let token: String
         let reader: ScopedFileReader
         /// The folders from the scope root to the document's folder.
@@ -130,7 +143,8 @@ public final class HTMLDocumentSchemeHandler: NSObject, WKURLSchemeHandler {
         var bytesServed: Int64 = 0
         var loggedExhaustion = false
 
-        init(token: String, reader: ScopedFileReader, ancestors: [String], document: Data, policy: HTMLContentPolicy) {
+        init(loadID: LoadID, token: String, reader: ScopedFileReader, ancestors: [String], document: Data, policy: HTMLContentPolicy) {
+            self.loadID = loadID
             self.token = token
             self.reader = reader
             self.ancestors = ancestors
@@ -169,6 +183,10 @@ public final class HTMLDocumentSchemeHandler: NSObject, WKURLSchemeHandler {
     struct LogEntry: Equatable, Sendable {
         let components: [String]?
         let outcome: LogOutcome
+        /// The load the request belongs to. Nil for a request that can't be attributed to one: it
+        /// carried a token no load has now (an earlier page's, or none was ever begun), so it
+        /// would only pollute whichever load happens to be current.
+        let loadID: LoadID?
     }
 
     /// A bounded record of each request: its components below the scope root (never full paths)
@@ -181,7 +199,20 @@ public final class HTMLDocumentSchemeHandler: NSObject, WKURLSchemeHandler {
     private(set) var requestLog: [LogEntry] = []
     /// The most requests kept. A load may make 2,000; this bounds the memory a long-lived handler
     /// can accumulate, at the cost of the oldest entries.
+    ///
+    /// The log is *not* cleared by `beginLoad`; entries from consecutive loads sit side by side,
+    /// each stamped with its `LoadID`. When more than `logLimit` entries accumulate the oldest go
+    /// first, whichever load they belong to, so a load that alone makes more than `logLimit`
+    /// requests loses its own earliest entries, and an earlier load can be lost whole.
+    /// `isComplete(for:)` says whether that happened to a given load.
     static let logLimit = 512
+    /// The newest load that has lost an entry to `logLimit`. Entries leave oldest-first, so
+    /// every earlier load has lost its entries too, and this one watermark is the whole answer.
+    private var lastTruncatedLoad: LoadID?
+    private var loadsStarted = 0
+    /// The load `beginLoad` last started, or nil before the first (or after a `beginLoad` that
+    /// threw). Capture it right after `beginLoad` returns to ask about that load later.
+    public private(set) var currentLoadID: LoadID?
 
     #if DEBUG
     /// Components of each read as it starts.
@@ -196,16 +227,43 @@ public final class HTMLDocumentSchemeHandler: NSObject, WKURLSchemeHandler {
     /// the page. It is answered here, by what the page asked this handler for — which is the
     /// better question anyway. Read-only, and present in **every** build: see `requestLog` above
     /// for why the record isn't debug-only.
-    public var servedPaths: [[String]] {
-        requestLog.compactMap { entry in
+    ///
+    /// Across every load still in the log; use `servedPaths(for:)` for one load.
+    public var servedPaths: [[String]] { served(in: requestLog) }
+
+    /// Paths this handler refused or could not read, across every load still in the log.
+    public var unservedPaths: [[String]] { unserved(in: requestLog) }
+
+    /// What this handler served for one load. Check `isComplete(for:)` before reading an absence
+    /// as "the page never asked".
+    public func servedPaths(for load: LoadID) -> [[String]] {
+        served(in: requestLog.filter { $0.loadID == load })
+    }
+
+    /// Paths this handler refused or could not read for one load.
+    public func unservedPaths(for load: LoadID) -> [[String]] {
+        unserved(in: requestLog.filter { $0.loadID == load })
+    }
+
+    /// Whether the log still holds every request of `load`. False once the newest `logLimit`
+    /// entries no longer reach back to its first request, which happens when the load, or the
+    /// loads after it, made more than `logLimit` requests (a load may make 2,000). Then
+    /// `servedPaths(for:)` and `unservedPaths(for:)` are missing that load's earliest entries.
+    /// Stays false for good; a load that was never begun is trivially complete.
+    public func isComplete(for load: LoadID) -> Bool {
+        guard let lastTruncatedLoad else { return true }
+        return load > lastTruncatedLoad
+    }
+
+    private func served(in entries: [LogEntry]) -> [[String]] {
+        entries.compactMap { entry in
             if case .served = entry.outcome { return entry.components }
             return nil
         }
     }
 
-    /// Paths this handler refused or could not read.
-    public var unservedPaths: [[String]] {
-        requestLog.compactMap { entry in
+    private func unserved(in entries: [LogEntry]) -> [[String]] {
+        entries.compactMap { entry in
             switch entry.outcome {
             case .refused, .failed: return entry.components
             case .page, .served: return nil
@@ -224,6 +282,7 @@ public final class HTMLDocumentSchemeHandler: NSObject, WKURLSchemeHandler {
     // MARK: Loading
 
     /// Starts a new load and returns the URL to load. Requests for any earlier load fail from now on.
+    /// The load's identifier is `currentLoadID` once this returns.
     ///
     /// - Parameters:
     ///   - document: The page, already prepared (see `HTMLDocumentText`), at most 16 MB.
@@ -232,6 +291,7 @@ public final class HTMLDocumentSchemeHandler: NSObject, WKURLSchemeHandler {
     ///   - policy: Blocked, or running because the reader chose to run this document (A4-3).
     public func beginLoad(document: Data, documentURL: URL, scopeRoot: URL, policy: HTMLContentPolicy) throws -> URL {
         session = nil
+        currentLoadID = nil
         guard document.count <= limits.documentBytes else { throw LoadError.tooLarge }
         guard documentURL.isFileURL else { throw LoadError.outsideScope }
         let reader: ScopedFileReader
@@ -245,7 +305,10 @@ public final class HTMLDocumentSchemeHandler: NSObject, WKURLSchemeHandler {
         else { throw LoadError.outsideScope }
         let token = try Self.makeToken()
         let ancestors = Array(components.dropLast())
-        session = Session(token: token, reader: reader, ancestors: ancestors, document: document,
+        loadsStarted += 1
+        let loadID = LoadID(rawValue: loadsStarted)
+        currentLoadID = loadID
+        session = Session(loadID: loadID, token: token, reader: reader, ancestors: ancestors, document: document,
                           policy: policy)
         let path = String(repeating: Self.placeholderSegment + "/", count: ancestors.count) + Self.pageName
         return URL(string: "\(Self.scheme)://\(token)/\(path)")!
@@ -400,17 +463,17 @@ public final class HTMLDocumentSchemeHandler: NSObject, WKURLSchemeHandler {
         guard let session, let url = request.url, url.scheme == Self.scheme,
               let host = url.host(percentEncoded: true), host.utf8.elementsEqual(session.token.utf8)
         else {
-            refuse(urlSchemeTask, components: nil, reason: "unknown load")
+            refuse(urlSchemeTask, components: nil, reason: "unknown load", session: nil)
             return
         }
         let mapping = Self.map(rawPath: url.path(percentEncoded: true), ancestors: session.ancestors)
         if mapping == .page {
             guard url.query(percentEncoded: true) == nil else {
-                refuse(urlSchemeTask, components: nil, reason: "query on page")
+                refuse(urlSchemeTask, components: nil, reason: "query on page", session: session)
                 return
             }
             guard !session.pageServed else {
-                refuse(urlSchemeTask, components: nil, reason: "page already served")
+                refuse(urlSchemeTask, components: nil, reason: "page already served", session: session)
                 return
             }
             session.pageServed = true
@@ -419,22 +482,22 @@ public final class HTMLDocumentSchemeHandler: NSObject, WKURLSchemeHandler {
                 csp: Self.documentCSP(for: session.policy)
             )
             respond(urlSchemeTask, status: 200, headers: headers, body: session.document)
-            record(nil, .page)
+            record(nil, .page, session)
             return
         }
 
         session.requestCount += 1
         guard session.requestCount <= limits.requestsPerLoad, session.bytesServed < limits.bytesPerLoad else {
             logExhaustion(session)
-            refuse(urlSchemeTask, components: nil, reason: "budget")
+            refuse(urlSchemeTask, components: nil, reason: "budget", session: session)
             return
         }
         guard case .subresource(let components) = mapping else {
-            if case .refused(let reason) = mapping { refuse(urlSchemeTask, components: nil, reason: reason) }
+            if case .refused(let reason) = mapping { refuse(urlSchemeTask, components: nil, reason: reason, session: session) }
             return
         }
         guard let name = components.last, let type = ServedFileType.entry(forFileName: name) else {
-            refuse(urlSchemeTask, components: components, reason: "type")
+            refuse(urlSchemeTask, components: components, reason: "type", session: session)
             return
         }
 
@@ -462,7 +525,7 @@ public final class HTMLDocumentSchemeHandler: NSObject, WKURLSchemeHandler {
             })
         } else {
             activeTasks[id] = nil
-            refuse(urlSchemeTask, components: components, reason: "queue full")
+            refuse(urlSchemeTask, components: components, reason: "queue full", session: session)
         }
     }
 
@@ -496,24 +559,24 @@ public final class HTMLDocumentSchemeHandler: NSObject, WKURLSchemeHandler {
         // The read belongs to the load session that started it. `beginLoad` has run since, so
         // these bytes were read for a page that is no longer on screen: fail instead of serving.
         guard let current = self.session, current === session else {
-            refuse(task, components: components, reason: "stale session")
+            refuse(task, components: components, reason: "stale session", session: session)
             return
         }
         switch result {
         case .failure(let failure):
             task.didFailWithError(URLError(failure == .notFound ? .fileDoesNotExist : .noPermissionsToReadFile))
-            record(components, .failed(failure))
+            record(components, .failed(failure), session)
         case .success(let reply):
             guard session.bytesServed + Int64(reply.body.count) <= limits.bytesPerLoad else {
                 logExhaustion(session)
-                refuse(task, components: components, reason: "byte budget")
+                refuse(task, components: components, reason: "byte budget", session: session)
                 return
             }
             session.bytesServed += Int64(reply.body.count)
             var headers = Self.headers(contentType: type.mimeType, length: reply.body.count, csp: Self.subresourceCSP)
             headers.merge(reply.extraHeaders) { _, new in new }
             respond(task, status: reply.status, headers: headers, body: reply.body)
-            record(components, .served(status: reply.status, bytes: reply.body.count))
+            record(components, .served(status: reply.status, bytes: reply.body.count), session)
         }
     }
 
@@ -583,10 +646,10 @@ public final class HTMLDocumentSchemeHandler: NSObject, WKURLSchemeHandler {
         task.didFinish()
     }
 
-    private func refuse(_ task: any WKURLSchemeTask, components: [String]?, reason: String) {
+    private func refuse(_ task: any WKURLSchemeTask, components: [String]?, reason: String, session: Session?) {
         Self.log.debug("Refused an HTML subresource request: \(reason, privacy: .public)")
         task.didFailWithError(URLError(.noPermissionsToReadFile))
-        record(components, .refused(reason))
+        record(components, .refused(reason), session)
     }
 
     private func logExhaustion(_ session: Session) {
@@ -595,14 +658,21 @@ public final class HTMLDocumentSchemeHandler: NSObject, WKURLSchemeHandler {
         Self.log.error("An HTML document used up its request or byte budget; further requests fail")
     }
 
-    private func record(_ components: [String]?, _ outcome: LogOutcome) {
+    private func record(_ components: [String]?, _ outcome: LogOutcome, _ session: Session?) {
         // Not `#if DEBUG`. The record is declared unconditionally above, and a declaration whose
         // writer is conditional is worse than no record at all: `servedPaths` would answer "the
         // page asked for nothing" in a build where nothing was ever written down, which reads
         // exactly like a real answer. That cost an hour here, and only a test asserting a
         // *positive* caught it.
-        requestLog.append(LogEntry(components: components, outcome: outcome))
-        if requestLog.count > Self.logLimit { requestLog.removeFirst(requestLog.count - Self.logLimit) }
+        requestLog.append(LogEntry(components: components, outcome: outcome, loadID: session?.loadID))
+        if requestLog.count > Self.logLimit {
+            let dropped = requestLog.count - Self.logLimit
+            // Unattributed entries (nil) are never the newest truncated load.
+            if let newest = requestLog[..<dropped].compactMap(\.loadID).max() {
+                lastTruncatedLoad = max(lastTruncatedLoad ?? newest, newest)
+            }
+            requestLog.removeFirst(dropped)
+        }
     }
 }
 #endif
