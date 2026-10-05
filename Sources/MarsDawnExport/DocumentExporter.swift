@@ -107,6 +107,9 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
     /// known (mars-dawn-kit#114). Additive: `diagramErrors` is unchanged.
     public private(set) var diagramErrorDetails: [DiagramError] = []
 
+    /// The HTML `prepare` put into the page, for the PDF corpus's preview parity check.
+    private(set) var renderedHTML: String?
+
     /// Loads the page and renders `markdown` into it, waiting for diagrams, images and fonts.
     ///
     /// - Parameter footnoteBackLabel: The accessible label on a footnote's back-link, before its
@@ -161,10 +164,9 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
             blockedLabel: PreviewWebView.unloadableImagePlaceholderLabel
         ))
 
-        let baseDirectory = assets.baseDirectory
-        let options = MarkdownRenderer.Options(footnoteBackLabel: footnoteBackLabel, softBreaksAsLineBreaks: softBreaksAsLineBreaks) { source in
-            DocumentAssetSchemeHandler.previewURL(forImageSource: source, baseDirectory: baseDirectory) ?? source
-        }
+        let options = MarkdownRenderer.Options.preview(
+            baseDirectory: assets.baseDirectory, footnoteBackLabel: footnoteBackLabel, softBreaksAsLineBreaks: softBreaksAsLineBreaks
+        )
         // One deadline covers rendering, updating the page and waiting for its content.
         let deadline = ContinuousClock.now + Self.contentTimeout
         let rendered = try await withExportDeadline(deadline, timeoutError: ExportError.contentTimedOut) {
@@ -173,6 +175,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
             return await MarkdownRenderer.renderResult(markdown, options: options)
         }
         guard let html = rendered?.html else { throw CancellationError() }
+        renderedHTML = html
         let updateScript = PreviewWebView.updateScript(html: html)
         try await withExportDeadline(deadline, timeoutError: ExportError.contentTimedOut) { @MainActor [webView] in
             let pushSignpost = Self.signposter.beginInterval("push", id: Self.signposter.makeSignpostID())
@@ -355,6 +358,31 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         window: NSWindow?,
         configure: (NSPrintInfo, NSPrintOperation) -> Void = { _, _ in }
     ) async throws -> (completed: Bool, diagramErrors: [String], diagramErrorDetails: [DiagramError]) {
+        try await runReportingDiagramDetails(
+            markdown: markdown, theme: theme, baseDirectory: baseDirectory, allowRemoteImages: allowRemoteImages,
+            scopeRoot: scopeRoot, footnoteBackLabel: footnoteBackLabel, softBreaksAsLineBreaks: softBreaksAsLineBreaks,
+            printInfo: printInfo, window: window, inspect: nil, configure: configure
+        )
+    }
+
+    /// What tests get to look at: the exporter that is about to print, after `prepare`.
+    typealias Inspection = (DocumentExporter) async throws -> Void
+
+    /// `inspect` runs on the same exporter between `prepare` and printing, so the PDF corpus
+    /// checks the page that is actually printed, through the real export path.
+    static func runReportingDiagramDetails(
+        markdown: String,
+        theme: PreviewTheme,
+        baseDirectory: URL?,
+        allowRemoteImages: Bool,
+        scopeRoot: URL? = nil,
+        footnoteBackLabel: String = MarkdownRenderer.Options().footnoteBackLabel,
+        softBreaksAsLineBreaks: Bool = false,
+        printInfo: NSPrintInfo,
+        window: NSWindow?,
+        inspect: Inspection?,
+        configure: (NSPrintInfo, NSPrintOperation) -> Void = { _, _ in }
+    ) async throws -> (completed: Bool, diagramErrors: [String], diagramErrorDetails: [DiagramError]) {
         // Lay out at the printable width, so measured block heights match the printed pages.
         let printableWidth = printInfo.paperSize.width - 2 * pageMargins.width
         let exporter = DocumentExporter(
@@ -365,6 +393,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         try await exporter.prepare(
             markdown: markdown, theme: theme, footnoteBackLabel: footnoteBackLabel, softBreaksAsLineBreaks: softBreaksAsLineBreaks
         )
+        try await inspect?(exporter)
         let operation = exporter.printOperation(printInfo: printInfo)
         configure(operation.printInfo, operation)
         let host = window ?? exporter.hiddenWindow()
@@ -425,13 +454,33 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         footnoteBackLabel: String = MarkdownRenderer.Options().footnoteBackLabel,
         softBreaksAsLineBreaks: Bool = false
     ) async throws -> PDFResult {
+        try await exportPDF(
+            markdown: markdown, to: url, theme: theme, baseDirectory: baseDirectory,
+            allowRemoteImages: allowRemoteImages, paper: paper, scopeRoot: scopeRoot,
+            footnoteBackLabel: footnoteBackLabel, softBreaksAsLineBreaks: softBreaksAsLineBreaks, inspect: nil
+        )
+    }
+
+    /// `exportPDF` with the corpus's inspection hook; see `runReportingDiagramDetails(…inspect:…)`.
+    static func exportPDF(
+        markdown: String,
+        to url: URL,
+        theme: PreviewTheme,
+        baseDirectory: URL?,
+        allowRemoteImages: Bool,
+        paper: Paper = .a4,
+        scopeRoot: URL? = nil,
+        footnoteBackLabel: String = MarkdownRenderer.Options().footnoteBackLabel,
+        softBreaksAsLineBreaks: Bool = false,
+        inspect: Inspection?
+    ) async throws -> PDFResult {
         let printInfo = NSPrintInfo()
         printInfo.paperSize = paper.size
         printInfo.orientation = .portrait
         let result = try await runReportingDiagramDetails(
             markdown: markdown, theme: theme, baseDirectory: baseDirectory,
             allowRemoteImages: allowRemoteImages, scopeRoot: scopeRoot, footnoteBackLabel: footnoteBackLabel,
-            softBreaksAsLineBreaks: softBreaksAsLineBreaks, printInfo: printInfo, window: nil
+            softBreaksAsLineBreaks: softBreaksAsLineBreaks, printInfo: printInfo, window: nil, inspect: inspect
         ) { info, operation in
             info.jobDisposition = .save
             info.dictionary()[NSPrintInfo.AttributeKey.jobSavingURL] = url
