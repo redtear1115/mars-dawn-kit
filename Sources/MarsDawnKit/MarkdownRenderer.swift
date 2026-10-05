@@ -158,7 +158,7 @@ public enum MarkdownRenderer {
     private static func renderResult(_ outcome: ParseOutcome, split: SplitSource, options: Options) -> RenderResult {
         switch outcome {
         case .document(let document):
-            var visitor = HTMLVisitor(options: options, lineOffset: split.bodyLineOffset, math: split.math, footnotes: split.footnotes)
+            var visitor = HTMLVisitor(options: options, lineOffset: split.bodyLineOffset, math: split.math, footnotes: split.footnotes, source: split.parsedBody)
             let body = visitor.visit(document)
             return RenderResult(html: split.frontMatterHTML + body + footnotesHTML(split, options: options), fallback: nil)
         case .tooDeep(let depth):
@@ -214,7 +214,7 @@ public enum MarkdownRenderer {
             guard case .document(let document) = outcome else {
                 return "<p>" + escapeHTML(markdown) + "</p>\n"
             }
-            var visitor = HTMLVisitor(options: options, lineOffset: 0, math: split.math, footnotes: split.footnotes, inNote: true)
+            var visitor = HTMLVisitor(options: options, lineOffset: 0, math: split.math, footnotes: split.footnotes, source: markdown, inNote: true)
             return visitor.visit(document)
         }
         guard !appending.isEmpty else { return rendered }
@@ -299,6 +299,8 @@ private struct HTMLVisitor: MarkupVisitor {
     let footnotes: FootnoteExtraction
     /// Rendering a footnote's own text: no `data-line`, no heading `id` (#44).
     let inNote: Bool
+    /// The Markdown that was parsed, for what only its characters say (`~` versus `~~`, `\=`).
+    let source: SourceBytes
     /// Every heading's `id`, in document order, worked out before any heading is written.
     private var headingIDs: [String] = []
     private var headingIndex = 0
@@ -308,8 +310,9 @@ private struct HTMLVisitor: MarkupVisitor {
     private var tightListStack: [Bool] = []
 
     init(options: MarkdownRenderer.Options, lineOffset: Int, math: MathExtractor.Extraction,
-         footnotes: FootnoteExtraction, inNote: Bool = false) {
+         footnotes: FootnoteExtraction, source: String, inNote: Bool = false) {
         self.options = options
+        self.source = SourceBytes(source)
         self.lineOffset = lineOffset
         self.math = math
         self.footnotes = footnotes
@@ -322,6 +325,12 @@ private struct HTMLVisitor: MarkupVisitor {
 
     private mutating func visitChildren(_ markup: any Markup) -> String {
         let children = Array(markup.children)
+        // `<` first: an autolink's text is its URL, and `^` or `==` in it is not a mark.
+        let isAutolink = markup is Link && source.startsWithAngleBracket(markup)
+        if markup is InlineContainer,
+           let pieces = InlineMarks.pieces(of: children, source: source, scanText: !isAutolink) {
+            return markedHTML(pieces, children: children)
+        }
         var html = ""
         for index in children.indices {
             html += visitInline(children, at: index)
@@ -338,6 +347,23 @@ private struct HTMLVisitor: MarkupVisitor {
             after: index + 1 < children.count ? children[index + 1] : nil
         )
         return joins ? "" : "\n"
+    }
+
+    /// An inline container's children with its `==mark==` and `^sup^` written as `<mark>` and
+    /// `<sup>` (#133). Pieces of text are rendered as a `Text` node's would be.
+    private mutating func markedHTML(_ pieces: [InlineMarks.Piece], children: [any Markup]) -> String {
+        var html = ""
+        for piece in pieces {
+            switch piece {
+            case .text(let string, _): html += renderedText(string)
+            case .open(.mark): html += "<mark>"
+            case .close(.mark): html += "</mark>"
+            case .open(.sup): html += "<sup>"
+            case .close(.sup): html += "</sup>"
+            case .node(let child): html += visitInline(children, at: child)
+            }
+        }
+        return html
     }
 
     private func lineAttribute(_ markup: any Markup) -> String {
@@ -552,9 +578,13 @@ private struct HTMLVisitor: MarkupVisitor {
     /// that looks like a placeholder but isn't one of this render's comes back as text and is
     /// escaped like the rest.
     mutating func visitText(_ text: Text) -> String {
-        guard math.expressionCount > 0 else { return textWithFootnotes(text.string) }
+        renderedText(text.string)
+    }
+
+    private func renderedText(_ string: String) -> String {
+        guard math.expressionCount > 0 else { return textWithFootnotes(string) }
         var html = ""
-        for segment in math.segments(in: text.string) {
+        for segment in math.segments(in: string) {
             switch segment {
             case .text(let string):
                 html += textWithFootnotes(string)
@@ -591,8 +621,11 @@ private struct HTMLVisitor: MarkupVisitor {
         "<strong>\(visitChildren(strong))</strong>"
     }
 
+    /// cmark-gfm's strikethrough also takes one tilde, which HackMD writes as `~sub~` (#133).
+    /// `~~` stays `<del>`, and so does anything the source doesn't clearly show as one tilde.
     mutating func visitStrikethrough(_ strikethrough: Strikethrough) -> String {
-        "<del>\(visitChildren(strikethrough))</del>"
+        let tag = source.isSingleTilde(strikethrough) ? "sub" : "del"
+        return "<\(tag)>\(visitChildren(strikethrough))</\(tag)>"
     }
 
     mutating func visitInlineCode(_ inlineCode: InlineCode) -> String {

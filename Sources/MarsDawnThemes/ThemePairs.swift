@@ -55,7 +55,7 @@ package struct ResolvedPalette: Hashable, Sendable {
 
     /// The colour a pair token names in this palette, or nil for an unknown token. Derived tokens
     /// follow `preview.css`: `chip` is `--code-chip` (surface, lifted 10% toward the text in dark
-    /// mode), `frontMatter` the front-matter box, `footnoteTarget` the `:target` tint, `paper` the
+    /// mode), `frontMatter` the front-matter box, `footnoteTarget` the `:target` tint, `mark` the `<mark>` highlight, `paper` the
     /// white page of a PDF.
     package func color(for token: String, dark: Bool) -> String? {
         switch token {
@@ -84,6 +84,7 @@ package struct ResolvedPalette: Hashable, Sendable {
         case "chip": dark ? ThemeContrast.mix(surface, text, 0.10) : surface
         case "frontMatter": ThemeContrast.mix(surface, background, 0.35)
         case "footnoteTarget": ThemeContrast.mix(background, accent, 0.18)
+        case "mark": ThemeContrast.mix(background, accent, 0.30)
         case "paper": "#FFFFFF"
         default: nil
         }
@@ -95,6 +96,7 @@ package struct ResolvedPalette: Hashable, Sendable {
         case "chip": return ["code-chip", "surface", "fg"]
         case "frontMatter": return ["surface", "bg"]
         case "footnoteTarget": return ["accent", "bg"]
+        case "mark": return ["accent", "bg"]
         case "paper": return []
         default:
             if let role = PaletteRole(rawValue: token) { return [role.cssVariable] }
