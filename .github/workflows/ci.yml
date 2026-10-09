@@ -47,9 +47,15 @@ jobs:
       # WebKit suites time out waiting for their pages and the timing-budget tests miss their
       # budgets. Run alone they pass (checked on both runners in #22), and so does the whole
       # suite run serially.
-      - run: swift test --no-parallel
+      #
+      # The PDF corpus runs in a process of its own. Its long and fallback-boundary exports lift
+      # the process's peak memory past 2 GB on the hosted runners, and TableBudgetTests checks
+      # that same process-wide peak, so sharing a process failed it without any table regressing.
+      - run: swift test --no-parallel --skip 'MarsDawnExportTests\.PDFCorpus'
+      - run: swift test --no-parallel --filter 'MarsDawnExportTests\.PDFCorpus'
       # Release builds inline more, so stack use per nesting level differs from debug.
-      - run: swift test -c release --no-parallel
+      - run: swift test -c release --no-parallel --skip 'MarsDawnExportTests\.PDFCorpus'
+      - run: swift test -c release --no-parallel --filter 'MarsDawnExportTests\.PDFCorpus'
       # Two groups of tests don't run here, so the CLI covers their ground on the real system:
       # the gate's tests, which macOS 15's Concurrency runtime kills (mars-dawn-kit#26), and the
       # wall-clock budgets, which a shared 3-CPU runner can't measure (mars-dawn-kit#15). These
@@ -122,6 +128,32 @@ jobs:
             exit 1
           fi
           echo "The tag and the binary agree."
+
+  pdf-goldens:
+    # Tier 4 of the PDF corpus (redtear1115/mars-dawn#2): per-OS-build goldens. Its own job, so a
+    # runner-image update shows up as a distinct, clearly labelled failure instead of failing
+    # inside the `test` matrix, whose PDFCorpus run skips the goldens (they need
+    # MARSDAWN_PDF_GOLDENS). Goldens are recorded on macOS 26 only; see the "Record PDF goldens"
+    # workflow and the README's "The PDF export golden corpus" for the drift policy.
+    runs-on: macos-26
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Use Xcode 26
+        run: |
+          set -euo pipefail
+          app=$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)
+          echo "Selecting $app"
+          sudo xcode-select -s "$app"
+      - run: swift --version
+      - name: Compare the PDF corpus's text with its goldens
+        run: swift test --no-parallel --filter PDFCorpus/golden
+        env:
+          MARSDAWN_PDF_GOLDENS: "1"
 
   ios:
     # The core library still supports iOS 17; make sure it keeps building for it.

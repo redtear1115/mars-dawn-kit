@@ -1,0 +1,4 @@
+{
+  "markers": ["BLANKHEAD01", "Paragraph001.", "Paragraph023.", "Paragraph045."],
+  "notes": "Repro for the blank trailing page (kit issue #20): a heading plus 45 one-line paragraphs exports as 3 pages, page 3 blank. Fixed; every page must now have ink."
+}

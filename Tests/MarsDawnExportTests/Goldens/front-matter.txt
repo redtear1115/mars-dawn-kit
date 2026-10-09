@@ -1,0 +1,7 @@
+OS build: Version 26.6.2 (Build 25G83) | WebKit: 21624.5.1.11.3 | Paper: a4
+Page count: 1
+
+--- Page 1 ---
+Body Heading FMBODYHEAD06
+Paragraph with marker FMBODYMARK07.
+Last paragraph marker FMENDMARK99.

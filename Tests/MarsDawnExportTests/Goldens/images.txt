@@ -1,0 +1,23 @@
+OS build: Version 26.6.2 (Build 25G83) | WebKit: 21624.5.1.11.3 | Paper: a4
+Page count: 2
+
+--- Page 1 ---
+Images IMGHEAD01
+Paragraph before relative image REL01.
+Paragraph before dot-relative image REL02.
+Paragraph before absolute image ABS03.
+Paragraph before dotdot-normalized image NORM04.
+Paragraph before out-of-scope parent image OOS05.
+Image not available: ../outside.png
+Paragraph before nonexistent absolute path NOABS06.
+Image not available: /nonexistent-marsdawn/outside.png
+Paragraph before missing relative file MISS07.
+Image not available: missing.png
+Paragraph before blocked remote image REMOTE08.
+Web image: example.com
+
+--- Page 2 ---
+A short closing paragraph to keep this fixture off the page-bottom edge (redtear1115/mars-
+dawn-kit#20), so the last marker below lands on real content rather than a trailing blank
+page.
+Last paragraph marker IMGENDMARK99.

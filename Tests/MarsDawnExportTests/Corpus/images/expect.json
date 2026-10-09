@@ -1,0 +1,24 @@
+{
+  "markers": [
+    "IMGHEAD01",
+    "REL01",
+    "REL02",
+    "ABS03",
+    "NORM04",
+    "OOS05",
+    "NOABS06",
+    "MISS07",
+    "REMOTE08",
+    "IMGENDMARK99"
+  ],
+  "markersOnLastPage": ["IMGENDMARK99"],
+  "placeholders": [
+    "Image not available: ../outside.png",
+    "Image not available: /nonexistent-marsdawn/outside.png",
+    "Image not available: missing.png",
+    "Web image: example.com"
+  ],
+  "images": 4,
+  "allowRemoteImages": false,
+  "notes": "Covers relative (img/rel.png), dot-relative (./img/rel2.png), absolute-inside-fixture ({{FIXTURE_DIR}}/img/abs.png) and dotdot-normalized (nested/../img/rel.png) images, all of which load (4 total). ../outside.png is supplied via _parent/outside.png so the file exists on disk, but it is outside the fixture's own folder and still renders as a placeholder: that is the known scope limitation tracked as redtear1115/mars-dawn#8, not a bug in this corpus. /nonexistent-marsdawn/outside.png (absolute, does not exist) and missing.png (relative, does not exist) both show the missing-file placeholder; the placeholder text keeps the leading slash of the absolute src (\"Image not available: /nonexistent-marsdawn/outside.png\"; redtear1115/mars-dawn-kit#23, fixed). https://example.com/remote.png shows the blocked-remote-image placeholder because allowRemoteImages is false."
+}
