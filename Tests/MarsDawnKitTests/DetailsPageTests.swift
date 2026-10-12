@@ -397,8 +397,8 @@ struct DetailsPageTests {
     ///
     /// On CI (the `CI` variable set) a page with no frame skips the test with one line instead
     /// of failing, since a runner may have no unlocked screen: this returns `nil` and the caller
-    /// returns.
-    static func visiblePreview(height: CGFloat = 800, test: String = #function) async throws -> PreviewWKWebView? {
+    /// returns. A test whose skip would read as a pass (A17) passes `skipOnCI: false`.
+    static func visiblePreview(height: CGFloat = 800, test: String = #function, skipOnCI: Bool = true) async throws -> PreviewWKWebView? {
         let name = test.replacingOccurrences(of: "()", with: "")
         let webView = try await loadedPreview(height: height)
         if standIn { print("STAND-IN requestAnimationFrame active: \(name)") }
@@ -410,7 +410,7 @@ struct DetailsPageTests {
             """)
         let frame = state["frame"] as? Bool ?? false
         let visibility = state["visibility"] as? String ?? "?"
-        if !frame, ProcessInfo.processInfo.environment["CI"] != nil {
+        if !frame, skipOnCI, ProcessInfo.processInfo.environment["CI"] != nil {
             print("SKIPPED (no animation frame on CI): \(name) — needs a visible, unlocked screen")
             closeHosts()
             return nil
@@ -514,24 +514,48 @@ struct DetailsPageTests {
 
     // MARK: A17, toggle volume
 
-    /// The page's own work per `toggle` event is constant and coalesced: opening 20k `<details>`
-    /// at once costs at most twice what 20k `<section>` blocks cost.
+    /// The page's work per `toggle` event is constant and coalesced (F3). A17a, on every machine:
+    /// opening 20k `<details>` at once rebuilds the scroll anchors (an O(n) pass) at most once per
+    /// animation frame beyond what an update costs anyway, counted through the DOM. A17b, off CI
+    /// only: it costs at most twice what 20k `<section>` blocks cost. On CI's VMs that ratio
+    /// measures WebKit's own toggle dispatch, which runs about 9× even with no toggle sync at all.
     @Test func manyToggleEventsCostOneSyncPerFrame() async throws {
         defer { Self.closeHosts() }
         let count = 20_000
-        guard let gate = try await Self.visiblePreview() else { return }
-        _ = gate
+        let test = "manyToggleEventsCostOneSyncPerFrame()"
+        // No CI skip: since e4a1f12 CI's pages run frames, and a skipped A17 would read as green.
+        _ = try #require(try await Self.visiblePreview(test: test, skipOnCI: false))
         Self.closeHosts()
         let detailsHTML = MarkdownRenderer.render(String(repeating: "<details open>\n<summary>s</summary>\n</details>\n\n", count: count))
         let sectionHTML = MarkdownRenderer.render(String(repeating: "<section>\n<p>s</p>\n</section>\n\n", count: count))
         #expect(detailsHTML.components(separatedBy: "<details open>").count - 1 == count)
 
-        func measure(_ html: String) async throws -> (seconds: Double, toggles: Int, onInsert: Int)? {
-            let webView = try #require(try await Self.visiblePreview(test: "manyToggleEventsCostOneSyncPerFrame()"))
+        struct Run { var seconds: Double; var toggles: Int; var onInsert: Int; var rebuilds: Int; var frames: Int; var overflow: Bool }
+
+        /// One update in a fresh page. `bound` is the section run's rebuild count, or -1 for none:
+        /// once the details run's rebuilds pass frames + bound + 1 the verdict is red, so later
+        /// anchor queries return nothing and a per-event storm ends, and the counts come back.
+        func measure(_ html: String, bound: Int) async throws -> Run? {
+            let webView = try #require(try await Self.visiblePreview(test: test, skipOnCI: false))
             let script = """
                 window.__toggles = 0;
                 document.addEventListener("toggle", () => { window.__toggles++; }, true);
                 MarsDawn.scrollToLine(1, false);
+                const content = document.getElementById("content");
+                const original = Element.prototype.querySelectorAll;
+                let rebuilds = 0, frames = 0, overflow = false, done = false;
+                Element.prototype.querySelectorAll = function (selector) {
+                  if (this === content && selector === "[data-line]") {
+                    rebuilds++;
+                    if (overflow || (bound >= 0 && rebuilds > frames + bound + 1)) {
+                      overflow = true;
+                      return original.call(this, ":not(*)");
+                    }
+                  }
+                  return original.call(this, selector);
+                };
+                const tick = () => { frames++; if (!done) requestAnimationFrame(tick); };
+                requestAnimationFrame(tick);
                 const t0 = performance.now();
                 MarsDawn.update(html, lines);
                 await MarsDawn.idle();
@@ -544,14 +568,18 @@ struct DetailsPageTests {
                 while (document.querySelector("#content details") && window.__toggles < expected && performance.now() < limit) {
                   await new Promise((r) => setTimeout(r, 0));
                 }
+                await MarsDawn.idle();
                 await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-                return JSON.stringify({ ms: performance.now() - t0, toggles: window.__toggles, onInsert });
+                const ms = performance.now() - t0;
+                done = true;
+                Element.prototype.querySelectorAll = original;
+                return JSON.stringify({ ms, toggles: window.__toggles, onInsert, rebuilds, frames, overflow });
                 """
             let host = Flag()
             let reply: String? = await withCheckedContinuation { continuation in
                 Task { @MainActor in
                     let value = try? await webView.callAsyncJavaScript(
-                        script, arguments: ["html": html, "lines": count * 4, "expected": count], contentWorld: .page
+                        script, arguments: ["html": html, "lines": count * 4, "expected": count, "bound": bound], contentWorld: .page
                     ) as? String
                     if !host.done { host.done = true; continuation.resume(returning: value) }
                 }
@@ -561,24 +589,27 @@ struct DetailsPageTests {
                 }
             }
             Self.closeHosts()
-            guard let reply, let object = try JSONSerialization.jsonObject(with: Data(reply.utf8)) as? [String: Any] else { return nil }
-            return ((object["ms"] as? Double ?? 0) / 1000, object["toggles"] as? Int ?? 0, object["onInsert"] as? Int ?? 0)
+            guard let reply, let o = try JSONSerialization.jsonObject(with: Data(reply.utf8)) as? [String: Any] else { return nil }
+            return Run(seconds: (o["ms"] as? Double ?? 0) / 1000, toggles: o["toggles"] as? Int ?? 0, onInsert: o["onInsert"] as? Int ?? 0,
+                       rebuilds: o["rebuilds"] as? Int ?? -1, frames: o["frames"] as? Int ?? -1, overflow: o["overflow"] as? Bool ?? false)
         }
 
         var details: [Double] = [], sections: [Double] = []
-        var toggles = 0, onInsert = 0
         for _ in 0..<2 {
-            let d = try await measure(detailsHTML)
-            let s = try await measure(sectionHTML)
-            try #require(d != nil, "the \(count) <details open> update did not finish within 100 s")
-            try #require(s != nil, "the \(count) <section> update did not finish within 100 s")
-            details.append(d!.seconds); sections.append(s!.seconds)
-            toggles = d!.toggles; onInsert = d!.onInsert
+            let s = try #require(try await measure(sectionHTML, bound: -1), "the \(count) <section> update did not finish within 100 s")
+            let d = try #require(try await measure(detailsHTML, bound: s.rebuilds), "the \(count) <details open> update did not finish within 100 s")
+            print("A17a \(count) <details open>: rebuilds \(d.rebuilds), frames \(d.frames), toggles \(d.toggles) (on insert \(d.onInsert)), overflow \(d.overflow); \(count) <section>: rebuilds \(s.rebuilds), frames \(s.frames)")
+            #expect(s.rebuilds >= 1 && d.rebuilds >= 1, "no anchor rebuild counted (section \(s.rebuilds), details \(d.rebuilds)): the count sees nothing")
+            #expect(d.rebuilds <= d.frames + s.rebuilds + 1, "details rebuilds \(d.rebuilds) > frames \(d.frames) + section \(s.rebuilds) + 1")
+            #expect(d.toggles >= count, "the counter saw \(d.toggles) toggle events")
+            details.append(d.seconds); sections.append(s.seconds)
         }
         let detailsTime = details.min()!, sectionTime = sections.min()!
-        print("A17 \(count) <details open>: \(details) s, \(count) <section>: \(sections) s, ratio \(detailsTime / sectionTime); toggle events seen \(toggles), of them on insert \(onInsert)")
-        #expect(toggles >= count, "the counter saw \(toggles) toggle events")
-        #expect(detailsTime <= sectionTime * 2, "\(detailsTime) s against \(sectionTime) s")
+        let onCI = ProcessInfo.processInfo.environment["CI"] != nil
+        print("A17b\(onCI ? " (CI, not asserted)" : "") \(count) <details open>: \(details) s, \(count) <section>: \(sections) s, ratio \(detailsTime / sectionTime)")
+        if !onCI {
+            #expect(detailsTime <= sectionTime * 2, "\(detailsTime) s against \(sectionTime) s")
+        }
     }
 
     @MainActor final class Flag { var done = false }
