@@ -387,11 +387,7 @@
   let toggleFrame = 0;
   document.addEventListener("toggle", () => {
     anchors = null;
-    if (toggleFrame) return;
-    toggleFrame = requestAnimationFrame(() => {
-      toggleFrame = 0;
-      reapplySync();
-    });
+    reapplySync();
   }, true);
 
   function getAnchors() {
