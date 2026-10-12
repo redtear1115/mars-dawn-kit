@@ -56,14 +56,14 @@ struct DetailsPageTests {
         return webView
     }
 
-    fileprivate static func push(_ markdown: String, to webView: PreviewWKWebView) async throws {
+    static func push(_ markdown: String, to webView: PreviewWKWebView) async throws {
         _ = try await webView.evaluateJavaScript(
             PreviewWebView.updateScript(html: MarkdownRenderer.render(markdown), lineCount: LineIndex(markdown).lineCount)
         )
         _ = try? await webView.callAsyncJavaScript("return await MarsDawn.idle();", contentWorld: .page)
     }
 
-    fileprivate static func json(_ webView: PreviewWKWebView, _ body: String, arguments: [String: Any] = [:]) async throws -> [String: Any] {
+    static func json(_ webView: PreviewWKWebView, _ body: String, arguments: [String: Any] = [:]) async throws -> [String: Any] {
         let text = try #require(try await webView.callAsyncJavaScript(
             "return JSON.stringify(await (async () => {\(body)})());", arguments: arguments, contentWorld: .page
         ) as? String)
@@ -451,8 +451,13 @@ struct DetailsPageTests {
         #expect(setup["aOpen"] as? Bool == false, "A is collapsed")
         let all = (setup["lines"] as? [Int]) ?? []
         #expect(all.count == 200)
-        let chosen = stride(from: 5, to: all.count, by: max(1, (all.count - 5) / 20)).prefix(20).map { all[$0] }
-        #expect(chosen.count == 20)
+        // The lines right after the groups are where a hidden block's position matters: a
+        // collapsed group's content reports tops beyond what follows it (WebKit lays it out but
+        // doesn't paint it), so without the skip the anchors for those lines are dropped. Then
+        // the first few and some spread-out paragraphs further down.
+        let afterGroups = [21, 23, 25, 28, 32, 34, 48]
+        let chosen = (afterGroups + all.prefix(8) + stride(from: 20, to: all.count, by: 20).map { all[$0] }).sorted()
+        #expect(chosen.count >= 20)
 
         var previous = -1.0
         for line in chosen {
