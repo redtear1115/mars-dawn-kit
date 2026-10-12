@@ -25,7 +25,9 @@ jobs:
         runner: [macos-15, macos-26]
     runs-on: ${{ matrix.runner }}
     # A nesting or table regression hangs rather than fails, so don't wait the 6-hour default.
-    timeout-minutes: 30
+    # 45, not 30: with real frames on CI, the debug and release passes each run the 20k-element
+    # DetailsPageTests A17 measurements, and macos-15 took over 30 minutes (#165, 3d0c948).
+    timeout-minutes: 45
     permissions:
       contents: read
     steps:
