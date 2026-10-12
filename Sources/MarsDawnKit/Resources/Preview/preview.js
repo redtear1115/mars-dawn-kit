@@ -376,10 +376,31 @@
     anchors = null;
   }
 
+  function isRendered(el) {
+    return typeof el.checkVisibility === "function" ? el.checkVisibility() : el.getClientRects().length > 0;
+  }
+
+  // Opening or closing a `<details>` moves everything below it. `toggle` doesn't bubble, so
+  // this listens on the capture phase. It only drops the anchors and asks for one re-sync per
+  // frame, however many events arrive: a document can open thousands of `<details>` at once,
+  // and nothing here may cost more than a constant per event.
+  let toggleFrame = 0;
+  document.addEventListener("toggle", () => {
+    anchors = null;
+    if (toggleFrame) return;
+    toggleFrame = requestAnimationFrame(() => {
+      toggleFrame = 0;
+      reapplySync();
+    });
+  }, true);
+
   function getAnchors() {
     if (anchors) return anchors;
     const offset = window.scrollY;
-    const raw = [...content().querySelectorAll("[data-line]")].map((el) => ({
+    // Anchors only where something is laid out. The content of a collapsed `<details>` is
+    // skipped (it has no position of its own: it reports the details' top, or nothing), so a
+    // line inside it would pull the lines after it out of order. One check per element.
+    const raw = [...content().querySelectorAll("[data-line]")].filter(isRendered).map((el) => ({
       line: Number(el.dataset.line),
       top: el.getBoundingClientRect().top + offset,
     }));

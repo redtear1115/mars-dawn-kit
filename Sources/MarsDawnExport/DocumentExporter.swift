@@ -175,6 +175,12 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
             defer { Self.signposter.endInterval("push", pushSignpost) }
             _ = try await webView.evaluateJavaScript(updateScript)
         }
+        // A collapsed `<details>` prints nothing of its body, so a PDF would lose it. Open every
+        // one, before the wait so that diagrams and images inside get laid out. The script is
+        // constant: nothing from the document goes into it. An exclusive group (`name`) lets only
+        // one of its members stay open, so the name goes first. Front matter is left as it is
+        // (print CSS hides it).
+        _ = try await webView.evaluateJavaScript(Self.openAllDetailsScript)
         try await waitForContent(until: deadline)
         // JSON-encoded in JS so an unknown fenceLine/line can be genuinely absent from each
         // object, rather than `null`, matching what `DiagramError` expects to decode.
@@ -196,6 +202,16 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         diagramErrors = diagramErrorDetails.map(\.message)
         _ = try? await webView.evaluateJavaScript(Self.keepHeadingsWithNextScript)
     }
+
+    private static let openAllDetailsScript = """
+    (() => {
+      for (const details of document.querySelectorAll("details:not(.front-matter)")) {
+        details.removeAttribute("name");
+        details.setAttribute("open", "");
+      }
+      return 0;
+    })()
+    """
 
     /// Wraps each heading with the block that follows it, so a page never ends on a heading.
     /// Runs from the last heading up, so a heading followed by a subheading keeps both with
