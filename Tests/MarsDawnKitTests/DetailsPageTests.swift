@@ -37,6 +37,16 @@ struct DetailsPageTests {
             ))
         }
         let webView = PreviewWKWebView(frame: NSRect(x: 0, y: 0, width: 600, height: height), configuration: configuration)
+        // WebKit treats the page as hidden, with no animation frames, while its window's occlusion
+        // state says covered, and that state changes only while AppKit takes events. `swift test`
+        // runs no event loop (taking events here stops the run loop the test process exits on), so
+        // the window stays "covered" on an unlocked screen too. The page goes by whether the window
+        // is ordered in instead; `visiblePreview` checks that a frame really runs.
+        let occlusionDetection = NSSelectorFromString("_setWindowOcclusionDetectionEnabled:")
+        if webView.responds(to: occlusionDetection) {
+            typealias Setter = @convention(c) (AnyObject, Selector, Bool) -> Void
+            unsafeBitCast(webView.method(for: occlusionDetection), to: Setter.self)(webView, occlusionDetection, false)
+        }
         _ = NSApplication.shared
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 600, height: height), styleMask: [.borderless],
                               backing: .buffered, defer: false)
@@ -381,25 +391,31 @@ struct DetailsPageTests {
         </details>
         """
 
-    /// A preview page in a window that is really showing, or a failure that says why not:
-    /// while the screen is locked or the display asleep WebKit reports the page hidden and
-    /// never runs an animation frame, and a test that waited for one would hang.
+    /// A preview page whose animation frames really run, or a failure that says why not: while
+    /// the screen is locked or the display asleep no frame runs, and a test that waited for one
+    /// would hang.
     ///
-    /// On CI (the `CI` variable set) a hidden page skips the test with one line instead of
-    /// failing, since a runner has no unlocked screen: this returns `nil` and the caller returns.
+    /// On CI (the `CI` variable set) a page with no frame skips the test with one line instead
+    /// of failing, since a runner may have no unlocked screen: this returns `nil` and the caller
+    /// returns.
     static func visiblePreview(height: CGFloat = 800, test: String = #function) async throws -> PreviewWKWebView? {
         let name = test.replacingOccurrences(of: "()", with: "")
         let webView = try await loadedPreview(height: height)
         if standIn { print("STAND-IN requestAnimationFrame active: \(name)") }
-        let state = try await json(webView, "return { visibility: document.visibilityState };")
+        let state = try await json(webView, """
+            return await new Promise((done) => {
+                const late = setTimeout(() => done({ frame: false, visibility: document.visibilityState }), 2000);
+                requestAnimationFrame(() => { clearTimeout(late); done({ frame: true, visibility: document.visibilityState }); });
+            });
+            """)
+        let frame = state["frame"] as? Bool ?? false
         let visibility = state["visibility"] as? String ?? "?"
-        if !standIn, visibility != "visible", ProcessInfo.processInfo.environment["CI"] != nil {
-            print("SKIPPED (page hidden on CI): \(name) — needs a visible, unlocked screen")
+        if !frame, ProcessInfo.processInfo.environment["CI"] != nil {
+            print("SKIPPED (no animation frame on CI): \(name) — needs a visible, unlocked screen")
             closeHosts()
             return nil
         }
-        try #require(standIn || visibility == "visible",
-                     "the page is \(visibility): unlock the screen and wake the display (no animation frames run otherwise)")
+        try #require(frame, "no animation frame ran in 2 s (the page is \(visibility)): unlock the screen and wake the display")
         return webView
     }
 
