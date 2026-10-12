@@ -397,9 +397,9 @@
   function getAnchors() {
     if (anchors) return anchors;
     const offset = window.scrollY;
-    // Anchors only where something is laid out. The content of a collapsed `<details>` is
-    // skipped (it has no position of its own: it reports the details' top, or nothing), so a
-    // line inside it would pull the lines after it out of order. One check per element.
+    // Anchors only where something is shown. The content of a collapsed `<details>` is laid
+    // out but not shown, at tops that run past the lines after the group, so a line inside it
+    // would pull those out of order. One check per element, no walk up its ancestors.
     const raw = [...content().querySelectorAll("[data-line]")].filter(isRendered).map((el) => ({
       line: Number(el.dataset.line),
       top: el.getBoundingClientRect().top + offset,
