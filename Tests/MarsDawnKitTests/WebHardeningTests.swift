@@ -241,9 +241,8 @@ struct FrameTagNeutralizationTests {
           A--&gt;B
         </pre></div>
         <div class="html-block" data-line="30"><details><summary>More</summary>
-        </div>
         <p data-line="32">Hidden <span class="x">text</span>, objective and embedded words.</p>
-        <div class="html-block" data-line="34"></details>
+        </details>
         </div>
         <div class="html-block" data-line="36"><img src="https://example.com/a.png" alt="remote">
         </div>
