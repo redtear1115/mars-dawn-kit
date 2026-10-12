@@ -545,7 +545,7 @@ struct DetailsPageTests {
                   await new Promise((r) => setTimeout(r, 0));
                 }
                 await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-                return JSON.stringify({ ms: performance.now() - t0, toggles: window.__toggles, onInsert });
+                return JSON.stringify({ ms: performance.now() - t0, toggles: window.__toggles, onInsert, syncs: window.__syncs || 0, closed: onInsert < expected });
                 """
             let host = Flag()
             let reply: String? = await withCheckedContinuation { continuation in
@@ -562,6 +562,7 @@ struct DetailsPageTests {
             }
             Self.closeHosts()
             guard let reply, let object = try JSONSerialization.jsonObject(with: Data(reply.utf8)) as? [String: Any] else { return nil }
+            print("A17-CTL \(html.contains("<details") ? "details" : "section") \(reply)")
             return ((object["ms"] as? Double ?? 0) / 1000, object["toggles"] as? Int ?? 0, object["onInsert"] as? Int ?? 0)
         }
 

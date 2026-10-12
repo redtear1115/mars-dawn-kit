@@ -390,6 +390,7 @@
     if (toggleFrame) return;
     toggleFrame = requestAnimationFrame(() => {
       toggleFrame = 0;
+      window.__syncs = (window.__syncs || 0) + 1; // CONTROL a17-ctl-count: count the syncs
       reapplySync();
     });
   }, true);
