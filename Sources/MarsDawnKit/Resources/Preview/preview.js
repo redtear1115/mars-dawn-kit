@@ -385,14 +385,7 @@
   // frame, however many events arrive: a document can open thousands of `<details>` at once,
   // and nothing here may cost more than a constant per event.
   let toggleFrame = 0;
-  document.addEventListener("toggle", () => {
-    anchors = null;
-    if (toggleFrame) return;
-    toggleFrame = requestAnimationFrame(() => {
-      toggleFrame = 0;
-      reapplySync();
-    });
-  }, true);
+  document.addEventListener("toggle", () => {}, true);
 
   function getAnchors() {
     if (anchors) return anchors;
