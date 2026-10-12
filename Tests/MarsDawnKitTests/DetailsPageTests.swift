@@ -350,7 +350,7 @@ struct DetailsPageTests {
 
     @Test func anInlineToggleHandlerInsideAGroupNeverRuns() async throws {
         defer { Self.closeHosts() }
-        let webView = try await Self.visiblePreview()
+        guard let webView = try await Self.visiblePreview() else { return }
         let before = try Self.titleOf(try await Self.json(webView, "return { title: document.title };"))
         try await Self.push(Self.inlineHandlerGroup, to: webView)
         let state = try await Self.json(webView, """
@@ -384,11 +384,22 @@ struct DetailsPageTests {
     /// A preview page in a window that is really showing, or a failure that says why not:
     /// while the screen is locked or the display asleep WebKit reports the page hidden and
     /// never runs an animation frame, and a test that waited for one would hang.
-    static func visiblePreview(height: CGFloat = 800) async throws -> PreviewWKWebView {
+    ///
+    /// On CI (the `CI` variable set) a hidden page skips the test with one line instead of
+    /// failing, since a runner has no unlocked screen: this returns `nil` and the caller returns.
+    static func visiblePreview(height: CGFloat = 800, test: String = #function) async throws -> PreviewWKWebView? {
+        let name = test.replacingOccurrences(of: "()", with: "")
         let webView = try await loadedPreview(height: height)
+        if standIn { print("STAND-IN requestAnimationFrame active: \(name)") }
         let state = try await json(webView, "return { visibility: document.visibilityState };")
-        try #require(standIn || state["visibility"] as? String == "visible",
-                     "the page is \(state["visibility"] as? String ?? "?"): unlock the screen and wake the display (no animation frames run otherwise)")
+        let visibility = state["visibility"] as? String ?? "?"
+        if !standIn, visibility != "visible", ProcessInfo.processInfo.environment["CI"] != nil {
+            print("SKIPPED (page hidden on CI): \(name) — needs a visible, unlocked screen")
+            closeHosts()
+            return nil
+        }
+        try #require(standIn || visibility == "visible",
+                     "the page is \(visibility): unlock the screen and wake the display (no animation frames run otherwise)")
         return webView
     }
 
@@ -436,7 +447,7 @@ struct DetailsPageTests {
     /// the group syncs once it has been opened. Through `MarsDawn.scrollToLine` and the DOM only.
     @Test func scrollSyncSkipsACollapsedGroupAndFollowsItsOpening() async throws {
         defer { Self.closeHosts() }
-        let webView = try await Self.visiblePreview()
+        guard let webView = try await Self.visiblePreview() else { return }
         let fillers = (1...200).map { "Filler paragraph \($0)." }.joined(separator: "\n\n")
         try await Self.push(DetailsFixture.markdown + "\n" + fillers + "\n", to: webView)
 
@@ -456,7 +467,7 @@ struct DetailsPageTests {
         // doesn't paint it), so without the skip the anchors for those lines are dropped. Then
         // the first few and some spread-out paragraphs further down.
         let afterGroups = [21, 23, 25, 28, 32, 34, 48]
-        let chosen = (afterGroups + all.prefix(8) + stride(from: 20, to: all.count, by: 20).map { all[$0] }).sorted()
+        let chosen = (afterGroups + Array(all.prefix(8)) + stride(from: 20, to: all.count, by: 20).map { all[$0] }).sorted()
         #expect(chosen.count >= 20)
 
         var previous = -1.0
@@ -468,7 +479,7 @@ struct DetailsPageTests {
                          want: Math.min(document.documentElement.scrollHeight - innerHeight, el.getBoundingClientRect().top + window.scrollY) };
             """)
             let y = state["y"] as? Double ?? -1, want = state["want"] as? Double ?? -2
-            #expect(abs(y - want) <= 2, "line \(line): scrolled to \(y), its text is at \(want)")
+            #expect(abs(y - want) <= 2.0, "line \(line): scrolled to \(y), its text is at \(want)")
             #expect(y >= previous, "line \(line): scrolled to \(y) after \(previous)")
             previous = y
         }
@@ -492,12 +503,15 @@ struct DetailsPageTests {
     @Test func manyToggleEventsCostOneSyncPerFrame() async throws {
         defer { Self.closeHosts() }
         let count = 20_000
+        guard let gate = try await Self.visiblePreview() else { return }
+        _ = gate
+        Self.closeHosts()
         let detailsHTML = MarkdownRenderer.render(String(repeating: "<details open>\n<summary>s</summary>\n</details>\n\n", count: count))
         let sectionHTML = MarkdownRenderer.render(String(repeating: "<section>\n<p>s</p>\n</section>\n\n", count: count))
         #expect(detailsHTML.components(separatedBy: "<details open>").count - 1 == count)
 
         func measure(_ html: String) async throws -> (seconds: Double, toggles: Int, onInsert: Int)? {
-            let webView = try await Self.visiblePreview()
+            let webView = try #require(try await Self.visiblePreview(test: "manyToggleEventsCostOneSyncPerFrame()"))
             let script = """
                 window.__toggles = 0;
                 document.addEventListener("toggle", () => { window.__toggles++; }, true);
