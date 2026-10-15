@@ -73,6 +73,10 @@ hr { height: 2px; border: 0; background: var(--border); margin: 1.8em 0; }
 .footnote-backref { margin-left: 0.15em; }
 .footnotes li:target, .footnote-ref a:target { background: color-mix(in srgb, var(--accent) 18%, transparent); border-radius: 3px; }
 
+/* ==Marked== text (#133): the theme's accent as a highlighter, kept light enough for body text
+   (ThemeStyles.json pair "mark-text"). Print keeps it: body sets print-color-adjust: exact. */
+mark { background: color-mix(in srgb, var(--accent) 30%, transparent); color: inherit; border-radius: 3px; padding: 0 0.15em; }
+
 ul, ol { padding-left: 2em; }
 li + li { margin-top: 0.25em; }
 li > ul, li > ol { margin-bottom: 0; }
