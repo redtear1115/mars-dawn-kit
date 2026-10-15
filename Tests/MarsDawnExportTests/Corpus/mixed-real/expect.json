@@ -1,0 +1,29 @@
+{
+  "markers": [
+    "HDMAIN01",
+    "CJKINTRO01",
+    "繁體中文介紹段落",
+    "這是一段測試文字",
+    "TBLHEAD01",
+    "KeyA01",
+    "ValA02",
+    "CELLA03",
+    "CELLB04",
+    "TASKHEAD01",
+    "DONETASK01",
+    "OPENTASK02",
+    "QUOTE01",
+    "codeMARKER01",
+    "FLOWSTART01",
+    "FLOWEND02",
+    "SEQFROM01",
+    "SEQTO02",
+    "SEQMSG03",
+    "ENDMARK99"
+  ],
+  "markersOnLastPage": ["ENDMARK99"],
+  "placeholders": ["Image not available: missing.png"],
+  "diagrams": {"rendered": 2, "failed": 0},
+  "images": 1,
+  "notes": "Realistic README-style smoke fixture: CJK, a table, a task list, a quote, code, one loaded image, two diagrams, one missing image."
+}

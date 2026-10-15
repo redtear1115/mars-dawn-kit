@@ -27,6 +27,20 @@ Two things that have caught people out when writing tests here:
 - **Don't compare exported PDFs byte for byte.** Two exports of the same document differ only in `/CreationDate`, `/ModDate` and the `/ID` derived from them, which have one-second resolution. Exports within the same second are byte-identical and exports a second apart are not, so a byte comparison passes or fails depending on timing. Compare the page count, the extracted text and the rendered pages instead.
 - **Resolve symlinks on both sides when comparing file URLs.** `FileManager.temporaryDirectory` hands back `/var/folders/…` while enumeration reports `/private/var/folders/…`, so a test that compares a hand-built URL against one the file system produced passes under the signed, sandboxed test host (whose temporary directory is inside the app container) and fails with `CODE_SIGNING_ALLOWED=NO`. `resolvingSymlinksInPath()` maps both back to `/var/…`, so it has to be applied to both sides; resolving only one still fails.
 
+### The PDF export golden corpus
+
+`swift test --filter PDFCorpus` runs the PDF export golden corpus (redtear1115/mars-dawn#2), which exists so export can't silently lose content, its page count can't silently become unstable, and it can't silently diverge from the preview. Each fixture in `Tests/MarsDawnExportTests/Corpus/<name>/` (`document.md` + `expect.json`, plus `long` and `boundary-under`/`boundary-over`, which are generated in code) is exported through the same `DocumentExporter` the app and `marsdawn export` use, then checked in five tiers:
+
+1. Every expected marker, placeholder and diagram/image count is present, so nothing disappears silently. The printed page is also laid out for print, and any word of three or more letters or digits it shows that is missing from the PDF's text fails.
+2. Every page has ink: no blank page, trailing or otherwise.
+3. A second export in the same run gives the same page count and text.
+4. The exported text matches a committed golden recorded on a specific macOS build (below).
+5. The HTML the exporter pushed matches what `MarkdownRenderer` gives the preview for the same document (`MarkdownRenderer.Options.preview(baseDirectory:)`), so the two can't quietly drift apart.
+
+A marker matches when it's a substring of the page text after both sides are NFKC-normalised and have all Unicode whitespace removed, so line wraps and compatibility ideographs can't hide a missing marker. `boundary-under` and `boundary-over` sit either side of the renderer's node budget; a binary search finds the boundary at test time, so they follow `ParseLimits.defaultMaxNodes`. The Mermaid diagram types have their own corpus (`MermaidCorpusTests`); the PDF corpus has one mixed document with a diagram.
+
+The golden files (tier 4, `Tests/MarsDawnExportTests/Goldens/<name>.txt`) are per OS build: each one's first line names the OS build and WebKit version it was recorded on. That tier only runs with `MARSDAWN_PDF_GOLDENS=1` (the `pdf-goldens` CI job), so the `test` matrix on other OS builds never fails on it. If the runner's OS build differs from the one recorded, the test fails with one distinct message (`goldens were recorded on build A, this runner is build B: re-record with the Record PDF goldens workflow`) instead of a text diff; the same build with different text fails with the differing page(s). To re-record, run the "Record PDF goldens" GitHub Actions workflow (`workflow_dispatch`, macOS 26) and commit its `pdf-goldens` artifact, or locally with `MARSDAWN_PDF_GOLDENS=1 MARSDAWN_UPDATE_GOLDENS=1 swift test --filter PDFCorpus/golden` (the committed goldens should come from CI's build).
+
 ## Command line
 
 Install it with Homebrew: `brew tap redtear1115/tap && brew install marsdawn`.

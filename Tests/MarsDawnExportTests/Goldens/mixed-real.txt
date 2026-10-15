@@ -1,0 +1,24 @@
+OS build: Version 26.6.2 (Build 25G83) | WebKit: 21624.5.1.11.3 | Paper: a4
+Page count: 2
+
+--- Page 1 ---
+MarsDawn README HDMAIN01
+繁體中文介紹段落 CJKINTRO01:這是一段測試文字,用來檢查匯出功能是否正常運作。
+Features TBLHEAD01
+Feature KeyA01 Status ValA02
+Live preview CELLA03 Done CELLB04
+Tasks TASKHEAD01
+Ship the exporter DONETASK01
+Add DOCX support OPENTASK02
+A quoted note QUOTE01 from the maintainers.
+let codeMARKER01 = 42
+Image not available: missing.png
+FLOWSTART01 FLOWEND02
+
+--- Page 2 ---
+SEQFROM01
+SEQTO02
+SEQMSG03 SEQMSG03
+SEQFROM01
+SEQTO02
+Last paragraph in the document ENDMARK99.

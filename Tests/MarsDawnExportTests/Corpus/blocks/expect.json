@@ -1,0 +1,23 @@
+{
+  "markers": [
+    "H1MARK01", "H2MARK02", "H3MARK03", "H4MARK04", "H5MARK05", "H6MARK06",
+    "CODEHEAD07",
+    "PYCODE08", "PYEND09",
+    "JSCODE10", "JSEND11",
+    "RUSTCODE12", "RUSTEND13",
+    "BASHCODE14", "BASHEND15",
+    "JSONCODE16", "JSONEND17",
+    "WIDECODE18", "WIDEEND19",
+    "TALLCODE20", "TALLCODEEND21",
+    "WIDETBLHEAD22", "wv01A23", "WCol01", "WCol12",
+    "LONGTBLHEAD24", "LONGTBLFIRST25", "LONGTBLLAST99",
+    "QUOTEHEAD26", "QUOTE1MARK27", "QUOTE2MARK28", "QUOTE3MARK29",
+    "TASKHEAD30", "TASKDONE31", "TASKNESTED32", "TASKNESTEDDONE33", "TASKOPEN34",
+    "MATHINLINEBEFORE35", "MATHINLINEAFTER36",
+    "MATHBLOCKBEFORE37", "MATHBLOCKAFTER38",
+    "HRBEFORE39", "HRAFTER40",
+    "BLOCKSENDMARK99"
+  ],
+  "markersOnLastPage": ["BLOCKSENDMARK99"],
+  "notes": "Covers headings h1-h6, code blocks in five languages (python/javascript/rust/bash/json), one code line far wider than the page (458 characters, unwrapped), one code block taller than one page (160 lines, spans pages 1-3 in the current layout), a wide table (12 columns) and a long table that spans pages (60 rows, spans pages 3-4), nested block quotes (3 levels), task lists with checked/unchecked items including nesting, inline math ($a^2+b^2=c^2$) and block math ($$\\sum...$$), and a horizontal rule. Exports to 5 pages with no blank page. Markers are placed in prose immediately around the math rather than inside the KaTeX-rendered expressions themselves, since KaTeX output is not expected to preserve the literal source text."
+}
