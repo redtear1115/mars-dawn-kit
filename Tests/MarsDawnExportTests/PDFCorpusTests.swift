@@ -256,6 +256,12 @@ struct PDFCorpus {
     static func assertPageLayout(_ outcome: ExportOutcome, fixture: CorpusFixture) {
         let expectation = fixture.expectation
         let pages = outcome.pageTexts.map(corpusNormalize)
+        // The margins reach the layout width as well as the print info (spike M4): with only the
+        // print info, keep-with-next measures at the wrong width and page texts move.
+        #expect(
+            abs(outcome.inspected.layoutWidth - expectation.layout.printableWidth(paperWidth: outcome.paperSize.width)) < 0.01,
+            "\(fixture.name): laid out at \(outcome.inspected.layoutWidth) pt, not the \(expectation.layout) layout's printable width"
+        )
         if let minPages = expectation.minPages {
             #expect(pages.count >= minPages, "\(fixture.name): \(pages.count) pages, expected at least \(minPages)")
         }
@@ -316,6 +322,8 @@ struct PDFCorpus {
         var printText: String
         var renderedHTML: String?
         var diagramErrorCount: Int
+        /// The width the page was laid out at before printing; it must be the printable width.
+        var layoutWidth: CGFloat
     }
 
     /// Every run of three or more letters or digits in the text the printed page shows that
@@ -388,7 +396,8 @@ struct PDFCorpus {
             let printText = try await exporter.webView.evaluateJavaScript(Self.printTextScript) as? String ?? ""
             inspected = Inspected(
                 dom: dom, printText: printText,
-                renderedHTML: exporter.renderedHTML, diagramErrorCount: exporter.diagramErrors.count
+                renderedHTML: exporter.renderedHTML, diagramErrorCount: exporter.diagramErrors.count,
+                layoutWidth: exporter.webView.frame.width
             )
         }
         _ = result
