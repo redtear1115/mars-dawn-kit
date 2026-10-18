@@ -85,6 +85,25 @@ struct ManualLayoutTests {
         #expect(ManualProbe.lines(untitled.pageTexts[0]).first == "Contents", "page 1 is the contents: \(untitled.pageTexts[0])")
     }
 
+    /// Neither a cover nor a heading: no contents, no bookmarks, and every page is a body page
+    /// with its "n / N" footer, the first one "1 / N".
+    @Test func aDocumentWithoutTitleOrHeadingsIsAllBody() async throws {
+        let paragraph = String(repeating: "Plain text without any heading. ", count: 40)
+        let markdown = (1...12).map { "P\($0) " + paragraph }.joined(separator: "\n\n") + "\n\n### Level three NOH3\n\nPLAINEND99\n"
+        let run = try await ManualProbe.export(markdown)
+        defer { try? FileManager.default.removeItem(at: run.directory) }
+        #expect(run.report.cover == nil && run.report.headings.isEmpty && run.report.bodyStart == 0)
+        #expect(run.pageTexts.count >= 2, "\(run.pageTexts.count) pages")
+        #expect(run.pageTexts.first.map { ManualProbe.withoutFooter($0).hasPrefix("P1 ") } == true)
+        for (index, text) in run.pageTexts.enumerated() {
+            let footer = ManualProbe.footer(text)
+            #expect(footer?.n == index + 1 && footer?.total == run.pageTexts.count, "page \(index + 1): \(String(describing: footer))")
+        }
+        #expect(ManualProbe.outline(run.document).isEmpty && run.document.outlineRoot == nil)
+        #expect(!run.pageTexts.joined().contains("Contents"))
+        #expect(ManualProbe.pageTexts(run.report.passA).count == run.pageTexts.count)
+    }
+
     // MARK: SEC-1: the logo is an image like any other
 
     /// <root>/granted/project/ (the document's folder) with the logo variants, <root>/granted/shared
