@@ -11,10 +11,22 @@ import Testing
 @MainActor
 @Suite(.serialized, .timeLimit(.minutes(3)))
 struct CountMatchesPageTests {
+    /// The preview page, not the export page: export opens every `<details>` before it prints
+    /// (#414), where the word count follows what the preview shows.
     private func pageWords(_ markdown: String) async throws -> Int {
-        let exporter = DocumentExporter(baseDirectory: nil, allowRemoteImages: false)
-        try await exporter.prepare(markdown: markdown, theme: .dawn)
-        let text = try await exporter.webView.evaluateJavaScript(#"document.getElementById("content").innerText"#) as? String ?? ""
+        let webView = PreviewWKWebView(frame: NSRect(x: 0, y: 0, width: 600, height: 800),
+                                       configuration: PreviewWebView.makeConfiguration())
+        webView.applyContentRuleList(try await PreviewContentRules.ruleList(allowRemoteImages: false))
+        #expect(webView.load(URLRequest(url: PreviewSchemeHandler.pageURL(theme: .dawn))) != nil)
+        let deadline = ContinuousClock.now + .seconds(20)
+        while webView.isLoading, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        _ = try await webView.evaluateJavaScript(
+            PreviewWebView.updateScript(html: MarkdownRenderer.render(markdown), lineCount: LineIndex(markdown).lineCount)
+        )
+        _ = try? await webView.callAsyncJavaScript("return await MarsDawn.idle();", contentWorld: .page)
+        let text = try await webView.evaluateJavaScript(#"document.getElementById("content").innerText"#) as? String ?? ""
         return TextStatistics(plainText: text).words
     }
 
@@ -37,6 +49,14 @@ struct CountMatchesPageTests {
         // A collapsed <details> shows its summary only; an open one shows its body too.
         "<details><summary>Title here</summary>Body words hidden</details>\n",
         "<details open><summary>Title</summary>Body shown</details>\n",
+        // The GitHub form of <details> (#414): the opening tag, the Markdown and the closing tag
+        // are separate blocks, written as one element. Without fenced code in the middle: a
+        // fence's words are counted whatever the group hides (`visitCodeBlock` does not know),
+        // which is deferred to its own issue.
+        "<details>\n<summary>Title here</summary>\n\nBody **words** hidden here\n\n- item one\n- item two\n\n</details>\n\nShown text after.\n",
+        "<details open>\n<summary>Title</summary>\n\nBody words shown here\n\n</details>\n\nShown text after.\n",
+        "<details open>\n<summary>Outer</summary>\n\nouter body\n\n<details>\n<summary>Inner</summary>\n\ninner body hidden\n\n</details>\n\nafter inner\n\n</details>\n\nShown text after.\n",
+        "<details>\n<summary>One</summary>\n\nfirst hidden body\n\n</details>\n<details>\n<summary>Two</summary>\n\nsecond hidden body\n\n</details>\n\nShown text after.\n",
         // Already right, kept right.
         "<div class=note>Html wrapped text</div>\n",
         "A <span class=x>red</span> word.\n",
