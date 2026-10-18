@@ -1,0 +1,27 @@
+{
+  "textOnEveryPage": true,
+  "markers": [
+    "HCTITLE",
+    "HCTEXT1",
+    "HCLOWER",
+    "HCTRAIL",
+    "HCDIV",
+    "HCSPACED",
+    "HCEND99"
+  ],
+  "markersOnLastPage": [
+    "HCEND99"
+  ],
+  "samePage": [
+    [
+      "HCTITLE",
+      "HCTEXT1",
+      "HCLOWER",
+      "HCTRAIL",
+      "HCDIV",
+      "HCSPACED",
+      "HCEND99"
+    ]
+  ],
+  "notes": "Document layout. Other HTML comments and blocks next to <!--BREAK--> lookalikes (lower case, spaced, with trailing words) are not page breaks: they all stay on page 1. Nothing in this fixture is a break, and its renderer HTML is what the base renders."
+}

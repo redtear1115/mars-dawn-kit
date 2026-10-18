@@ -1,0 +1,44 @@
+{
+  "layout": "manual",
+  "minPages": 10,
+  "textOnEveryPage": true,
+  "markers": [
+    "ZHTITLE",
+    "ZHAP02",
+    "ZHNATURAL01",
+    "ZHNATURAL52",
+    "ZHAFTERBREAK",
+    "ZHCODEBEFORE",
+    "ZHCODEAFTER",
+    "ZHINLINE",
+    "ZHEND99"
+  ],
+  "markersOnLastPage": [
+    "ZHEND99"
+  ],
+  "startsPage": [
+    "操作手冊 ZHTITLE",
+    "第 1 ZHCH1",
+    "ZHAFTERBREAK",
+    "第 2 ZHCH2",
+    "第 3 ZHCH3",
+    "第 4 ZHCH4",
+    "第 5 ZHCH5",
+    "第 6 ZHCH6"
+  ],
+  "samePage": [
+    [
+      "ZHCODEBEFORE",
+      "ZHCODEAFTER"
+    ],
+    [
+      "ZHINLINE",
+      "then text"
+    ],
+    [
+      "ZHNATURAL01",
+      "ZHNATURAL52"
+    ]
+  ],
+  "notes": "Manual layout, Traditional Chinese. Front matter (hidden in print) comes before the first H1, which must still be the first block on page 1 with no blank page. Same break cases as manual-en."
+}

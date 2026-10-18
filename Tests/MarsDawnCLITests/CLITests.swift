@@ -32,6 +32,17 @@ struct CLITests {
         #expect(help.contains("HackMD"))
     }
 
+    /// `--layout` (mars-dawn#432): the document layout is the default, and only the two layouts parse.
+    @Test func exportLayoutDefaultsToDocumentAndRejectsOthers() throws {
+        #expect(try MarsDawnCommand.Export.parse(["plan.md"]).layout == .document)
+        #expect(try MarsDawnCommand.Export.parse(["plan.md", "--layout", "document"]).layout == .document)
+        #expect(try MarsDawnCommand.Export.parse(["plan.md", "--layout", "manual"]).layout == .manual)
+        #expect(throws: (any Error).self) { try MarsDawnCommand.Export.parse(["plan.md", "--layout", "handout"]) }
+        #expect(throws: (any Error).self) { try MarsDawnCommand.Export.parse(["plan.md", "--layout"]) }
+        let help = MarsDawnCommand.Export.helpMessage()
+        #expect(help.contains("--layout") && help.contains("manual") && help.contains("<!--BREAK-->"))
+    }
+
     @Test func exportParsesEveryOption() throws {
         let command = try MarsDawnCommand.Export.parse([
             "plan.md", "-o", "/tmp/out.pdf", "--theme", "Classic", "--paper", "letter",

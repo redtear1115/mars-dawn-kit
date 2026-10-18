@@ -1,0 +1,44 @@
+{
+  "layout": "manual",
+  "minPages": 10,
+  "textOnEveryPage": true,
+  "markers": [
+    "JATITLE",
+    "JAAP02",
+    "JANATURAL01",
+    "JANATURAL52",
+    "JAAFTERBREAK",
+    "JACODEBEFORE",
+    "JACODEAFTER",
+    "JAINLINE",
+    "JAEND99"
+  ],
+  "markersOnLastPage": [
+    "JAEND99"
+  ],
+  "startsPage": [
+    "取扱説明書 JATITLE",
+    "章 1 JACH1",
+    "JAAFTERBREAK",
+    "章 2 JACH2",
+    "章 3 JACH3",
+    "章 4 JACH4",
+    "章 5 JACH5",
+    "章 6 JACH6"
+  ],
+  "samePage": [
+    [
+      "JACODEBEFORE",
+      "JACODEAFTER"
+    ],
+    [
+      "JAINLINE",
+      "then text"
+    ],
+    [
+      "JANATURAL01",
+      "JANATURAL52"
+    ]
+  ],
+  "notes": "Manual layout, Japanese. Same break cases as manual-en."
+}

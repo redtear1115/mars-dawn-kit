@@ -1,0 +1,37 @@
+{
+  "textOnEveryPage": true,
+  "markers": [
+    "DBTITLE",
+    "DBH1",
+    "DBAFTER",
+    "DBCODEBEFORE",
+    "DBCODEAFTER",
+    "DBINLINE",
+    "DBH2",
+    "DBPAIR",
+    "DBEND99"
+  ],
+  "markersOnLastPage": [
+    "DBEND99"
+  ],
+  "startsPage": [
+    "DBAFTER",
+    "Third H1 DBH2",
+    "DBPAIR"
+  ],
+  "samePage": [
+    [
+      "DBCODEBEFORE",
+      "DBCODEAFTER"
+    ],
+    [
+      "DBINLINE",
+      "then text"
+    ],
+    [
+      "DOC TITLE DBTITLE",
+      "Second H1 DBH1"
+    ]
+  ],
+  "notes": "Document layout (the default) with <!--BREAK-->. A marker on its own line starts a page (DBAFTER); a marker followed by an H1 is one break (Third H1); a marker in a code fence and in inline code breaks nothing; two markers in a row are one break (DBPAIR); a marker with nothing after it breaks nothing and leaves no empty page (the last line of the file, after DBEND99); H1s do not break in this layout (Second H1 stays on the title's page)."
+}
