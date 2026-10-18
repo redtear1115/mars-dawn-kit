@@ -47,8 +47,6 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
     private nonisolated static let signposter = OSSignposter(subsystem: "dev.southern-light.marsdawn-kit", category: "Performance")
     /// Diagrams and images get this long to finish before export gives up.
     private static let contentTimeout: Duration = .seconds(20)
-    /// Side and top/bottom page margins in points (about 16 mm and 18 mm).
-    private static let pageMargins = NSSize(width: 45, height: 51)
 
     /// Exporters that are still printing; a print operation doesn't retain its web view's owner.
     private static var active: Set<DocumentExporter> = []
@@ -57,19 +55,23 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
     private let assets = DocumentAssetSchemeHandler()
     private var pageLoad: CheckedContinuation<Void, Error>?
     private let allowRemoteImages: Bool
+    private let layout: ExportLayout
     private var templateSignpost: OSSignpostIntervalState?
 
     /// - Parameters:
     ///   - baseDirectory: Folder that relative image paths resolve against (the document's folder).
     ///   - allowRemoteImages: Whether web images load; otherwise the page's CSP blocks them.
-    ///   - width: Layout width before printing reflows the page.
+    ///   - width: Layout width before printing reflows the page: the paper width minus the
+    ///     layout's left and right margins (`ExportLayout.printableWidth(paperWidth:)`).
+    ///   - layout: The page layout; `.manual` starts every top-level heading on a new page.
     ///   - scopeRoot: The folder images may be read from, which must contain `baseDirectory`: a
     ///     folder the user granted, so `../` images above the document load as they do in the
     ///     app's preview. Nil, the default, is the document's own folder, as before.
-    init(baseDirectory: URL?, allowRemoteImages: Bool, width: CGFloat = 700, scopeRoot: URL? = nil) {
+    init(baseDirectory: URL?, allowRemoteImages: Bool, width: CGFloat = 700, scopeRoot: URL? = nil, layout: ExportLayout = .document) {
         assets.baseDirectory = baseDirectory
         assets.scopeRoot = scopeRoot
         self.allowRemoteImages = allowRemoteImages
+        self.layout = layout
         let configuration = PreviewWebView.makeConfiguration(assets: assets)
         configuration.preferences.shouldPrintBackgrounds = true
         webView = PreviewWKWebView(frame: NSRect(x: 0, y: 0, width: width, height: 1000), configuration: configuration)
@@ -208,6 +210,8 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         } ?? []
         diagramErrors = diagramErrorDetails.map(\.message)
         _ = try? await webView.evaluateJavaScript(Self.keepHeadingsWithNextScript)
+        // After keep-with-next, so a heading kept with its block is broken before as one unit.
+        _ = try? await webView.evaluateJavaScript(Self.pageBreaksScript(manual: layout == .manual))
     }
 
     private static let openAllDetailsScript = """
@@ -240,6 +244,46 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
     })()
     """
 
+    /// Forced page breaks, done here and not in the renderer, so the preview and Quick Look
+    /// never see them. A `<!--BREAK-->` on its own line (the renderer's `div.html-block` that
+    /// holds exactly that comment) puts the block after it on a new page, in every layout; in
+    /// the manual layout each `h1` that is not the first thing on the page does too. The break
+    /// goes before the following block rather than after the marker, so a marker followed by an
+    /// `h1` is one break and never an empty page, and a marker with nothing after it is none.
+    static func pageBreaksScript(manual: Bool) -> String {
+        """
+        (() => {
+          const content = document.getElementById("content");
+          if (!content) return 0;
+          const style = document.createElement("style");
+          style.textContent = "@media print { .export-page-break, .export-manual .export-h1-break { break-before: page; page-break-before: always; } }";
+          document.head.append(style);
+          const isMarker = (el) => {
+            if (!el.matches || !el.matches("div.html-block")) return false;
+            const nodes = [...el.childNodes].filter((n) => !(n.nodeType === 3 && n.textContent.trim() === ""));
+            return nodes.length === 1 && nodes[0].nodeType === 8 && nodes[0].data === "BREAK";
+          };
+          const markers = [...content.querySelectorAll("div.html-block")].filter(isMarker);
+          const skipped = (el) => el.classList.contains("front-matter") || markers.includes(el);
+          const first = [...content.children].find((el) => !skipped(el));
+          const breakBefore = (el, className) => { if (el && el !== first) el.classList.add(className); };
+          for (const marker of markers) {
+            marker.style.display = "none";
+            let node = marker;
+            while (node !== content && !node.nextElementSibling) node = node.parentElement;
+            if (node !== content) breakBefore(node.nextElementSibling, "export-page-break");
+          }
+          if (\(manual ? "true" : "false")) {
+            document.body.classList.add("export-manual");
+            for (const h1 of content.querySelectorAll("h1")) {
+              const wrapped = h1.parentElement.classList.contains("keep-with-next") && h1.parentElement.firstElementChild === h1;
+              breakBefore(wrapped ? h1.parentElement : h1, "export-h1-break");
+            }
+          }
+          return 0;
+        })()
+        """
+    }
 
     /// Internal, not private, so `MathExportTests` can watch it return on a page whose math was
     /// skipped rather than rendered.
@@ -286,10 +330,11 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         info.verticalPagination = .automatic
         info.isHorizontallyCentered = false
         info.isVerticallyCentered = false
-        info.topMargin = Self.pageMargins.height
-        info.bottomMargin = Self.pageMargins.height
-        info.leftMargin = Self.pageMargins.width
-        info.rightMargin = Self.pageMargins.width
+        let margins = layout.pageMargins
+        info.topMargin = margins.top
+        info.bottomMargin = margins.bottom
+        info.leftMargin = margins.left
+        info.rightMargin = margins.right
         let operation = webView.printOperation(with: info)
         // WebKit paginates on a secondary thread while the main thread fetches page data;
         // printing on the main thread alone never finishes.
@@ -321,6 +366,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         scopeRoot: URL? = nil,
         footnoteBackLabel: String = MarkdownRenderer.Options().footnoteBackLabel,
         softBreaksAsLineBreaks: Bool = false,
+        layout: ExportLayout = .document,
         printInfo: NSPrintInfo,
         window: NSWindow?,
         configure: (NSPrintInfo, NSPrintOperation) -> Void = { _, _ in }
@@ -328,7 +374,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         try await runReportingDiagrams(
             markdown: markdown, theme: theme, baseDirectory: baseDirectory, allowRemoteImages: allowRemoteImages,
             scopeRoot: scopeRoot, footnoteBackLabel: footnoteBackLabel, softBreaksAsLineBreaks: softBreaksAsLineBreaks,
-            printInfo: printInfo, window: window, configure: configure
+            layout: layout, printInfo: printInfo, window: window, configure: configure
         ).completed
     }
 
@@ -348,6 +394,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         scopeRoot: URL? = nil,
         footnoteBackLabel: String = MarkdownRenderer.Options().footnoteBackLabel,
         softBreaksAsLineBreaks: Bool = false,
+        layout: ExportLayout = .document,
         printInfo: NSPrintInfo,
         window: NSWindow?,
         configure: (NSPrintInfo, NSPrintOperation) -> Void = { _, _ in }
@@ -355,7 +402,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         let result = try await runReportingDiagramDetails(
             markdown: markdown, theme: theme, baseDirectory: baseDirectory, allowRemoteImages: allowRemoteImages,
             scopeRoot: scopeRoot, footnoteBackLabel: footnoteBackLabel, softBreaksAsLineBreaks: softBreaksAsLineBreaks,
-            printInfo: printInfo, window: window, configure: configure
+            layout: layout, printInfo: printInfo, window: window, configure: configure
         )
         return (result.completed, result.diagramErrors)
     }
@@ -370,6 +417,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         scopeRoot: URL? = nil,
         footnoteBackLabel: String = MarkdownRenderer.Options().footnoteBackLabel,
         softBreaksAsLineBreaks: Bool = false,
+        layout: ExportLayout = .document,
         printInfo: NSPrintInfo,
         window: NSWindow?,
         configure: (NSPrintInfo, NSPrintOperation) -> Void = { _, _ in }
@@ -377,7 +425,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         try await runReportingDiagramDetails(
             markdown: markdown, theme: theme, baseDirectory: baseDirectory, allowRemoteImages: allowRemoteImages,
             scopeRoot: scopeRoot, footnoteBackLabel: footnoteBackLabel, softBreaksAsLineBreaks: softBreaksAsLineBreaks,
-            printInfo: printInfo, window: window, inspect: nil, configure: configure
+            layout: layout, printInfo: printInfo, window: window, inspect: nil, configure: configure
         )
     }
 
@@ -394,15 +442,17 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         scopeRoot: URL? = nil,
         footnoteBackLabel: String = MarkdownRenderer.Options().footnoteBackLabel,
         softBreaksAsLineBreaks: Bool = false,
+        layout: ExportLayout = .document,
         printInfo: NSPrintInfo,
         window: NSWindow?,
         inspect: Inspection?,
         configure: (NSPrintInfo, NSPrintOperation) -> Void = { _, _ in }
     ) async throws -> (completed: Bool, diagramErrors: [String], diagramErrorDetails: [DiagramError]) {
         // Lay out at the printable width, so measured block heights match the printed pages.
-        let printableWidth = printInfo.paperSize.width - 2 * pageMargins.width
+        let printableWidth = layout.printableWidth(paperWidth: printInfo.paperSize.width)
         let exporter = DocumentExporter(
-            baseDirectory: baseDirectory, allowRemoteImages: allowRemoteImages, width: printableWidth, scopeRoot: scopeRoot
+            baseDirectory: baseDirectory, allowRemoteImages: allowRemoteImages, width: printableWidth,
+            scopeRoot: scopeRoot, layout: layout
         )
         active.insert(exporter)
         defer { active.remove(exporter) }
@@ -468,12 +518,14 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         paper: Paper = .a4,
         scopeRoot: URL? = nil,
         footnoteBackLabel: String = MarkdownRenderer.Options().footnoteBackLabel,
-        softBreaksAsLineBreaks: Bool = false
+        softBreaksAsLineBreaks: Bool = false,
+        layout: ExportLayout = .document
     ) async throws -> PDFResult {
         try await exportPDF(
             markdown: markdown, to: url, theme: theme, baseDirectory: baseDirectory,
             allowRemoteImages: allowRemoteImages, paper: paper, scopeRoot: scopeRoot,
-            footnoteBackLabel: footnoteBackLabel, softBreaksAsLineBreaks: softBreaksAsLineBreaks, inspect: nil
+            footnoteBackLabel: footnoteBackLabel, softBreaksAsLineBreaks: softBreaksAsLineBreaks,
+            layout: layout, inspect: nil
         )
     }
 
@@ -488,6 +540,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         scopeRoot: URL? = nil,
         footnoteBackLabel: String = MarkdownRenderer.Options().footnoteBackLabel,
         softBreaksAsLineBreaks: Bool = false,
+        layout: ExportLayout = .document,
         inspect: Inspection?
     ) async throws -> PDFResult {
         let printInfo = NSPrintInfo()
@@ -496,7 +549,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         let result = try await runReportingDiagramDetails(
             markdown: markdown, theme: theme, baseDirectory: baseDirectory,
             allowRemoteImages: allowRemoteImages, scopeRoot: scopeRoot, footnoteBackLabel: footnoteBackLabel,
-            softBreaksAsLineBreaks: softBreaksAsLineBreaks, printInfo: printInfo, window: nil, inspect: inspect
+            softBreaksAsLineBreaks: softBreaksAsLineBreaks, layout: layout, printInfo: printInfo, window: nil, inspect: inspect
         ) { info, operation in
             info.jobDisposition = .save
             info.dictionary()[NSPrintInfo.AttributeKey.jobSavingURL] = url
