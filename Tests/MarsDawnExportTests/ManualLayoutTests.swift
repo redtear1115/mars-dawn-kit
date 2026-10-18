@@ -378,8 +378,16 @@ struct ManualLayoutTests {
         let data = try Data(contentsOf: destination)
         let document = try #require(PDFDocument(data: data))
         let text = ManualProbe.pageTexts(document).joined(separator: "\n")
-        let info = (document.documentAttributes ?? [:]).map { "\($0.key)=\($0.value)" }.joined(separator: "\n")
         let raw = String(decoding: data, as: UTF8.self)
+        // The Info dictionaries as written (every revision's trailer's /Info object), and as
+        // PDFKit reads them back: PDFKit can write a /Title it then doesn't read back.
+        let infoObjects = raw.matches(of: /\/Info\s+(\d+)\s+(\d+)\s+R/).compactMap { match -> String? in
+            guard let start = raw.range(of: "\n\(match.1) \(match.2) obj") else { return nil }
+            return raw[start.upperBound...].range(of: "endobj").map { String(raw[start.upperBound..<$0.lowerBound]) }
+        }
+        #expect(!infoObjects.isEmpty, "precondition: the file has an Info dictionary")
+        let info = infoObjects.joined(separator: "\n") + "\n"
+            + (document.documentAttributes ?? [:]).map { "\($0.key)=\($0.value)" }.joined(separator: "\n")
         let xmp = raw.range(of: "<x:xmpmeta").map { String(raw[$0.lowerBound...].prefix(20_000)) } ?? ""
 
         #expect(text.contains("SEC5HEADSENTINEL"), "positive control: the heading's sentinel is in the text")
