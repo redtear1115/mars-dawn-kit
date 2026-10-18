@@ -38,6 +38,10 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         /// The manual layout's second pass paginated differently from the first, so its page
         /// numbers would be wrong; nothing was written.
         case manualLayoutPaginationChanged
+        /// The document is larger than `limit` UTF-8 bytes, the renderer's byte cap
+        /// (`ParseLimits.defaultMaxBytes`). Refused before the page loaded: nothing was rendered,
+        /// printed or written.
+        case inputTooLarge(limit: Int)
 
         public var errorDescription: String? {
             switch self {
@@ -51,6 +55,8 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
                 String(localized: "The manual layout can only be exported as a PDF file, not printed directly.")
             case .manualLayoutPaginationChanged:
                 String(localized: "The manual layout’s page numbers couldn’t be worked out for this document.")
+            case .inputTooLarge(let limit):
+                String(localized: "The document is too large to export: the limit is \(limit.formatted(.byteCount(style: .memory))).")
             }
         }
     }
@@ -139,6 +145,10 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         footnoteBackLabel: String = MarkdownRenderer.Options().footnoteBackLabel,
         softBreaksAsLineBreaks: Bool = false
     ) async throws {
+        let options = MarkdownRenderer.Options.preview(
+            baseDirectory: assets.baseDirectory, footnoteBackLabel: footnoteBackLabel, softBreaksAsLineBreaks: softBreaksAsLineBreaks
+        )
+        try Self.refuseOverTheByteCap(markdown, options: options)
         // The network rules go on before the page loads; without them, nothing loads.
         let rules: WKContentRuleList
         do {
@@ -178,9 +188,6 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
             blockedLabel: PreviewWebView.unloadableImagePlaceholderLabel
         ))
 
-        let options = MarkdownRenderer.Options.preview(
-            baseDirectory: assets.baseDirectory, footnoteBackLabel: footnoteBackLabel, softBreaksAsLineBreaks: softBreaksAsLineBreaks
-        )
         // One deadline covers rendering, updating the page and waiting for its content.
         let deadline = ContinuousClock.now + Self.contentTimeout
         let rendered = try await withExportDeadline(deadline, timeoutError: ExportError.contentTimedOut) {
@@ -357,6 +364,14 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
     }
 
     // MARK: Running
+
+    /// Over the byte cap the renderer would only show the escaped source; export refuses instead,
+    /// before the page loads, rather than paginate that (kit #150).
+    static func refuseOverTheByteCap(_ markdown: String, options: MarkdownRenderer.Options) throws {
+        if let limit = options.maxBytes, markdown.utf8.count > limit {
+            throw ExportError.inputTooLarge(limit: limit)
+        }
+    }
 
     /// Prints or exports `markdown`, attached to `window` (or to a hidden window without one).
     /// `configure` adjusts the print info and operation, e.g. to save a PDF instead of printing.

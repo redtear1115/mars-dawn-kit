@@ -20,7 +20,7 @@ public enum MarkdownRenderer {
         /// Maps an image `src` as written in the document to the URL the preview should load.
         public var resolveImageSource: @Sendable (String) -> String
         /// Documents larger than this many UTF-8 bytes render as their escaped source.
-        /// `nil` (the default) means no limit.
+        /// Defaults to `ParseLimits.defaultMaxBytes` (16 MiB); `nil` means no limit.
         public var maxBytes: Int?
         /// Documents with more nodes than this render as their escaped source.
         public var maxNodes: Int
@@ -39,7 +39,7 @@ public enum MarkdownRenderer {
         public var softBreaksAsLineBreaks: Bool
 
         public init(
-            maxBytes: Int? = nil,
+            maxBytes: Int? = ParseLimits.defaultMaxBytes,
             maxNodes: Int = ParseLimits.defaultMaxNodes,
             frontMatterLabel: String = "Document info",
             footnoteBackLabel: String = "Back to reference",
