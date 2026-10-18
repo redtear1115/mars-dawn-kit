@@ -1,3 +1,4 @@
+import Markdown
 import Testing
 @testable import MarsDawnKit
 
@@ -321,5 +322,110 @@ struct InlineMarksTests {
     func whereTheTreesDifferNoEscapeBecomesAMark(markdown: String) {
         let html = MarkdownRenderer.render(markdown)
         #expect(!html.contains("<mark>f") && !html.contains("<sup>f"), "\(html)")
+    }
+
+    // MARK: Entities whose decoding contains `=` or `^` (#162)
+
+    /// Every named entity whose decoding holds a `=` or `^`, from the decoder's own table, so a
+    /// table change is covered. Today: `Hat`, `equals` and `bne` (`=` and U+20E5).
+    private static let delimiterEntities: [String] = HTMLNamedEntities.table
+        .filter { $0.value.unicodeScalars.contains { $0 == "=" || $0 == "^" } }
+        .map(\.key).sorted()
+
+    @Test func theTableHasTheEntitiesThePlanNames() {
+        #expect(Self.delimiterEntities == ["Hat", "bne", "equals"])
+    }
+
+    /// An entity's `=` or `^` is never half of a delimiter, whatever else it decodes to.
+    @Test(arguments: delimiterEntities)
+    func anEntityWithADelimiterNextToOneIsNoMark(name: String) {
+        let decoded = HTMLNamedEntities.table[name]!
+        let e = "&\(name);"
+        // No literal pair of delimiters anywhere: only the entity could complete one.
+        let cases = decoded.unicodeScalars.contains("=")
+            ? ["=\(e)x=\(e)", "\(e)=x\(e)=", "==x=\(e)", "=\(e)x==", "\(e)\(e)x\(e)\(e)"]
+            : ["^x\(e)", "\(e)x^", "\(e)x\(e)", "x^2\(e)"]
+        for markdown in cases {
+            let html = inline(markdown)
+            #expect(!html.contains("<mark>") && !html.contains("<sup>"), "\(markdown) -> \(html)")
+        }
+    }
+
+    @Test func bneIsLiteralTextNextToDelimiters() {
+        #expect(inline("=&bne;x=&bne;") == "==\u{20E5}x==\u{20E5}")
+        #expect(inline("^x&bne;") == "^x=\u{20E5}")
+        #expect(inline("==x=&bne;") == "==x==\u{20E5}")
+    }
+
+    @Test(arguments: [
+        ("&equals;&equals;a&equals;&equals;", "==a=="),
+        ("&Hat;x&Hat;", "^x^"),
+        ("&#61;&#61;a&#61;&#61;", "==a=="),
+        (#"\==a\=="#, "==a=="),
+        ("==a==", "<mark>a</mark>"),
+        ("^a^", "<sup>a</sup>"),
+        ("==a&bne;b==", "<mark>a=\u{20E5}b</mark>"),
+    ])
+    func unchangedBehaviourAroundEntities(markdown: String, html: String) {
+        #expect(inline(markdown) == html)
+    }
+
+    /// The stand-in source and the original read as one tree at the level `signature` compares;
+    /// nil when the document has no escape (no second parse).
+    private static func shapesAgree(_ markdown: String) -> Bool? {
+        guard let standIns = EscapeMap.standIns(markdown) else { return nil }
+        let limits = ParseLimits(maxDepth: ParseLimits.default.maxDepth, maxBytes: nil, maxNodes: ParseLimits.default.maxNodes)
+        func signature(_ source: String, restoring: Bool) -> [String]? {
+            MarkdownParsing.withDocument(source, options: limits) { outcome -> [String]? in
+                guard case .document(let document) = outcome else { return nil }
+                return EscapeMap.signature(of: document, restoringStandIns: restoring)
+            }
+        }
+        guard let first = signature(markdown, restoring: false), let second = signature(standIns, restoring: true) else { return false }
+        return first == second
+    }
+
+    private static var generatedDocuments: [String] {
+        var documents: [String] = []
+        let entities = ["&bne;", "&equals;", "&Hat;", "&#61;", "&#94;", "&bne;&equals;", "&equals;&bne;", "&bne;&bne;"]
+        let wrappers = ["_a_", "*a*", "**a**", "__a__", "~~a~~", "==a==", "^a^", "`a`"]
+        for entity in entities {
+            for wrapper in wrappers {
+                documents += ["\(entity)\(wrapper)", "\(wrapper)\(entity)", "\(entity)\(wrapper)\(entity)",
+                              "x \(entity) \(wrapper) \(entity) y", "\(entity)\(wrapper)\n"]
+            }
+            documents += [
+                "\(entity)\(entity)a\(entity)\(entity)", "=\(entity)x=\(entity)", "^\(entity)x^\(entity)",
+                "[\(entity)_a_](u)", "[_a_\(entity)](u \"t\")", "# \(entity)_a_\(entity)", "# \(entity)*a*\n",
+                "| \(entity)_a_ | b |\n|---|---|\n| \(entity)**c** | \(entity) |\n", "> \(entity)_a_",
+                "- \(entity)*a*\n- b", "\(entity)\\=_a_",
+            ]
+        }
+        documents.append("&equals;&equals;a")
+        return documents
+    }
+
+    @Test func theShapeInvariantHoldsOnTheCorporaAndGeneratedDocuments() {
+        var checked = 0
+        for markdown in MarkdownNestingTests.corpus + RenderGoldenCorpus.documents + Self.generatedDocuments {
+            guard let agree = Self.shapesAgree(markdown) else { continue }
+            checked += 1
+            #expect(agree, "\(markdown.debugDescription)")
+        }
+        #expect(checked > 100, "only \(checked) documents had an escape")
+    }
+
+    @Test func theBaselinePairKeepsItsShape() {
+        #expect(Self.shapesAgree("&equals;&equals;a") == true)
+        #expect(Self.shapesAgree("&bne;_a_") == true)
+    }
+
+    /// An entity's other scalars go in as numeric references, never raw (a raw U+20E5 after a
+    /// stand-in changes emphasis flanking: `&bne;_a_`).
+    @Test func anEntitysOtherScalarsAreNumericReferences() {
+        #expect(EscapeMap.standIns("&bne;") == "\u{2E40}&#x20E5;")
+        #expect(EscapeMap.standIns("&equals;") == "\u{2E40}")
+        #expect(EscapeMap.standIns("&Hat;") == "\u{2E41}")
+        #expect(EscapeMap.standIns("&amp;") == nil)
     }
 }
