@@ -281,7 +281,7 @@ public enum MarkdownRenderer {
 
     /// Escaped text for the front-matter block, through the shared `escapeHTML`. NUL becomes
     /// U+FFFD first, as cmark does for the Markdown body, so no raw NUL reaches the page.
-    private static func frontMatterText(_ text: String) -> String {
+    package static func frontMatterText(_ text: String) -> String {
         guard text.utf8.contains(0) else { return escapeHTML(text) }
         var scalars = String.UnicodeScalarView()
         for scalar in text.unicodeScalars {
@@ -957,12 +957,12 @@ func slugify(_ text: String) -> String {
 // the `<` in such a cluster, yet the HTML tokenizer does.
 
 /// Escapes `&`, `<` and `>` for HTML text.
-func escapeHTML(_ string: String) -> String {
+package func escapeHTML(_ string: String) -> String {
     escapeMarkupBytes(string, quotes: false)
 }
 
 /// Escapes `&`, `<`, `>`, `"` and `'` for a quoted attribute value.
-func escapeAttribute(_ string: String) -> String {
+package func escapeAttribute(_ string: String) -> String {
     escapeMarkupBytes(string, quotes: true)
 }
 
@@ -998,7 +998,7 @@ private func escapeMarkupBytes(_ string: String, quotes: Bool) -> String {
 ///
 /// The scheme is read as a browser reads it: up to the first `:` scalar, and only if it is an
 /// ASCII scheme name. Anything else before a colon (other than a relative path) becomes "#".
-func sanitizedURL(_ url: String, allowData: Bool) -> String {
+package func sanitizedURL(_ url: String, allowData: Bool) -> String {
     let cleaned = String(url.unicodeScalars.filter { !CharacterSet.controlCharacters.contains($0) })
         .trimmingCharacters(in: .whitespaces)
     let scalars = cleaned.unicodeScalars

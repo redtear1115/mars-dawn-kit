@@ -27,11 +27,26 @@ enum ToUnicodeRepair {
         case repaired(cmaps: Int, mappings: Int)
     }
 
+    /// Text the exporter draws onto the pages itself, after printing (the manual layout's
+    /// footer, mars-dawn#432), and the PostScript names, without a subset tag (`ABCDEF+`), of
+    /// the fonts it draws it with.
+    ///
+    /// A font named here has its own ToUnicode CMap, and the radicals that CMap may keep are the
+    /// ones in `text`, not the document's: the document's radicals belong to the body's fonts.
+    /// With the source's keep set instead, a radical drawn only in the generated text would be
+    /// rewritten to its ideograph, and an ideograph drawn only there whose radical twin is in the
+    /// document would stay mapped to the radical. Pick fonts the body can't use, since fonts are
+    /// told apart by name.
+    struct GeneratedText: Equatable {
+        var fonts: Set<String>
+        var text: String
+    }
+
     /// Repairs the PDF at `url` in place (atomically). Never leaves a broken or partial file.
     @discardableResult
-    static func repairFile(at url: URL, source: String) -> Outcome {
+    static func repairFile(at url: URL, source: String, generated: GeneratedText? = nil) -> Outcome {
         guard let data = try? Data(contentsOf: url) else { return .unchanged("unreadable") }
-        let (repaired, outcome) = repair(data, source: source)
+        let (repaired, outcome) = repair(data, source: source, generated: generated)
         guard case .repaired = outcome else { return outcome }
         do {
             try repaired.write(to: url, options: .atomic)
@@ -43,7 +58,7 @@ enum ToUnicodeRepair {
     }
 
     /// The repaired PDF, or `pdf` itself with the reason it was left alone.
-    static func repair(_ pdf: Data, source: String) -> (Data, Outcome) {
+    static func repair(_ pdf: Data, source: String, generated: GeneratedText? = nil) -> (Data, Outcome) {
         func leave(_ reason: String) -> (Data, Outcome) {
             if reason != "no radical destinations" { log.info("ToUnicode left as is: \(reason, privacy: .public)") }
             return (pdf, .unchanged(reason))
@@ -56,7 +71,9 @@ enum ToUnicodeRepair {
         guard let size = firstInt(after: "/Size", in: trailer),
               let root = firstMatch(#"/Root\s+\d+\s+\d+\s+R"#, in: trailer) else { return leave("trailer") }
 
-        let keep = Set(source.unicodeScalars.map(\.value).filter { RadicalEquivalents.unifiedIdeograph[$0] != nil })
+        let keep = radicals(in: source)
+        let generatedKeep = generated.map { radicals(in: $0.text) }
+        let fontNames = generated == nil ? [:] : baseFontNames(forToUnicodeIn: bytes)
         var rewritten: [(number: Int, generation: Int, text: String)] = []
         var changedMappings = 0
         for (number, generation) in toUnicodeReferences(bytes) {
@@ -64,7 +81,11 @@ enum ToUnicodeRepair {
                   let stream = streamContents(bytes, object: number, at: entry.offset, table: table) else {
                 return leave("CMap object \(number) unreadable")
             }
-            guard let (text, changes) = rewriteCMap(stream, keeping: keep) else {
+            var cmapKeep = keep
+            if let generated, let generatedKeep, let name = fontNames[number], generated.fonts.contains(name) {
+                cmapKeep = generatedKeep
+            }
+            guard let (text, changes) = rewriteCMap(stream, keeping: cmapKeep) else {
                 return leave("CMap object \(number) has syntax this doesn't handle")
             }
             if changes > 0 {
@@ -100,6 +121,32 @@ enum ToUnicodeRepair {
         guard let before = PDFDocument(data: pdf), let after = PDFDocument(data: out),
               after.pageCount == before.pageCount else { return leave("the result didn't open as the same PDF") }
         return (out, .repaired(cmaps: rewritten.count, mappings: changedMappings))
+    }
+
+    /// The radical code points in `text`.
+    private static func radicals(in text: String) -> Set<UInt32> {
+        Set(text.unicodeScalars.map(\.value).filter { RadicalEquivalents.unifiedIdeograph[$0] != nil })
+    }
+
+    /// Each ToUnicode object number's font `BaseFont`, without the subset tag (`ABCDEF+`): the
+    /// font dictionary is the object whose body holds the `/ToUnicode n g R` reference.
+    static func baseFontNames(forToUnicodeIn bytes: [UInt8]) -> [Int: String] {
+        let text = String(decoding: bytes, as: UTF8.self)
+        guard let regex = try? NSRegularExpression(pattern: #"/ToUnicode\s+(\d+)\s+\d+\s+R"#),
+              let nameRegex = try? NSRegularExpression(pattern: #"/BaseFont\s*/(?:[A-Z]{6}\+)?([^\s/<>\[\]()]+)"#) else { return [:] }
+        var result: [Int: String] = [:]
+        for match in regex.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
+            guard let whole = Range(match.range, in: text), let n = Range(match.range(at: 1), in: text),
+                  let number = Int(text[n]) else { continue }
+            let objectStart = text[..<whole.lowerBound].range(of: " obj", options: .backwards)?.lowerBound ?? text.startIndex
+            let objectEnd = text[whole.upperBound...].range(of: "endobj")?.lowerBound ?? text.endIndex
+            let object = String(text[objectStart..<objectEnd])
+            if let found = nameRegex.firstMatch(in: object, range: NSRange(object.startIndex..., in: object)),
+               let range = Range(found.range(at: 1), in: object) {
+                result[number] = String(object[range])
+            }
+        }
+        return result
     }
 
     // MARK: CMap

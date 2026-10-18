@@ -226,6 +226,11 @@ struct PDFCorpus {
         // Tier 2: no blank page.
         Self.assertInk(pageHasInk: outcome.pageHasInk, fixtureName: fixture.name)
         Self.assertPageLayout(outcome, fixture: fixture)
+        if fixture.expectation.layout == .manual {
+            try Self.assertManual(outcome, fixture: fixture)
+        } else {
+            #expect(outcome.manual == nil, "\(fixture.name): the document layout ran the manual layout's passes")
+        }
 
         // Tier 5: preview and export can't diverge silently (redtear1115/mars-dawn#22). The
         // known scope gap between preview and export for images outside the document's folder
@@ -255,7 +260,11 @@ struct PDFCorpus {
     /// page is without text, and, for the manual layout, that text stays inside the margins.
     static func assertPageLayout(_ outcome: ExportOutcome, fixture: CorpusFixture) {
         let expectation = fixture.expectation
-        let pages = outcome.pageTexts.map(corpusNormalize)
+        // In the manual layout, where things start is a question about the body: the cover and
+        // contents come first (and the contents repeats the headings), and each body page ends
+        // with its "n / N" footer (S2).
+        let bodyStart = outcome.manual?.bodyStart ?? 0
+        let pages = outcome.pageTexts.dropFirst(bodyStart).map { corpusNormalize(ManualProbe.withoutFooter($0)) }
         // The margins reach the layout width as well as the print info (spike M4): with only the
         // print info, keep-with-next measures at the wrong width and page texts move.
         #expect(
@@ -266,7 +275,7 @@ struct PDFCorpus {
             #expect(pages.count >= minPages, "\(fixture.name): \(pages.count) pages, expected at least \(minPages)")
         }
         if expectation.textOnEveryPage {
-            for (index, text) in pages.enumerated() {
+            for (index, text) in outcome.pageTexts.map(corpusNormalize).enumerated() {
                 #expect(!text.isEmpty, "\(fixture.name): page \(index + 1) has no text")
             }
         }
@@ -275,12 +284,12 @@ struct PDFCorpus {
             let holders = pages.indices.filter { pages[$0].contains(needle) }
             #expect(holders.count == 1, "\(fixture.name): \(start) is on \(holders.count) pages")
             if let page = holders.first {
-                #expect(pages[page].hasPrefix(needle), "\(fixture.name): \(start) is on page \(page + 1) but does not start it")
+                #expect(pages[page].hasPrefix(needle), "\(fixture.name): \(start) is on page \(page + 1 + bodyStart) but does not start it")
             }
         }
         for group in expectation.samePage {
             let holders = Set(group.flatMap { text in pages.indices.filter { pages[$0].contains(corpusNormalize(text)) } })
-            #expect(holders.count == 1, "\(fixture.name): \(group) are on pages \(holders.sorted().map { $0 + 1 })")
+            #expect(holders.count == 1, "\(fixture.name): \(group) are on pages \(holders.sorted().map { $0 + 1 + bodyStart })")
         }
         guard expectation.layout == .manual else { return }
         let margins = expectation.layout.pageMargins
@@ -358,6 +367,10 @@ struct PDFCorpus {
         /// The union of each page's text-line boxes in PDF points (origin bottom left); nil for a page with no text.
         var pageExtents: [CGRect?]
         var paperSize: CGSize
+        /// The manual layout's report (S2), nil in the document layout.
+        var manual: ManualReport?
+        /// The final file, for the manual layout's own checks.
+        var data: Data
     }
 
     /// Every DOM query the corpus needs, read through `inspect` on the exporter that then
@@ -384,10 +397,12 @@ struct PDFCorpus {
         let pdfURL = outputDirectory.appendingPathComponent("export.pdf")
 
         var inspected: Inspected!
+        var manual: ManualReport?
+        var hooks = ManualHooks()
+        hooks.report = { manual = $0 }
         let result = try await DocumentExporter.exportPDF(
             markdown: markdown, to: pdfURL, theme: .dawn,
-            baseDirectory: baseDirectory, allowRemoteImages: allowRemoteImages, layout: layout
-        ) { exporter in
+            baseDirectory: baseDirectory, allowRemoteImages: allowRemoteImages, layout: layout, inspect: { exporter in
             let raw = try await exporter.webView.evaluateJavaScript(Self.domInspectionScript) as? String ?? "{}"
             let dom = try JSONDecoder().decode(DOMState.self, from: Data(raw.utf8))
             // Lay the page out for print to read what printing shows, then hand it back as it was.
@@ -399,7 +414,7 @@ struct PDFCorpus {
                 renderedHTML: exporter.renderedHTML, diagramErrorCount: exporter.diagramErrors.count,
                 layoutWidth: exporter.webView.frame.width
             )
-        }
+        }, hooks: hooks)
         _ = result
 
         let document = try #require(PDFDocument(url: pdfURL))
@@ -410,10 +425,16 @@ struct PDFCorpus {
             : Array(repeating: true, count: pages.count)
         let imageXObjectCount = PDFImageInspector.imageXObjectCount(at: pdfURL)
 
+        let bottomMargin = layout.pageMargins.bottom
         let pageExtents = pages.map { page -> CGRect? in
             guard let page else { return nil }
             let lines = page.selection(for: page.bounds(for: .mediaBox))?.selectionsByLine() ?? []
-            let boxes = lines.map { $0.bounds(for: page) }.filter { !$0.isEmpty }
+            // The manual layout's footer sits in the bottom margin on purpose; the margins are
+            // measured on everything else.
+            let boxes = lines.filter { line in
+                let text = (line.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                return !(manual != nil && text.wholeMatch(of: ManualProbe.footerPattern) != nil && line.bounds(for: page).maxY < bottomMargin)
+            }.map { $0.bounds(for: page) }.filter { !$0.isEmpty }
             return boxes.dropFirst().reduce(boxes.first) { $0?.union($1) }
         }
         let paperSize = pages.first??.bounds(for: .mediaBox).size ?? .zero
@@ -421,7 +442,7 @@ struct PDFCorpus {
         return ExportOutcome(
             pageCount: document.pageCount, pageTexts: pageTexts,
             pageHasInk: pageHasInk, inspected: inspected, imageXObjectCount: imageXObjectCount,
-            pageExtents: pageExtents, paperSize: paperSize
+            pageExtents: pageExtents, paperSize: paperSize, manual: manual, data: try Data(contentsOf: pdfURL)
         )
     }
 
