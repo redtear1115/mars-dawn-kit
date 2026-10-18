@@ -1,9 +1,0 @@
-{
-  "markers": [
-    "EDTITLE",
-    "EDONE==⃥x==⃥andmarkedEDTWO",
-    "EDTHREE==a==and==b==EDEND99"
-  ],
-  "markersOnLastPage": ["EDEND99"],
-  "notes": "Document layout (kit #162). An entity whose decoding holds = (here &bne;, which is = and U+20E5) is never half of a ==mark== delimiter: =&bne;x=&bne; stays the literal text ==\u20e5x==\u20e5, while ==marked== still marks (its text carries no =). Added with the fix; head-only."
-}
