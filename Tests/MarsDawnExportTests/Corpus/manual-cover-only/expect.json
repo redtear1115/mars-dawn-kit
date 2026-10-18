@@ -1,0 +1,12 @@
+{
+  "layout": "manual",
+  "cover": true,
+  "logo": false,
+  "tocEntries": 0,
+  "repair": "unchanged",
+  "textOnEveryPage": true,
+  "markers": ["COTITLE", "COSUB", "COFIRST", "COH3", "COSECOND", "COEND99"],
+  "markersOnLastPage": ["COEND99"],
+  "startsPage": ["COFIRST"],
+  "notes": "Manual layout S2 (mars-dawn#432): a cover (single-quoted title) and no h1/h2, so no contents and no bookmarks; the body starts on page 2 as body page 1 of 1. The h3 is not listed."
+}

@@ -620,8 +620,11 @@ extension MarsDawnCommand {
         @Option(help: "Paper size.")
         var paper: DocumentExporter.Paper = .a4
 
-        @Option(help: "Page layout: document (the default) or manual, with wider margins, a 25 mm binding side and every top-level heading on a new page. <!--BREAK--> on its own line starts a new page in either.")
+        @Option(help: "Page layout: document (the default) or manual, with wider margins, a 25 mm binding side and every top-level heading on a new page, plus a cover (from the front matter's title, subtitle, version, date, author and logo), a table of contents of the level 1 and 2 headings, \"n / N\" page numbers and PDF bookmarks. <!--BREAK--> on its own line starts a new page in either.")
         var layout: ExportLayout = .document
+
+        @Option(help: "Title of the manual layout's table of contents.")
+        var tocTitle: String = "Contents"
 
         @Flag(help: "Load images from the web while rendering.")
         var allowRemoteImages = false
@@ -676,7 +679,8 @@ extension MarsDawnCommand {
                     allowRemoteImages: allowRemoteImages,
                     paper: paper,
                     softBreaksAsLineBreaks: breaks,
-                    layout: layout
+                    layout: layout,
+                    tocTitle: tocTitle
                 )
                 if FileManager.default.fileExists(atPath: destination.path) {
                     _ = try FileManager.default.replaceItemAt(destination, withItemAt: temporary)
@@ -692,22 +696,34 @@ extension MarsDawnCommand {
                 text += "\nwarning: Mermaid diagram failed to render: \(message)"
             }
             options.report(
-                [
-                    "output": destination.path,
-                    "pages": result.pageCount,
-                    "theme": resolvedTheme().id,
-                    "paper": paper.rawValue,
-                    "layout": layout.rawValue,
-                    "diagramErrors": result.diagramErrors,
-                    "diagramErrorDetails": result.diagramErrorDetails.map { error -> [String: Any] in
-                        var entry: [String: Any] = ["message": error.message]
-                        if let fenceLine = error.fenceLine { entry["fenceLine"] = fenceLine }
-                        if let line = error.line { entry["line"] = line }
-                        return entry
-                    },
-                ],
+                Self.jsonFields(
+                    output: destination.path, pages: result.pageCount, theme: resolvedTheme().id, paper: paper,
+                    diagramErrors: result.diagramErrors, diagramErrorDetails: result.diagramErrorDetails
+                ),
                 text: text
             )
+        }
+
+        /// The `--json` result's fields (`report` adds `ok`). This is the published export.v1
+        /// schema (marsdawn-mcp, mars-dawn-website), which has `additionalProperties: false`, so
+        /// a new field here breaks its readers: the layout, for one, is not reported.
+        static func jsonFields(
+            output: String, pages: Int, theme: String, paper: DocumentExporter.Paper,
+            diagramErrors: [String], diagramErrorDetails: [DocumentExporter.DiagramError]
+        ) -> [String: Any] {
+            [
+                "output": output,
+                "pages": pages,
+                "theme": theme,
+                "paper": paper.rawValue,
+                "diagramErrors": diagramErrors,
+                "diagramErrorDetails": diagramErrorDetails.map { error -> [String: Any] in
+                    var entry: [String: Any] = ["message": error.message]
+                    if let fenceLine = error.fenceLine { entry["fenceLine"] = fenceLine }
+                    if let line = error.line { entry["line"] = line }
+                    return entry
+                },
+            ]
         }
     }
 }

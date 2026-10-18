@@ -28,12 +28,27 @@ struct FixtureExpectation: Decodable {
     var minPages: Int?
     /// No page may be without text (a blank page can still have ink, e.g. a rule).
     var textOnEveryPage: Bool = false
+    /// Manual layout (S2 of mars-dawn#432): whether page 1 is a cover. Every manual fixture is
+    /// checked for its cover, contents, page numbers, bookmarks and links whether or not it
+    /// declares these; a declared value is checked as well.
+    var cover: Bool?
+    /// Manual layout: whether the cover shows an image (the front matter's `logo`).
+    var logo: Bool?
+    /// Manual layout: how many entries the contents lists (0: no contents).
+    var tocEntries: Int?
+    /// Manual layout: the contents spans at least this many pages.
+    var minTocPages: Int?
+    /// Manual layout: the final file's ToUnicode repair outcome, "repaired" or "unchanged"
+    /// (which means exactly `.unchanged("no radical destinations")`). Absent: either of the two,
+    /// and never another `.unchanged` reason.
+    var repair: String?
 
     init() {}
 
     private enum CodingKeys: String, CodingKey {
         case markers, markersOnLastPage, absent, placeholders, diagrams, images, allowRemoteImages, notes
         case layout, startsPage, samePage, minPages, textOnEveryPage
+        case cover, logo, tocEntries, minTocPages, repair
     }
 
     init(from decoder: Decoder) throws {
@@ -56,6 +71,11 @@ struct FixtureExpectation: Decodable {
         samePage = try container.decodeIfPresent([[String]].self, forKey: .samePage) ?? []
         minPages = try container.decodeIfPresent(Int.self, forKey: .minPages)
         textOnEveryPage = try container.decodeIfPresent(Bool.self, forKey: .textOnEveryPage) ?? false
+        cover = try container.decodeIfPresent(Bool.self, forKey: .cover)
+        logo = try container.decodeIfPresent(Bool.self, forKey: .logo)
+        tocEntries = try container.decodeIfPresent(Int.self, forKey: .tocEntries)
+        minTocPages = try container.decodeIfPresent(Int.self, forKey: .minTocPages)
+        repair = try container.decodeIfPresent(String.self, forKey: .repair)
     }
 }
 

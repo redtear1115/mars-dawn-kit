@@ -137,7 +137,7 @@ public struct FrontMatter: Sendable {
     ///
     /// So comments (`# …`), list items (`- …`), indented (nested) lines, flow collections,
     /// and keys that are quoted or contain `:` all make the block non-simple.
-    static func keyValue(in line: String) -> (key: String, value: String)? {
+    package static func keyValue(in line: String) -> (key: String, value: String)? {
         let utf8 = line.utf8
         // ASCII bytes are never part of a multi-byte sequence, so byte positions of ":",
         // space and tab are scalar boundaries.
