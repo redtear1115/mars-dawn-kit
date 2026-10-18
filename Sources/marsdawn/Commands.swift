@@ -289,6 +289,7 @@ extension PreviewTheme: ExpressibleByArgument {
 }
 
 extension DocumentExporter.Paper: ExpressibleByArgument {}
+extension ExportLayout: ExpressibleByArgument {}
 
 // MARK: - open
 
@@ -615,6 +616,9 @@ extension MarsDawnCommand {
         @Option(help: "Paper size.")
         var paper: DocumentExporter.Paper = .a4
 
+        @Option(help: "Page layout: document (the default) or manual, with wider margins, a 25 mm binding side and every top-level heading on a new page. <!--BREAK--> on its own line starts a new page in either.")
+        var layout: ExportLayout = .document
+
         @Flag(help: "Load images from the web while rendering.")
         var allowRemoteImages = false
 
@@ -667,7 +671,8 @@ extension MarsDawnCommand {
                     baseDirectory: input.deletingLastPathComponent(),
                     allowRemoteImages: allowRemoteImages,
                     paper: paper,
-                    softBreaksAsLineBreaks: breaks
+                    softBreaksAsLineBreaks: breaks,
+                    layout: layout
                 )
                 if FileManager.default.fileExists(atPath: destination.path) {
                     _ = try FileManager.default.replaceItemAt(destination, withItemAt: temporary)
@@ -688,6 +693,7 @@ extension MarsDawnCommand {
                     "pages": result.pageCount,
                     "theme": resolvedTheme().id,
                     "paper": paper.rawValue,
+                    "layout": layout.rawValue,
                     "diagramErrors": result.diagramErrors,
                     "diagramErrorDetails": result.diagramErrorDetails.map { error -> [String: Any] in
                         var entry: [String: Any] = ["message": error.message]

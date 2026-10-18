@@ -140,7 +140,7 @@ struct PDFCorpus {
     static func assertGolden(_ fixture: CorpusFixture) async throws {
         let outcome = try await exportOnce(
             markdown: fixture.markdown, baseDirectory: fixture.baseDirectory,
-            allowRemoteImages: fixture.expectation.allowRemoteImages, measureInk: false
+            allowRemoteImages: fixture.expectation.allowRemoteImages, layout: fixture.expectation.layout, measureInk: false
         )
         let currentHeader = GoldenHeader.current(paper: "a4")
         let url = GoldenStore.url(for: fixture.name)
@@ -191,7 +191,7 @@ struct PDFCorpus {
     static func assertFixture(_ fixture: CorpusFixture, checkStability: Bool) async throws {
         let outcome = try await exportOnce(
             markdown: fixture.markdown, baseDirectory: fixture.baseDirectory,
-            allowRemoteImages: fixture.expectation.allowRemoteImages
+            allowRemoteImages: fixture.expectation.allowRemoteImages, layout: fixture.expectation.layout
         )
         let fullText = corpusNormalize(outcome.pageTexts.joined(separator: "\n"))
         let lastPageText = outcome.pageTexts.last.map(corpusNormalize) ?? ""
@@ -225,6 +225,7 @@ struct PDFCorpus {
 
         // Tier 2: no blank page.
         Self.assertInk(pageHasInk: outcome.pageHasInk, fixtureName: fixture.name)
+        Self.assertPageLayout(outcome, fixture: fixture)
 
         // Tier 5: preview and export can't diverge silently (redtear1115/mars-dawn#22). The
         // known scope gap between preview and export for images outside the document's folder
@@ -241,13 +242,56 @@ struct PDFCorpus {
         guard checkStability else { return }
         let second = try await exportOnce(
             markdown: fixture.markdown, baseDirectory: fixture.baseDirectory,
-            allowRemoteImages: fixture.expectation.allowRemoteImages, measureInk: false
+            allowRemoteImages: fixture.expectation.allowRemoteImages, layout: fixture.expectation.layout, measureInk: false
         )
         #expect(second.pageCount == outcome.pageCount, "\(fixture.name): page count changed between two exports")
         #expect(
             second.pageTexts.map(corpusNormalize) == outcome.pageTexts.map(corpusNormalize),
             "\(fixture.name): text changed between two exports"
         )
+    }
+
+    /// Layout expectations (S1 of mars-dawn#432): where pages start, what shares a page, that no
+    /// page is without text, and, for the manual layout, that text stays inside the margins.
+    static func assertPageLayout(_ outcome: ExportOutcome, fixture: CorpusFixture) {
+        let expectation = fixture.expectation
+        let pages = outcome.pageTexts.map(corpusNormalize)
+        if let minPages = expectation.minPages {
+            #expect(pages.count >= minPages, "\(fixture.name): \(pages.count) pages, expected at least \(minPages)")
+        }
+        if expectation.textOnEveryPage {
+            for (index, text) in pages.enumerated() {
+                #expect(!text.isEmpty, "\(fixture.name): page \(index + 1) has no text")
+            }
+        }
+        for start in expectation.startsPage {
+            let needle = corpusNormalize(start)
+            let holders = pages.indices.filter { pages[$0].contains(needle) }
+            #expect(holders.count == 1, "\(fixture.name): \(start) is on \(holders.count) pages")
+            if let page = holders.first {
+                #expect(pages[page].hasPrefix(needle), "\(fixture.name): \(start) is on page \(page + 1) but does not start it")
+            }
+        }
+        for group in expectation.samePage {
+            let holders = Set(group.flatMap { text in pages.indices.filter { pages[$0].contains(corpusNormalize(text)) } })
+            #expect(holders.count == 1, "\(fixture.name): \(group) are on pages \(holders.sorted().map { $0 + 1 })")
+        }
+        guard expectation.layout == .manual else { return }
+        let margins = expectation.layout.pageMargins
+        let paper = outcome.paperSize
+        var minX = CGFloat.greatestFiniteMagnitude, maxX = -CGFloat.greatestFiniteMagnitude
+        for (index, extent) in outcome.pageExtents.enumerated() {
+            guard let extent else { continue }
+            let page = index + 1
+            #expect(extent.minX >= margins.left - 0.5, "\(fixture.name): page \(page) text starts at x \(extent.minX), margin \(margins.left)")
+            #expect(extent.maxX <= paper.width - margins.right + 0.5, "\(fixture.name): page \(page) text ends at x \(extent.maxX), margin edge \(paper.width - margins.right)")
+            #expect(extent.maxY <= paper.height - margins.top + 0.5, "\(fixture.name): page \(page) text reaches y \(extent.maxY), top margin edge \(paper.height - margins.top)")
+            #expect(extent.minY >= margins.bottom - 0.5, "\(fixture.name): page \(page) text reaches y \(extent.minY), bottom margin edge \(margins.bottom)")
+            minX = min(minX, extent.minX)
+            maxX = max(maxX, extent.maxX)
+        }
+        #expect(abs(minX - margins.left) <= 0.5, "\(fixture.name): the leftmost text is at x \(minX), not at the \(margins.left) pt binding margin")
+        #expect(maxX <= paper.width - margins.right + 0.5 && maxX > paper.width - margins.right - 60, "\(fixture.name): the rightmost text is at x \(maxX)")
     }
 
     static func assertInk(pageHasInk: [Bool], fixtureName: String) {
@@ -303,6 +347,9 @@ struct PDFCorpus {
         var pageHasInk: [Bool]
         var inspected: Inspected
         var imageXObjectCount: Int
+        /// The union of each page's text-line boxes in PDF points (origin bottom left); nil for a page with no text.
+        var pageExtents: [CGRect?]
+        var paperSize: CGSize
     }
 
     /// Every DOM query the corpus needs, read through `inspect` on the exporter that then
@@ -321,7 +368,7 @@ struct PDFCorpus {
     """
 
     static func exportOnce(
-        markdown: String, baseDirectory: URL?, allowRemoteImages: Bool, measureInk: Bool = true
+        markdown: String, baseDirectory: URL?, allowRemoteImages: Bool, layout: ExportLayout = .document, measureInk: Bool = true
     ) async throws -> ExportOutcome {
         let outputDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
@@ -331,7 +378,7 @@ struct PDFCorpus {
         var inspected: Inspected!
         let result = try await DocumentExporter.exportPDF(
             markdown: markdown, to: pdfURL, theme: .dawn,
-            baseDirectory: baseDirectory, allowRemoteImages: allowRemoteImages
+            baseDirectory: baseDirectory, allowRemoteImages: allowRemoteImages, layout: layout
         ) { exporter in
             let raw = try await exporter.webView.evaluateJavaScript(Self.domInspectionScript) as? String ?? "{}"
             let dom = try JSONDecoder().decode(DOMState.self, from: Data(raw.utf8))
@@ -354,9 +401,18 @@ struct PDFCorpus {
             : Array(repeating: true, count: pages.count)
         let imageXObjectCount = PDFImageInspector.imageXObjectCount(at: pdfURL)
 
+        let pageExtents = pages.map { page -> CGRect? in
+            guard let page else { return nil }
+            let lines = page.selection(for: page.bounds(for: .mediaBox))?.selectionsByLine() ?? []
+            let boxes = lines.map { $0.bounds(for: page) }.filter { !$0.isEmpty }
+            return boxes.dropFirst().reduce(boxes.first) { $0?.union($1) }
+        }
+        let paperSize = pages.first??.bounds(for: .mediaBox).size ?? .zero
+
         return ExportOutcome(
             pageCount: document.pageCount, pageTexts: pageTexts,
-            pageHasInk: pageHasInk, inspected: inspected, imageXObjectCount: imageXObjectCount
+            pageHasInk: pageHasInk, inspected: inspected, imageXObjectCount: imageXObjectCount,
+            pageExtents: pageExtents, paperSize: paperSize
         )
     }
 

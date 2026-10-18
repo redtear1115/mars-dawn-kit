@@ -1,5 +1,6 @@
 #if os(macOS)
 import Foundation
+@testable import MarsDawnExport
 
 /// One `expect.json` file: what a corpus fixture's export must contain
 /// (redtear1115/mars-dawn#2; schema documented in the corpus contract, not repeated here).
@@ -17,11 +18,22 @@ struct FixtureExpectation: Decodable {
     var images: Int?
     var allowRemoteImages: Bool = false
     var notes: String?
+    /// "manual" exports in the manual layout; absent is the document layout (S1 of mars-dawn#432).
+    var layout: ExportLayout = .document
+    /// Each string must be the first text on the page it appears on.
+    var startsPage: [String] = []
+    /// Each group's strings must all be on one page.
+    var samePage: [[String]] = []
+    /// The export has at least this many pages.
+    var minPages: Int?
+    /// No page may be without text (a blank page can still have ink, e.g. a rule).
+    var textOnEveryPage: Bool = false
 
     init() {}
 
     private enum CodingKeys: String, CodingKey {
         case markers, markersOnLastPage, absent, placeholders, diagrams, images, allowRemoteImages, notes
+        case layout, startsPage, samePage, minPages, textOnEveryPage
     }
 
     init(from decoder: Decoder) throws {
@@ -34,6 +46,16 @@ struct FixtureExpectation: Decodable {
         images = try container.decodeIfPresent(Int.self, forKey: .images)
         allowRemoteImages = try container.decodeIfPresent(Bool.self, forKey: .allowRemoteImages) ?? false
         notes = try container.decodeIfPresent(String.self, forKey: .notes)
+        if let name = try container.decodeIfPresent(String.self, forKey: .layout) {
+            guard let parsed = ExportLayout(rawValue: name) else {
+                throw DecodingError.dataCorruptedError(forKey: .layout, in: container, debugDescription: "unknown layout \(name)")
+            }
+            layout = parsed
+        }
+        startsPage = try container.decodeIfPresent([String].self, forKey: .startsPage) ?? []
+        samePage = try container.decodeIfPresent([[String]].self, forKey: .samePage) ?? []
+        minPages = try container.decodeIfPresent(Int.self, forKey: .minPages)
+        textOnEveryPage = try container.decodeIfPresent(Bool.self, forKey: .textOnEveryPage) ?? false
     }
 }
 
