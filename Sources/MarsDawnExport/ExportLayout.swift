@@ -15,7 +15,7 @@ public enum ExportLayout: String, CaseIterable, Sendable {
     public var pageMargins: NSEdgeInsets {
         switch self {
         case .document:
-            NSEdgeInsets(top: 51, left: 45, bottom: 51, right: 45)
+            NSEdgeInsets(top: 52, left: 46, bottom: 52, right: 46)
         case .manual:
             // The binding side is the left on every page: there is no duplex.
             NSEdgeInsets(top: Self.millimetres(20), left: Self.millimetres(25), bottom: Self.millimetres(20), right: Self.millimetres(20))
