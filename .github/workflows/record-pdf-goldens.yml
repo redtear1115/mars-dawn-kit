@@ -5,7 +5,6 @@ name: Record PDF goldens
 # review before they're committed. Doesn't touch the repository itself.
 on:
   workflow_dispatch:
-  pull_request:
 
 permissions: {}
 
