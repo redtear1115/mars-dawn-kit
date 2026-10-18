@@ -440,6 +440,55 @@ private struct HTMLVisitor: MarkupVisitor {
         return html
     }
 
+    /// The children of a block container (the document, a block quote or a list item).
+    ///
+    /// A GitHub `<details>` has blank lines in it, so its opening tag, its Markdown and its
+    /// closing tag are separate children, and a `div` around each would close the element at the
+    /// first one (#414). Children from an HTML block that opens a `<details>` to the one that
+    /// closes it are written inside one `div.html-block`: each of its HTML blocks bare, each
+    /// other child as it would be anywhere else. See `DetailsScanner` for what counts as opening
+    /// and closing. A run that never closes, and everything outside a run, renders as before.
+    ///
+    /// One pass over the children, iterative: nested `<details>` are flat siblings, so a group is
+    /// never rendered recursively.
+    private mutating func visitBlockChildren(_ markup: any Markup) -> String {
+        let children = Array(markup.children)
+        guard children.contains(where: { $0 is HTMLBlock }) else {
+            var html = ""
+            for child in children { html += visit(child) }
+            return html
+        }
+        var depths: [Int] = []
+        depths.reserveCapacity(children.count)
+        var depth = 0
+        for child in children {
+            if let block = child as? HTMLBlock { depth = DetailsScanner.depth(after: block.rawHTML, from: depth) }
+            depths.append(depth)
+        }
+        var html = ""
+        var groups = DetailsGrouping.groups(depthAfter: depths)[...]
+        var index = 0
+        while index < children.count {
+            guard let group = groups.first, group.lowerBound == index else {
+                html += visit(children[index])
+                index += 1
+                continue
+            }
+            groups = groups.dropFirst()
+            html += "<div class=\"html-block\"\(lineAttribute(children[index]))>"
+            for child in children[group] {
+                if let block = child as? HTMLBlock {
+                    html += neutralizingLinkTags(block.rawHTML)
+                } else {
+                    html += visit(child)
+                }
+            }
+            html += "</div>\n"
+            index = group.upperBound + 1
+        }
+        return html
+    }
+
     private func lineAttribute(_ markup: any Markup) -> String {
         guard !inNote, let line = markup.range?.lowerBound.line else { return "" }
         return " data-line=\"\(line + lineOffset)\""
@@ -451,7 +500,7 @@ private struct HTMLVisitor: MarkupVisitor {
         let headings = headingNodes(document)
         headingIDs = MarkdownRenderer.headingIDs(forSlugs: headings.map { slugify(slugSource($0.plainText)) })
         tocEntries = headings.map { (min(max($0.level, 1), 6), tocTitle(of: $0)) }
-        return visitChildren(document)
+        return visitBlockChildren(document)
     }
 
     /// Every heading, in the order `visit` meets them. Headings are blocks, so inline nodes
@@ -573,7 +622,7 @@ private struct HTMLVisitor: MarkupVisitor {
     }
 
     mutating func visitBlockQuote(_ blockQuote: BlockQuote) -> String {
-        "<blockquote\(lineAttribute(blockQuote))>\n\(visitChildren(blockQuote))</blockquote>\n"
+        "<blockquote\(lineAttribute(blockQuote))>\n\(visitBlockChildren(blockQuote))</blockquote>\n"
     }
 
     mutating func visitCodeBlock(_ codeBlock: CodeBlock) -> String {
@@ -617,10 +666,10 @@ private struct HTMLVisitor: MarkupVisitor {
 
     mutating func visitListItem(_ listItem: ListItem) -> String {
         guard let checkbox = listItem.checkbox else {
-            return "<li\(lineAttribute(listItem))>\(visitChildren(listItem))</li>\n"
+            return "<li\(lineAttribute(listItem))>\(visitBlockChildren(listItem))</li>\n"
         }
         let checked = checkbox == .checked ? " checked" : ""
-        return "<li class=\"task-list-item\"\(lineAttribute(listItem))><input type=\"checkbox\" disabled\(checked)> \(visitChildren(listItem))</li>\n"
+        return "<li class=\"task-list-item\"\(lineAttribute(listItem))><input type=\"checkbox\" disabled\(checked)> \(visitBlockChildren(listItem))</li>\n"
     }
 
     mutating func visitTable(_ table: Table) -> String {

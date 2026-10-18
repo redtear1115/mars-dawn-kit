@@ -27,6 +27,8 @@ jobs:
     # A nesting or table regression hangs rather than fails, so don't wait the 6-hour default.
     # 50, not 30: by 0.6.2 macos-15 already took about 27 minutes (debug and release suites plus
     # the CLI exports), so the next suite added tipped it over 30 and the run was cancelled.
+    # Main's #165 (3d0c948) had raised it to 45 for the 20k-element DetailsPageTests A17
+    # measurements, which run in both the debug and release passes; 50 covers both.
     timeout-minutes: 50
     permissions:
       contents: read
