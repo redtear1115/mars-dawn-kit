@@ -275,6 +275,45 @@ struct SkillTests {
         #expect(leftovers.isEmpty, "the temp file must be cleaned up even when the rename it was for fails")
     }
 
+    /// #122: `UF_IMMUTABLE` above blocks a delete as well as the rename, so it can't tell
+    /// "rename failed, file untouched" from "file deleted first, then rename failed". Failing
+    /// only the injected rename can: a delete-before-rename install would leave nothing behind.
+    @Test func aRenameThatFailsAloneLeavesTheExistingFileIntactAndIsADocumentedFailure() throws {
+        let root = try Self.tempRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let dir = root.appendingPathComponent("skill")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let target = dir.appendingPathComponent("SKILL.md")
+        let original = Data("stale\n".utf8)
+        try original.write(to: target)
+
+        let failure = #expect(throws: CLIFailure.self) {
+            _ = try SkillInstaller.install(dir: dir.path, force: true, rename: { _, _ in errno = EXDEV; return -1 })
+        }
+
+        #expect(failure?.code == .skillInstallFailed && failure?.code.rawValue == 7)
+        #expect(failure?.code.kind == "skill_install_failed")
+        #expect(failure.map(cliExitCode(for:)) == 7)
+        #expect(try Data(contentsOf: target) == original, "a failed rename must leave the original file exactly as it was")
+        let leftovers = try FileManager.default.contentsOfDirectory(atPath: dir.path).filter { $0.hasSuffix(".tmp") }
+        #expect(leftovers.isEmpty)
+    }
+
+    /// #122: an unwritable folder is the same documented failure, not an unhandled error.
+    @Test func anUnwritableFolderIsASkillInstallFailure() throws {
+        let root = try Self.tempRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let dir = root.appendingPathComponent("skill")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        #expect(chmod(dir.path, 0o500) == 0)
+        defer { chmod(dir.path, 0o700) }
+
+        let failure = #expect(throws: CLIFailure.self) {
+            _ = try SkillInstaller.install(dir: dir.path, force: false)
+        }
+        #expect(failure?.code == .skillInstallFailed)
+    }
+
     /// Verifier round 2, claim (1): the target being anything other than a plain file — most
     /// concretely a folder — must refuse unconditionally, `--force` included, and must never
     /// delete it. `--force` means "replace the differing SKILL.md I asked about," not "delete
@@ -474,6 +513,20 @@ struct SkillTests {
         }
 
         #expect(SkillInstaller.productionDefaultDirectory().path == "\(fakeHome)/.claude/skills/marsdawn")
+    }
+
+    /// #122: an empty, blank or relative `$HOME` is treated as unset, never as the current
+    /// directory (`URL(fileURLWithPath: "")`).
+    @Test(arguments: ["", "   ", "relative/home"])
+    func productionDefaultDirectoryIgnoresAnUnusableHOME(home: String) {
+        let originalHOME = ProcessInfo.processInfo.environment["HOME"]
+        setenv("HOME", home, 1)
+        defer {
+            if let originalHOME { setenv("HOME", originalHOME, 1) } else { unsetenv("HOME") }
+        }
+
+        let expected = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude/skills/marsdawn", isDirectory: true)
+        #expect(SkillInstaller.productionDefaultDirectory().path == expected.path)
     }
 
     /// Unset `$HOME` falls back to `homeDirectoryForCurrentUser`, not to some other default.

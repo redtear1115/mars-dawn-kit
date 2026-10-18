@@ -18,7 +18,7 @@ struct MarsDawnCommand: AsyncParsableCommand {
         \(CLIFailure.Code.inputNotFound.rawValue) input not found, \
         \(CLIFailure.Code.appNotInstalled.rawValue) MarsDawn not installed (open only), \(CLIFailure.Code.outputExists.rawValue) output exists \
         (use --force), \(CLIFailure.Code.exportFailed.rawValue) export failed, \(CLIFailure.Code.appCannotOpenFolders.rawValue) this MarsDawn \
-        can't show a folder (open only), 64 usage error (including theme preview's refused -o).
+        can't show a folder (open only), \(CLIFailure.Code.skillInstallFailed.rawValue) skill --install couldn't write the file, 64 usage error (including theme preview's refused -o).
         """,
         version: MarsDawnCLI.version,
         subcommands: [Open.self, Export.self, Skill.self, Theme.self]
@@ -59,6 +59,7 @@ struct CLIFailure: Error, CustomStringConvertible {
         case outputExists = 4
         case exportFailed = 5
         case appCannotOpenFolders = 6
+        case skillInstallFailed = 7
 
         var kind: String {
             switch self {
@@ -67,6 +68,7 @@ struct CLIFailure: Error, CustomStringConvertible {
             case .outputExists: "output_exists"
             case .exportFailed: "export_failed"
             case .appCannotOpenFolders: "app_cannot_open_folders"
+            case .skillInstallFailed: "skill_install_failed"
             }
         }
     }
@@ -599,7 +601,9 @@ extension MarsDawnCommand {
             discussion: """
             Runs on its own: the MarsDawn app does not have to be installed. Relative images \
             resolve against the input file's folder. Web images are left out unless \
-            --allow-remote-images is given.
+            --allow-remote-images is given. A newline inside a paragraph is a space, as in \
+            CommonMark, unless --breaks is given, and without it a newline between two Chinese \
+            or Japanese characters is dropped.
             """
         )
 
@@ -617,6 +621,9 @@ extension MarsDawnCommand {
 
         @Flag(help: "Load images from the web while rendering.")
         var allowRemoteImages = false
+
+        @Flag(help: "Render every newline inside a paragraph as a line break, as HackMD does.")
+        var breaks = false
 
         @Flag(help: "Replace the output file if it already exists.")
         var force = false
@@ -663,7 +670,8 @@ extension MarsDawnCommand {
                     theme: resolvedTheme(),
                     baseDirectory: input.deletingLastPathComponent(),
                     allowRemoteImages: allowRemoteImages,
-                    paper: paper
+                    paper: paper,
+                    softBreaksAsLineBreaks: breaks
                 )
                 if FileManager.default.fileExists(atPath: destination.path) {
                     _ = try FileManager.default.replaceItemAt(destination, withItemAt: temporary)

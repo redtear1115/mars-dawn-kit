@@ -27,6 +27,20 @@ Two things that have caught people out when writing tests here:
 - **Don't compare exported PDFs byte for byte.** Two exports of the same document differ only in `/CreationDate`, `/ModDate` and the `/ID` derived from them, which have one-second resolution. Exports within the same second are byte-identical and exports a second apart are not, so a byte comparison passes or fails depending on timing. Compare the page count, the extracted text and the rendered pages instead.
 - **Resolve symlinks on both sides when comparing file URLs.** `FileManager.temporaryDirectory` hands back `/var/folders/…` while enumeration reports `/private/var/folders/…`, so a test that compares a hand-built URL against one the file system produced passes under the signed, sandboxed test host (whose temporary directory is inside the app container) and fails with `CODE_SIGNING_ALLOWED=NO`. `resolvingSymlinksInPath()` maps both back to `/var/…`, so it has to be applied to both sides; resolving only one still fails.
 
+### The PDF export golden corpus
+
+`swift test --filter PDFCorpus` runs the PDF export golden corpus (redtear1115/mars-dawn#2), which exists so export can't silently lose content, its page count can't silently become unstable, and it can't silently diverge from the preview. Each fixture in `Tests/MarsDawnExportTests/Corpus/<name>/` (`document.md` + `expect.json`, plus `long` and `boundary-under`/`boundary-over`, which are generated in code) is exported through the same `DocumentExporter` the app and `marsdawn export` use, then checked in five tiers:
+
+1. Every expected marker, placeholder and diagram/image count is present, so nothing disappears silently. The printed page is also laid out for print, and any word of three or more letters or digits it shows that is missing from the PDF's text fails.
+2. Every page has ink: no blank page, trailing or otherwise.
+3. A second export in the same run gives the same page count and text.
+4. The exported text matches a committed golden recorded on a specific macOS build (below).
+5. The HTML the exporter pushed matches what `MarkdownRenderer` gives the preview for the same document (`MarkdownRenderer.Options.preview(baseDirectory:)`), so the two can't quietly drift apart.
+
+A marker matches when it's a substring of the page text after both sides are NFKC-normalised and have all Unicode whitespace removed, so line wraps and compatibility ideographs can't hide a missing marker. `boundary-under` and `boundary-over` sit either side of the renderer's node budget; a binary search finds the boundary at test time, so they follow `ParseLimits.defaultMaxNodes`. The Mermaid diagram types have their own corpus (`MermaidCorpusTests`); the PDF corpus has one mixed document with a diagram.
+
+The golden files (tier 4, `Tests/MarsDawnExportTests/Goldens/<name>.txt`) are per OS build: each one's first line names the OS build and WebKit version it was recorded on. That tier only runs with `MARSDAWN_PDF_GOLDENS=1` (the `pdf-goldens` CI job), so the `test` matrix on other OS builds never fails on it. If the runner's OS build differs from the one recorded, the test fails with one distinct message (`goldens were recorded on build A, this runner is build B: re-record with the Record PDF goldens workflow`) instead of a text diff; the same build with different text fails with the differing page(s). To re-record, run the "Record PDF goldens" GitHub Actions workflow (`workflow_dispatch`, macOS 26) and commit its `pdf-goldens` artifact, or locally with `MARSDAWN_PDF_GOLDENS=1 MARSDAWN_UPDATE_GOLDENS=1 swift test --filter PDFCorpus/golden` (the committed goldens should come from CI's build).
+
 ## Command line
 
 Install it with Homebrew: `brew tap redtear1115/tap && brew install marsdawn`.
@@ -55,7 +69,8 @@ swift run marsdawn export notes.md -o notes.pdf --theme classic --paper a4
   - **An app that also reports back tells you what happened to the folder.** With an app that declares `MarsDawnReportsFolderStatus` in its Info.plist, and `--wait` greater than 0, `open --folder` waits for the app's own answer instead of only reporting that it asked. `--wait N` sets how long to wait, in seconds, `0`–`30` (default `2`); a value ArgumentParser can parse as a number but outside that range is a usage error, exit `64`, with `error: "wait_out_of_range"` in `--json`. Write a negative value as `--wait=-1`, not `--wait -1`: with a space, ArgumentParser reads it as another flag and gives its own plain usage error instead — still exit `64`, but no `wait_out_of_range`; a value too large to be a number at all gets the same plain error. `--wait 0`, or an app that doesn't report back, skips waiting entirely and sends exactly what `open --folder` always has — no extra network or Apple Event traffic, byte-identical to before this existed.
   - `--background` opens without bringing MarsDawn to the front, for an agent that opens files while you work elsewhere. Without it, MarsDawn comes to the front, as before. The `--json` result is the same either way.
   - `--json` prints `ok`, `app` and `opened`: one object per file, `{"path": …}`, carrying `"line"` when one was asked for. With an app that takes folders, a folder adds `"folder": {"path": …, "requested": true}` — **`requested`, not `attached`**: whether the sidebar ends up showing it, or the app has to ask you for access first, is decided inside the app. With an app that reports back and a `--wait` that asks for it, the same object also carries `"status"` (`"attached"`, `"needsUser"`, `"declined"`, `"failed"`, `"attachedDifferentFolder"`, `"full"`, `"unavailable"` or `"unknown"`) once the wait ends, and, only alongside `"needsUser"`, `"waitingFor"` (`"confirmation"` or `"folderChoice"`).
-- `export <file> [-o out.pdf] [--theme dawn|classic|modern|vivid] [--paper a4|letter] [--allow-remote-images] [--force] [--json]` renders a PDF without opening a window.
+- `export <file> [-o out.pdf] [--theme dawn|classic|modern|vivid] [--paper a4|letter] [--allow-remote-images] [--breaks] [--force] [--json]` renders a PDF without opening a window.
+  - `--breaks` renders every newline inside a paragraph as a line break, as HackMD does. Without it a newline is a space, as CommonMark has it, except between two CJK characters (Han, kana, CJK punctuation and fullwidth forms; not Korean, which spaces its words), where nothing is emitted so the lines read as one. A newline between a CJK and a Latin character keeps its space. The `--json` result is the same either way.
   - The theme defaults to `$MARSDAWN_THEME`, then `dawn`.
   - Existing files are only overwritten with `--force`.
   - `--json` prints `ok`, `output`, `pages`, `diagramErrors` and `diagramErrorDetails` (the same
@@ -99,14 +114,16 @@ swift run marsdawn export notes.md -o notes.pdf --theme classic --paper a4
     overwritten silently — without `--force` it exits `64` and says what's there and how to
     replace it (`error: "skill_differs"` in `--json`). Refuses the same way, `error:
     "skill_unsafe_symlink"`, if the target path is a symlink pointing outside the folder it's
-    meant to stay in.
+    meant to stay in. If the folder can't be created or the file can't be written or renamed into
+    place, it exits `7` (`error: "skill_install_failed"` in `--json`); an existing `SKILL.md` is
+    left as it was.
   - `--dir PATH` installs to `PATH/SKILL.md` instead of `~/.claude/skills/marsdawn/SKILL.md`, for
     another agent's skill folder. Only applies with `--install`.
   - `--json` (only with `--install`) prints `ok`, `path` and `action`
     (`"installed"`, `"unchanged"` or `"replaced"`).
 - `--version` prints the release number and nothing else, so a package manager can compare it against its own. Bumping it is part of cutting a release; see [RELEASING.md](RELEASING.md).
 - `--generate-completion-script bash|zsh|fish` writes a shell completion script to stdout.
-- Exit codes: 1 invalid theme (`theme` commands only), 2 input not found, 3 MarsDawn not installed (`open` only), 4 output exists, 5 export failed, 6 this MarsDawn can't take a folder (`open` only), 64 usage error (including `skill --install`'s `skill_differs` and `skill_unsafe_symlink`, `open --wait`'s `wait_out_of_range`, and `theme preview`'s `output_folder_missing`, `output_symlink` and `output_not_a_file`).
+- Exit codes: 1 invalid theme (`theme` commands only), 2 input not found, 3 MarsDawn not installed (`open` only), 4 output exists, 5 export failed, 6 this MarsDawn can't take a folder (`open` only), 7 `skill --install` couldn't write the skill (`skill_install_failed`), 64 usage error (including `skill --install`'s `skill_differs` and `skill_unsafe_symlink`, `skill_target_not_a_file` (refused even with `--force`) and `skill_unreadable` (refused without `--force`), `open --wait`'s `wait_out_of_range`, and `theme preview`'s `output_folder_missing`, `output_symlink` and `output_not_a_file`).
 - `MARSDAWN_APP_PATH` overrides where the tool looks for the MarsDawn app. It exists for testing, so
   it's only honoured for a bundle whose `CFBundleIdentifier` is `dev.southern-light.marsdawn` or
   starts with `dev.southern-light.marsdawn.` (a throwaway verification copy); anything else is
@@ -115,7 +132,7 @@ swift run marsdawn export notes.md -o notes.pdf --theme classic --paper a4
 ## Use as a package
 
 ```swift
-.package(url: "https://github.com/redtear1115/mars-dawn-kit.git", exact: "0.6.4"),
+.package(url: "https://github.com/redtear1115/mars-dawn-kit.git", exact: "0.7.0"),
 ```
 
 ### Checking a theme before installing it

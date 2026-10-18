@@ -383,7 +383,7 @@ struct PreviewMathOptionsTests {
     @Test func theLimitsAreTheOnesTheContractNames() throws {
         let script = try Self.previewScript
         #expect(script.contains("const maxMathLength = 10000;"))
-        #expect(script.contains("const maxMathPerUpdate = 2000;"))
+        #expect(script.contains("const maxMathPerUpdate = 1000;"))
     }
 
     /// `:not()` binds to one compound selector: `".math-inline, .math-block:not(.math-done)"`

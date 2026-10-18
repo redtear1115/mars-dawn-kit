@@ -104,6 +104,113 @@ struct PreviewMermaidSequenceLabelTests {
         }
     }
 
+    // MARK: rect bands (#119)
+
+    static let banded = """
+    sequenceDiagram
+      participant A
+      participant B
+      A->>B: OUTSIDE01
+      rect rgb(191, 223, 255)
+        A->>B: INBAND02
+        rect rgb(200, 150, 255)
+          B->>A: NESTED03
+        end
+        A->>B: INBAND04
+      end
+      A->>B: AFTER05
+    """
+
+    static let blue = "rgb(191, 223, 255)"
+    static let lilac = "rgb(200, 150, 255)"
+
+    /// The computed stroke of each message label, by its text, and the page's `--bg` as a colour.
+    static func strokes(in webView: WKWebView) async throws -> (labels: [String: String], bg: String) {
+        let raw = try #require(try await webView.callAsyncJavaScript("""
+        const probe = document.createElement('div');
+        probe.style.color = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim();
+        document.body.appendChild(probe);
+        const bg = getComputedStyle(probe).color;
+        probe.remove();
+        const labels = {};
+        for (const el of document.querySelectorAll('.mermaid-output svg .messageText')) {
+          labels[el.textContent] = getComputedStyle(el).stroke;
+        }
+        return JSON.stringify({ labels, bg });
+        """, contentWorld: .page) as? String)
+        struct Strokes: Decodable { let labels: [String: String]; let bg: String }
+        let decoded = try JSONDecoder().decode(Strokes.self, from: Data(raw.utf8))
+        return (decoded.labels, decoded.bg)
+    }
+
+    private func expectBandStrokes(_ s: (labels: [String: String], bg: String), _ context: String) {
+        #expect(s.labels.count == 5, "\(context): all five labels found")
+        #expect(s.labels["OUTSIDE01"] == s.bg, "\(context): before the band keeps --bg")
+        #expect(s.labels["INBAND02"] == Self.blue, "\(context): in the band")
+        #expect(s.labels["NESTED03"] == Self.lilac, "\(context): the innermost band wins")
+        #expect(s.labels["INBAND04"] == Self.blue, "\(context): back in the outer band")
+        #expect(s.labels["AFTER05"] == s.bg, "\(context): after the band keeps --bg")
+    }
+
+    @Test func labelsWithoutAnyBandKeepThePageBackground() async throws {
+        let webView = try await loadedPreview()
+        try await render("```mermaid\n\(sequence)\n```\n", in: webView)
+        let s = try await Self.strokes(in: webView)
+        #expect(s.labels["CROSSINGMESSAGE07"] == s.bg)
+        let inline = try await value("document.querySelector('.mermaid-output svg .messageText').style.stroke", in: webView) as? String
+        #expect(inline == "", "no band, no inline style")
+    }
+
+    @Test func labelsTakeTheirBandsColour() async throws {
+        let webView = try await loadedPreview()
+        try await render("```mermaid\n\(Self.banded)\n```\n", in: webView)
+        expectBandStrokes(try await Self.strokes(in: webView), "light")
+    }
+
+    @Test func bandedLabelsInDarkModeAndAfterAThemeSwitch() async throws {
+        let webView = try await loadedPreview(dark: true)
+        try await render("```mermaid\n\(Self.banded)\n```\n", in: webView)
+        let dark = try await Self.strokes(in: webView)
+        expectBandStrokes(dark, "dark")
+
+        // A switch re-renders every diagram, and the pass runs on the fresh SVG.
+        _ = try await webView.callAsyncJavaScript("MarsDawn.setThemes('vivid', 'vivid'); await MarsDawn.idle();", contentWorld: .page)
+        // idle() doesn't cover the theme re-render, so wait for the new SVGs to be back.
+        var switched = try await Self.strokes(in: webView)
+        let deadline = ContinuousClock.now + .seconds(10)
+        while switched.labels.count < 5, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(50))
+            switched = try await Self.strokes(in: webView)
+        }
+        expectBandStrokes(switched, "after switch")
+        #expect(switched.bg != dark.bg, "the page colour did change, so the outside labels were re-resolved")
+    }
+
+    /// A translucent band is composited over the page colour, so the halo is the colour you see.
+    @Test func aTranslucentBandIsCompositedOverThePage() async throws {
+        let webView = try await loadedPreview()
+        try await render("""
+        ```mermaid
+        sequenceDiagram
+          participant A
+          participant B
+          rect rgba(0, 0, 255, 0.5)
+            A->>B: TRANSLUCENT06
+          end
+        ```
+
+        """, in: webView)
+        let s = try await Self.strokes(in: webView)
+        let halo = try #require(s.labels["TRANSLUCENT06"])
+        func channels(_ c: String) -> [Double] {
+            c.split(whereSeparator: { !"0123456789.".contains($0) }).compactMap { Double($0) }
+        }
+        let bg = channels(s.bg), got = channels(halo)
+        #expect(got.count == 3 && bg.count >= 3)
+        guard got.count == 3, bg.count >= 3 else { return }
+        #expect(abs(got[0] - bg[0] * 0.5) <= 1 && abs(got[1] - bg[1] * 0.5) <= 1 && abs(got[2] - (255 * 0.5 + bg[2] * 0.5)) <= 1)
+    }
+
     /// Only sequence diagram message labels get the halo; a flowchart node label is untouched.
     @Test func otherDiagramTextIsNotGivenTheHalo() async throws {
         let webView = try await loadedPreview()

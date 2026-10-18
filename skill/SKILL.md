@@ -26,8 +26,11 @@ marsdawn export input.md --json
 ```
 
 Options: `-o out.pdf` (default: beside the input), `--theme dawn|classic|modern|vivid`,
-`--paper a4|letter`, `--force` to replace an existing PDF, and
-`--allow-remote-images` to load web images, which are left out by default.
+`--paper a4|letter`, `--force` to replace an existing PDF,
+`--allow-remote-images` to load web images, which are left out by default, and
+`--breaks` to turn every newline inside a paragraph into a line break, as HackMD does. Without it
+a newline is a space, except between two Chinese or Japanese characters, where it is
+dropped.
 
 On success it exits 0 and prints one JSON line:
 
@@ -68,6 +71,7 @@ On failure with `--json` it prints `{"ok": false, "error": <kind>, "message": ..
 | 4 | `output_exists` | The PDF (or `theme preview`'s PNG) already exists. Pass --force to replace it, or -o to write elsewhere. |
 | 5 | `export_failed` | Rendering failed. |
 | 6 | `app_cannot_open_folders` | This MarsDawn can't show a folder, so nothing was opened. Only `open` returns this. |
+| 7 | `skill_install_failed` | `skill --install` couldn't create the folder or write the file, or the final rename failed. An existing SKILL.md is left as it was. Only `skill --install` returns this. |
 | 64 | — | Usage error: a bad option or value. Printed as text on stderr, never as JSON, except `theme preview`'s refused -o (`output_folder_missing`, `output_symlink`, `output_not_a_file`). |
 
 ## Review: open what you wrote

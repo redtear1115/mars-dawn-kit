@@ -1,0 +1,36 @@
+name: Record PDF goldens
+
+# Manual only: re-records the PDF corpus's tier-4 goldens (redtear1115/mars-dawn#2) after a
+# runner-image update or an intentional rendering change, and uploads them as an artifact for
+# review before they're committed. Doesn't touch the repository itself.
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  record:
+    runs-on: macos-26
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Use Xcode 26
+        run: |
+          set -euo pipefail
+          app=$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)
+          echo "Selecting $app"
+          sudo xcode-select -s "$app"
+      - run: swift --version
+      - name: Record the goldens
+        run: swift test --no-parallel --filter PDFCorpus/golden
+        env:
+          MARSDAWN_PDF_GOLDENS: "1"
+          MARSDAWN_UPDATE_GOLDENS: "1"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pdf-goldens
+          path: Tests/MarsDawnExportTests/Goldens/

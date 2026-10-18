@@ -157,6 +157,7 @@ struct HTMLDocumentEndToEndTests {
         #expect(log.contains { $0.components == ["site", "pages", "linkdir", "real.png"] && $0.outcome == .failed(.notAllowed) })
         // `..` above the root collapses at the token host: the request stays inside the scope.
         #expect(log.contains { $0.components == ["outside.png"] && $0.outcome == .failed(.notFound) })
+        #expect(log.first { $0.components == ["outside.png"] }?.loadID == harness.handler.currentLoadID)
         #expect(log.filter { $0.outcome == .refused("invalid segment") || $0.outcome == .refused("empty segment") }.count >= 3)
         // `readLog` is the one record the handler still keeps only in a debug build, so this
         // assertion compiles away in release. Everything around it runs in both.

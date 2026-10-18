@@ -223,14 +223,14 @@ enum FootnoteExtractor {
             guard event == CMARK_EVENT_ENTER, let node = cmark_iter_get_node(iterator) else { continue }
             let type = cmark_node_get_type(node)
             let line = Int(cmark_node_get_start_line(node))
-            if type == CMARK_NODE_FOOTNOTE_REFERENCE, line <= bodyLineCount,
+            if type == CMARK_NODE_FOOTNOTE_REFERENCE, line >= 1, line <= bodyLineCount,
                let definition = cmark_node_parent_footnote_def(node) {
                 let key = literal(definition)
                 references.append(Reference(line: line, startColumn: Int(cmark_node_get_start_column(node)),
                                             endColumn: Int(cmark_node_get_end_column(node)), label: key,
                                             originalLabel: writtenLabel(lines, line: line, start: Int(cmark_node_get_start_column(node)),
                                                                         end: Int(cmark_node_get_end_column(node))) ?? key))
-            } else if type == CMARK_NODE_FOOTNOTE_DEFINITION, line <= bodyLineCount {
+            } else if type == CMARK_NODE_FOOTNOTE_DEFINITION, line >= 1, line <= bodyLineCount {
                 definitions.append(Definition(label: literal(node), startLine: line,
                                               contentColumn: Int(cmark_node_get_start_column(node)),
                                               endLine: Int(cmark_node_get_end_line(node)),
@@ -247,7 +247,7 @@ enum FootnoteExtractor {
 
     /// The label as the author wrote it at a reference (`[^Note]` for a key cmark folds).
     private static func writtenLabel(_ lines: [Line], line: Int, start: Int, end: Int) -> String? {
-        guard line - 1 < lines.count else { return nil }
+        guard line >= 1, line - 1 < lines.count else { return nil }
         let content = lines[line - 1].content
         guard start >= 1, end <= content.count, end - start >= 3 else { return nil }
         return String(decoding: content[(start + 1)..<(end - 1)], as: UTF8.self)

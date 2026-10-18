@@ -13,3 +13,6 @@
 "Web image" = "網路圖片";
 "Image not available" = "無法顯示圖片";
 "Not loaded: unencrypted connection (http)" = "未載入：連線未加密（http）";
+
+/* Note under a Mermaid diagram left as source because the document has too many (mars-dawn-kit#95). */
+"Not rendered: too many diagrams in this document. Source shown." = "未渲染：此文件的圖表過多。顯示原始碼。";

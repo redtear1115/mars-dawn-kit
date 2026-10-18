@@ -1,0 +1,33 @@
+{
+  "markers": [
+    "HDCJK01",
+    "你好世界",
+    "ZHT01",
+    "繁體中文段落",
+    "「引號」",
+    "ZHS02",
+    "简体中文段落",
+    "全角标点",
+    "JPN03",
+    "日本語のパラグラフ",
+    "ありがとうございます",
+    "KOR04",
+    "한국어단락입니다",
+    "감사합니다",
+    "MIXCJK05",
+    "測試全形與Latin混排",
+    "CJKTBL06",
+    "CELLTBL07",
+    "CELLTBL08",
+    "中文儲存格09",
+    "CODECJK11",
+    "日本語コメント12",
+    "こんにちは世界13",
+    "LISTCJK14",
+    "混合Mixed項目CJK16",
+    "封装换行标记",
+    "CJKENDMARK99"
+  ],
+  "markersOnLastPage": ["CJKENDMARK99"],
+  "notes": "CJK coverage: zh-Hant/zh-Hans/Japanese/Korean paragraphs, CJK in heading/table/code block/list, full-width punctuation mixed with Latin, and one long unbroken CJK line (no spaces, opening of Lantingji Xu) with the marker 封装换行标记 inserted so it straddles a line wrap in the exported PDF: on the single A4 page produced, the line wraps after '...此地有崇山峻封装换' and continues '行标记岭茂林...', splitting the 6-character marker 3/3 across the wrap (封装换 | 行标记). The marker still matches as a whole under the contract's normalize-and-contains rule because PDFKit's page text join loses only the intervening newline, which normalize strips."
+}

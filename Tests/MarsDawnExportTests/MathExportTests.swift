@@ -62,7 +62,7 @@ struct MathExportTests {
         // Straight to the page, as the renderer can't make one this long: an expression over
         // the length limit, one over the per-update count, and one KaTeX refuses.
         let long = String(repeating: "x", count: MathExtractor.maxExpressionLength + 1)
-        let many = (0..<2100).map { #"<span class="math-inline">x_{\#($0)}</span>"# }.joined()
+        let many = (0..<1100).map { #"<span class="math-inline">x_{\#($0)}</span>"# }.joined()
         let html = #"<p data-line="1"><span class="math-inline">\#(long)</span>"#
             + #"<span class="math-inline">{x</span>\#(many)</p>"#
         _ = try await webView.evaluateJavaScript(PreviewWebView.updateScript(html: html, lineCount: 1))
@@ -80,8 +80,8 @@ struct MathExportTests {
         let skipped = try await webView.evaluateJavaScript(
             #"document.querySelectorAll(".math-skipped").length"#
         ) as? Int
-        // 2102 spans: the over-long one is skipped without counting towards the cap, the next
-        // 2000 render (`{x` among them, as an error), and the last 101 are past the cap.
+        // 1102 spans: the over-long one is skipped without counting towards the cap, the next
+        // 1000 render (`{x` among them, as an error), and the last 101 are past the cap.
         #expect(skipped == 102)
     }
 

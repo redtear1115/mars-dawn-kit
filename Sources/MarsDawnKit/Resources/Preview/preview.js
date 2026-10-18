@@ -153,10 +153,35 @@
     }
   }
 
-  function highlightCode(root) {
+  // Cost caps (mars-dawn-kit#95). Measured in Quick Look's WebContent process on 1 MB
+  // documents (peak phys_footprint): prose ~135 MB, but one 1 MB fenced `javascript` block 821 MB
+  // and 1 MB of mixed code blocks 572 MB. That is ~0.55-0.7 MB of memory per KB highlighted, so
+  // the budget below bounds the highlighting overhead of the worst page at roughly 150-180 MB.
+  // A block over `maxHighlightBlockChars` is left as plain text: a source file that size is
+  // read, not coloured, and one block is where the 821 MB came from. Realistic documents are
+  // untouched: a 3,000-line file is ~100 KB. The total is across the page, counted from what is
+  // already highlighted plus what this update adds, so editing never exhausts it. Characters,
+  // not bytes: `textContent.length`, within a factor of 3 of the byte count for any script.
+  // Skipped code stays an ordinary escaped `<pre><code>`; nothing is hidden and nothing is
+  // reported, because it simply lacks colour (in PDF export too: same page).
+  const maxHighlightBlockChars = 128 * 1024;
+  const maxHighlightTotalChars = 256 * 1024;
+
+  function highlightedChars() {
+    let total = 0;
+    content().querySelectorAll("pre > code.hljs").forEach((code) => { total += code.textContent.length; });
+    return total;
+  }
+
+  // `budget.used` is shared by every call of one update, so the total is page-wide.
+  function highlightCode(root, budget = { used: highlightedChars() }) {
     root.querySelectorAll("pre > code[class*='language-']").forEach((code) => {
       const lang = code.className.replace(/^.*language-/, "").split(/\s/)[0];
-      if (window.hljs && hljs.getLanguage(lang)) hljs.highlightElement(code);
+      if (!(window.hljs && hljs.getLanguage(lang))) return;
+      const size = code.textContent.length;
+      if (size > maxHighlightBlockChars || budget.used + size > maxHighlightTotalChars) return;
+      budget.used += size;
+      hljs.highlightElement(code);
     });
   }
 
@@ -184,8 +209,13 @@
   // S5-4: an expression longer than this stays as its source text, and only this many are
   // rendered per update; the rest stay as source too. Either way the element is marked done,
   // so the exporter's readiness check always terminates.
+  //
+  // The count was 2000, which the Quick Look measurement (mars-dawn-kit#95) put at 654 MB peak
+  // in WebContent against ~135 MB for prose: ~0.26 MB per rendered expression (KaTeX's HTML plus
+  // its MathML copy). 1000 bounds that near 400 MB. It is still well past real documents: a
+  // dense mathematics paper has a few hundred expressions, a textbook chapter around 1000.
   const maxMathLength = 10000;
-  const maxMathPerUpdate = 2000;
+  const maxMathPerUpdate = 1000;
 
   // Written out per class: `:not()` binds to one compound selector, so ".math-inline,
   // .math-block:not(.math-done)" would leave every inline expression pending forever and
@@ -248,6 +278,88 @@
     );
   }
 
+  // Sequence diagram `rect rgb(...)` bands (redtear1115/mars-dawn-kit#119). The label halo
+  // (`.messageText { stroke: var(--bg) !important }` in preview.css) would show as a page-colour
+  // outline on a band, and Mermaid draws the band as a sibling of the label, not an ancestor, so
+  // CSS can't reach it. Mermaid 12 draws each band as `<rect class="rect" fill="...">` (the only
+  // thing it gives that class; drawBackgroundRect, lowered to the SVG's first child), so after the
+  // SVG is in the page every label takes the colour you actually see behind it: the bands that
+  // contain the label's centre, outermost to innermost, composited over the page colour (a band
+  // may be translucent, e.g. rgba(0,0,255,.1), and nested bands stack). Labels outside any band
+  // are left alone and keep --bg. Inline styles are part of the SVG, so the colours survive the
+  // diagram cache, a theme switch (which re-renders) and PDF export.
+  function parseColor(value) {
+    const m = /^rgba?\(([^)]+)\)$/.exec((value || "").trim());
+    if (!m) return null;
+    const n = m[1].split(/[\s,\/]+/).filter(Boolean).map(Number);
+    if (n.length < 3 || n.slice(0, 3).some((x) => !Number.isFinite(x))) return null;
+    return [n[0], n[1], n[2], n.length > 3 && Number.isFinite(n[3]) ? n[3] : 1];
+  }
+
+  function matchSequenceBands(output) {
+    const bands = [...output.querySelectorAll("svg rect.rect")];
+    if (!bands.length) return;
+    const labels = output.querySelectorAll("svg .messageText");
+    if (!labels.length) return;
+    const boxes = bands.map((rect) => {
+      const box = rect.getBoundingClientRect();
+      return { box, area: box.width * box.height, color: parseColor(getComputedStyle(rect).fill) };
+    }).filter((b) => b.color && b.color[3] > 0 && b.area > 0)
+      .sort((a, b) => b.area - a.area);
+    if (!boxes.length) return;
+    for (const label of labels) {
+      label.style.removeProperty("stroke");
+      const base = parseColor(getComputedStyle(label).stroke);
+      const r = label.getBoundingClientRect();
+      if (!base || (r.width === 0 && r.height === 0)) continue;
+      const cx = r.left + r.width / 2;
+      const cy = r.top + r.height / 2;
+      let color = base;
+      let inside = false;
+      for (const { box, color: fill } of boxes) {
+        if (cx < box.left || cx > box.right || cy < box.top || cy > box.bottom) continue;
+        inside = true;
+        const a = fill[3];
+        color = [0, 1, 2].map((i) => fill[i] * a + color[i] * (1 - a));
+      }
+      if (!inside) continue;
+      const [cr, cg, cb] = color.map((x) => Math.round(x));
+      label.style.setProperty("stroke", `rgb(${cr}, ${cg}, ${cb})`, "important");
+    }
+  }
+
+  // At most this many diagrams are rendered per update; the rest keep their source and say so
+  // (mars-dawn-kit#95). 500 diagrams measured 324 MB in WebContent against ~135 MB for prose,
+  // ~0.38 MB per diagram, so 100 bounds the cost near 175 MB. A long technical document has
+  // dozens of diagrams; 100 leaves those untouched. The skipped block is neither "rendered" nor
+  // "error", so the exporter's readiness wait accepts the "skipped" class too.
+  const maxMermaidPerUpdate = 100;
+  // Localised by the host through `setLabels` (sent ahead of every update); this is only the fallback.
+  let diagramLimitNote = "Not rendered: too many diagrams in this document. Source shown.";
+
+  // Returns the pairs to render; the rest are left as source with a note.
+  function capMermaid(pairs) {
+    pairs.slice(maxMermaidPerUpdate).forEach(([block]) => {
+      // A block can arrive here already drawn: a theme change redraws every diagram, including
+      // ones that edits brought in under earlier updates' limits. Its output is gone, and a
+      // leftover `rendered` would keep preview.css hiding the source the note says is shown.
+      block.classList.remove("rendered", "stale");
+      block.classList.add("skipped");
+      if (block.querySelector(".mermaid-skipped-note")) return;
+      const note = document.createElement("div");
+      note.className = "mermaid-skipped-note";
+      note.setAttribute("role", "note");
+      note.textContent = diagramLimitNote;
+      block.appendChild(note);
+    });
+    return pairs.slice(0, maxMermaidPerUpdate);
+  }
+
+  function clearMermaidSkip(block) {
+    block.classList.remove("skipped");
+    block.querySelector(".mermaid-skipped-note")?.remove();
+  }
+
   async function renderMermaid(block, placeholderSVG) {
     const source = block.querySelector(".mermaid-source")?.textContent ?? "";
     const target = document.createElement("div");
@@ -258,6 +370,7 @@
     if (cached) {
       target.innerHTML = cached;
       block.classList.add("rendered");
+      matchSequenceBands(target);
       return;
     }
     // Keep the previous diagram on screen while the edited one renders (no flicker).
@@ -274,6 +387,7 @@
       if (!block.isConnected) return;
       target.innerHTML = svg;
       block.classList.add("rendered");
+      matchSequenceBands(target);
       block.classList.remove("stale", "error");
       block.removeAttribute("data-error");
       block.removeAttribute("data-raw-error");
@@ -721,8 +835,9 @@
 
     refreshRemoteBar();
     const pending = [];
+    const highlightBudget = { used: highlightedChars() };
     for (const el of fresh) {
-      highlightCode(el);
+      highlightCode(el, highlightBudget);
       const blocks = el.classList.contains("mermaid-block") ? [el] : el.querySelectorAll(".mermaid-block");
       for (const block of blocks) pending.push([block, staleSVGs.shift()]);
     }
@@ -730,7 +845,7 @@
     // changed keeps the KaTeX output it already has.
     renderMath();
     reapplySync();
-    pendingWork = renderMermaidSequentially(pending);
+    pendingWork = renderMermaidSequentially(capMermaid(pending));
     if (pending.length) {
       pendingWork.then(() => {
         invalidateAnchors();
@@ -741,13 +856,14 @@
 
   // Redraw diagrams in place (keeps scroll position); old SVGs stay visible until replaced.
   function rerenderDiagrams() {
-    const pending = [...content().querySelectorAll(".mermaid-block")].map((block) => {
+    const all = [...content().querySelectorAll(".mermaid-block")].map((block) => {
+      clearMermaidSkip(block);
       const output = block.querySelector(".mermaid-output");
       const previous = output?.innerHTML;
       output?.remove();
       return [block, previous];
     });
-    renderMermaidSequentially(pending).then(() => {
+    renderMermaidSequentially(capMermaid(all)).then(() => {
       invalidateAnchors();
       reapplySync();
     });
@@ -793,5 +909,9 @@
     window.scrollTo(0, y);
   }
 
-  window.MarsDawn = { update, setTheme, setThemes, scrollToLine, setAssetState, setRemoteImageState, restoreScroll, idle };
+  function setLabels(labels) {
+    if (labels && typeof labels.diagramLimitNote === "string") diagramLimitNote = labels.diagramLimitNote;
+  }
+
+  window.MarsDawn = { update, setLabels, setTheme, setThemes, scrollToLine, setAssetState, setRemoteImageState, restoreScroll, idle };
 })();

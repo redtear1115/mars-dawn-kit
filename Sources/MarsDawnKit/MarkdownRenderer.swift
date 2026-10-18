@@ -30,18 +30,27 @@ public enum MarkdownRenderer {
         /// The accessible name of a footnote's way back to where it was referenced, followed by
         /// the footnote's number (#44). The app passes a localised string.
         public var footnoteBackLabel: String
+        /// Renders every soft break (a newline inside a paragraph) as `<br>`, as HackMD and GitHub
+        /// comments do, instead of leaving it to the browser to show as a space (#129). `false`
+        /// (the default) is CommonMark.
+        ///
+        /// Independently of this, a soft break between two CJK characters renders as nothing when
+        /// the option is off (`CJKLineJoining`); with it on, the line break is kept.
+        public var softBreaksAsLineBreaks: Bool
 
         public init(
             maxBytes: Int? = nil,
             maxNodes: Int = ParseLimits.defaultMaxNodes,
             frontMatterLabel: String = "Document info",
             footnoteBackLabel: String = "Back to reference",
+            softBreaksAsLineBreaks: Bool = false,
             resolveImageSource: @escaping @Sendable (String) -> String = { $0 }
         ) {
             self.maxBytes = maxBytes
             self.maxNodes = maxNodes
             self.frontMatterLabel = frontMatterLabel
             self.footnoteBackLabel = footnoteBackLabel
+            self.softBreaksAsLineBreaks = softBreaksAsLineBreaks
             self.resolveImageSource = resolveImageSource
         }
 
@@ -149,7 +158,9 @@ public enum MarkdownRenderer {
     private static func renderResult(_ outcome: ParseOutcome, split: SplitSource, options: Options) -> RenderResult {
         switch outcome {
         case .document(let document):
-            var visitor = HTMLVisitor(options: options, lineOffset: split.bodyLineOffset, math: split.math, footnotes: split.footnotes)
+            let escapes = EscapeMap(source: split.parsedBody, document: document, limits: options.parseLimits)
+            var visitor = HTMLVisitor(options: options, lineOffset: split.bodyLineOffset, math: split.math, footnotes: split.footnotes,
+                                      source: split.parsedBody, escapes: escapes)
             let body = visitor.visit(document)
             return RenderResult(html: split.frontMatterHTML + body + footnotesHTML(split, options: options), fallback: nil)
         case .tooDeep(let depth):
@@ -205,7 +216,9 @@ public enum MarkdownRenderer {
             guard case .document(let document) = outcome else {
                 return "<p>" + escapeHTML(markdown) + "</p>\n"
             }
-            var visitor = HTMLVisitor(options: options, lineOffset: 0, math: split.math, footnotes: split.footnotes, inNote: true)
+            let escapes = EscapeMap(source: markdown, document: document, limits: options.parseLimits)
+            var visitor = HTMLVisitor(options: options, lineOffset: 0, math: split.math, footnotes: split.footnotes, source: markdown,
+                                      escapes: escapes, inNote: true)
             return visitor.visit(document)
         }
         guard !appending.isEmpty else { return rendered }
@@ -290,14 +303,23 @@ private struct HTMLVisitor: MarkupVisitor {
     let footnotes: FootnoteExtraction
     /// Rendering a footnote's own text: no `data-line`, no heading `id` (#44).
     let inNote: Bool
+    /// The Markdown that was parsed, for what only its characters say (`~` versus `~~`, `\=`).
+    let source: SourceBytes
+    /// Which `=` and `^` were escaped, for `InlineMarks` (#133).
+    let escapes: EscapeMap
     /// Every heading's `id`, in document order, worked out before any heading is written.
     private var headingIDs: [String] = []
     private var headingIndex = 0
+    /// Every heading's level and title, in the same order, for `[TOC]`.
+    private var tocEntries: [(level: Int, title: String)] = []
+    private var tocRendered = false
     private var tightListStack: [Bool] = []
 
     init(options: MarkdownRenderer.Options, lineOffset: Int, math: MathExtractor.Extraction,
-         footnotes: FootnoteExtraction, inNote: Bool = false) {
+         footnotes: FootnoteExtraction, source: String, escapes: EscapeMap = .none, inNote: Bool = false) {
         self.options = options
+        self.source = SourceBytes(source)
+        self.escapes = escapes
         self.lineOffset = lineOffset
         self.math = math
         self.footnotes = footnotes
@@ -309,9 +331,111 @@ private struct HTMLVisitor: MarkupVisitor {
     }
 
     private mutating func visitChildren(_ markup: any Markup) -> String {
+        let children = Array(markup.children)
+        // `<` first: an autolink's text is its URL, and `^` or `==` in it is not a mark.
+        if markup is InlineContainer,
+           let pieces = InlineMarks.pieces(of: children, escapes: escapes, scanText: !Self.isAutolink(markup)) {
+            return markedHTML(pieces, children: children)
+        }
         var html = ""
-        for child in markup.children {
-            html += visit(child)
+        for index in children.indices {
+            html += visitInline(children, at: index)
+        }
+        return html
+    }
+
+    /// Whether `markup` is a link whose text is its address (`<https://x>`, `<a@b.c>`, `www.x`):
+    /// `^` or `==` in an address is not a mark. Read from the link itself, not source positions.
+    private static func isAutolink(_ markup: any Markup) -> Bool {
+        guard let link = markup as? Link, let destination = link.destination else { return false }
+        let text = link.plainText
+        return destination == text || destination == "mailto:" + text || destination == "http://" + text
+    }
+
+    /// `children[index]` rendered, a soft break by what stands either side of it (#129).
+    private mutating func visitInline(_ children: [any Markup], at index: Int) -> String {
+        guard children[index] is SoftBreak else { return visit(children[index]) }
+        return softBreak(
+            before: index > 0 ? visibleEdge(of: children[index - 1], last: true) : nil,
+            after: index + 1 < children.count ? visibleEdge(of: children[index + 1], last: false) : nil
+        )
+    }
+
+    /// A soft break between the characters a reader sees either side of it: nothing between two
+    /// CJK characters, `<br>` when soft breaks are line breaks, a newline otherwise (#129).
+    private func softBreak(before: Unicode.Scalar?, after: Unicode.Scalar?) -> String {
+        if options.softBreaksAsLineBreaks { return "<br>\n" }
+        guard let before, let after else { return "\n" }
+        return CJKLineJoining.isCJK(before) && CJKLineJoining.isCJK(after) ? "" : "\n"
+    }
+
+    /// The last (`last` true) or first character `node` shows, or nil if it shows none there (an
+    /// image, a break). Paired `==` and `^` are tags, not characters (#133), so a container with
+    /// marks is read through its pieces; `CJKLineJoining` alone would see the delimiters.
+    private func visibleEdge(of node: any Markup, last: Bool) -> Unicode.Scalar? {
+        switch node {
+        case let text as Text:
+            return last ? text.string.unicodeScalars.last : text.string.unicodeScalars.first
+        case let code as InlineCode:
+            return last ? code.code.unicodeScalars.last : code.code.unicodeScalars.first
+        case is Image, is SoftBreak, is LineBreak, is InlineHTML, is SymbolLink:
+            return nil
+        default:
+            let children = Array(node.children)
+            guard !children.isEmpty else { return nil }
+            if node is InlineContainer, let pieces = InlineMarks.pieces(of: children, escapes: escapes, scanText: !Self.isAutolink(node)) {
+                return visibleEdge(of: pieces, children: children, from: last ? pieces.count - 1 : 0, last: last)
+            }
+            return visibleEdge(of: children[last ? children.count - 1 : 0], last: last)
+        }
+    }
+
+    /// The first character shown walking from `pieces[start]` towards the edge `last` names: back
+    /// when `last`, forward otherwise. Mark tags show nothing and are passed over.
+    private func visibleEdge(of pieces: [InlineMarks.Piece], children: [any Markup], from start: Int, last: Bool) -> Unicode.Scalar? {
+        var index = start
+        while pieces.indices.contains(index) {
+            switch pieces[index] {
+            case .open, .close:
+                break
+            case .text(let string, _):
+                if let scalar = last ? string.unicodeScalars.last : string.unicodeScalars.first { return scalar }
+            case .node(let child):
+                return visibleEdge(of: children[child], last: last)
+            }
+            index += last ? -1 : 1
+        }
+        return nil
+    }
+
+    /// An inline container's children with its `==mark==` and `^sup^` written as `<mark>` and
+    /// `<sup>` (#133). Pieces of text are rendered as a `Text` node's would be.
+    private mutating func markedHTML(_ pieces: [InlineMarks.Piece], children: [any Markup]) -> String {
+        var html = ""
+        // A text split into many pieces is checked against its source once, not once per piece.
+        var verbatim: [Int: Bool] = [:]
+        for (index, piece) in pieces.enumerated() {
+            switch piece {
+            case .text(let string, let child):
+                var searchable = false
+                if ImageSizes.mayHaveMatch(string) {
+                    if let known = verbatim[child] {
+                        searchable = known
+                    } else {
+                        searchable = (children[child] as? Text).map { ImageSizes.isVerbatim($0, source: source) } ?? false
+                        verbatim[child] = searchable
+                    }
+                }
+                html += textHTML(string, searchable: searchable)
+            case .open(.mark): html += "<mark>"
+            case .close(.mark): html += "</mark>"
+            case .open(.sup): html += "<sup>"
+            case .close(.sup): html += "</sup>"
+            case .node(let child) where children[child] is SoftBreak:
+                html += softBreak(before: visibleEdge(of: pieces, children: children, from: index - 1, last: true),
+                                  after: visibleEdge(of: pieces, children: children, from: index + 1, last: false))
+            case .node(let child): html += visit(children[child])
+            }
         }
         return html
     }
@@ -373,31 +497,116 @@ private struct HTMLVisitor: MarkupVisitor {
     // MARK: Blocks
 
     mutating func visitDocument(_ document: Document) -> String {
-        headingIDs = MarkdownRenderer.headingIDs(forSlugs: headingSlugs(document))
+        let headings = headingNodes(document)
+        headingIDs = MarkdownRenderer.headingIDs(forSlugs: headings.map { slugify(slugSource($0.plainText)) })
+        tocEntries = headings.map { (min(max($0.level, 1), 6), tocTitle(of: $0)) }
         return visitBlockChildren(document)
     }
 
-    /// Every heading's own slug, in the order `visit` meets them. Headings are blocks, so
-    /// inline nodes are never descended into.
-    private func headingSlugs(_ document: Document) -> [String] {
-        var slugs: [String] = []
+    /// Every heading, in the order `visit` meets them. Headings are blocks, so inline nodes
+    /// are never descended into.
+    private func headingNodes(_ document: Document) -> [Heading] {
+        var headings: [Heading] = []
         var stack: [any Markup] = Array(document.children).reversed()
         while let node = stack.popLast() {
             if let heading = node as? Heading {
-                slugs.append(slugify(slugSource(heading.plainText)))
+                headings.append(heading)
                 continue
             }
             stack.append(contentsOf: node.children.filter { !($0 is InlineMarkup) }.reversed())
         }
-        return slugs
+        return headings
     }
 
     mutating func visitParagraph(_ paragraph: Paragraph) -> String {
-        let inner = visitChildren(paragraph)
+        if !inNote, !tocRendered, isTOCMarker(paragraph) {
+            tocRendered = true
+            return tocHTML(lineAttribute: lineAttribute(paragraph))
+        }
+        let inner = embedLinks(paragraph) ?? visitChildren(paragraph)
         if tightListStack.last == true, paragraph.parent is ListItem {
             return inner + "\n"
         }
         return "<p\(lineAttribute(paragraph))>\(inner)</p>\n"
+    }
+
+    /// The links for a paragraph that is nothing but HackMD embed tags, one per line (`HackMDEmbeds`).
+    /// Only text and autolinks may be in it: any other markup means it is not a tag line.
+    private func embedLinks(_ paragraph: Paragraph) -> String? {
+        // Cheap test first: this runs for every paragraph.
+        guard let first = paragraph.child(at: 0) as? Text, first.string.hasPrefix("{%") else { return nil }
+        var lines = [""]
+        for child in paragraph.children {
+            switch child {
+            case let text as Text: lines[lines.count - 1] += text.string
+            case let link as Link: lines[lines.count - 1] += link.plainText
+            case is SoftBreak, is LineBreak: lines.append("")
+            default: return nil
+            }
+        }
+        return HackMDEmbeds.html(forLines: lines)
+    }
+
+    /// A paragraph of nothing but `[TOC]`, in any case. Plain text only: a link (`[TOC](x)`, or
+    /// `[TOC]` with a definition of that name) or any markup in it is not a marker.
+    private func isTOCMarker(_ paragraph: Paragraph) -> Bool {
+        guard paragraph.children.allSatisfy({ $0 is Text }) else { return false }
+        return paragraph.plainText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "[toc]"
+    }
+
+    /// A heading's text for the contents list: code spans without their backticks, images as
+    /// their alt text, inline HTML dropped, whitespace collapsed, math as the source written.
+    private func tocTitle(of heading: Heading) -> String {
+        func text(_ markup: any Markup) -> String {
+            switch markup {
+            case let text as Text: return text.string
+            case let code as InlineCode: return code.code
+            case let image as Image: return image.plainText
+            case is SoftBreak, is LineBreak: return " "
+            case is InlineHTML: return ""
+            default: return markup.children.map(text).joined()
+            }
+        }
+        return slugSource(text(heading)).split(whereSeparator: \.isWhitespace).joined(separator: " ")
+    }
+
+    /// The table of contents for `[TOC]`: a nested list linking to every heading by the `id`
+    /// it was given, so the anchors cannot drift from the headings. A level that is skipped
+    /// (`#` then `###`) nests one list deeper, not two. Headings with no text are left out.
+    /// Only the first `[TOC]` of a document is expanded, which bounds the output at one list
+    /// per document.
+    private func tocHTML(lineAttribute: String) -> String {
+        var html = "<div class=\"toc\"\(lineAttribute)>\n"
+        var levels: [Int] = []
+        func open() { if !html.hasSuffix("\n") { html += "\n" }; html += "<ul>\n" }
+        for (index, entry) in tocEntries.enumerated() where !entry.title.isEmpty && index < headingIDs.count {
+            if levels.isEmpty {
+                open()
+                levels = [entry.level]
+            } else if entry.level > levels[levels.count - 1] {
+                open()
+                levels.append(entry.level)
+            } else {
+                while levels.count > 1, levels[levels.count - 1] > entry.level {
+                    html += "</li>\n</ul>\n"
+                    levels.removeLast()
+                }
+                if levels[levels.count - 1] < entry.level {
+                    open()
+                    levels.append(entry.level)
+                } else {
+                    // On the root list a shallower heading than the first becomes its level.
+                    levels[levels.count - 1] = entry.level
+                    html += "</li>\n"
+                }
+            }
+            html += "<li><a href=\"#\(escapeAttribute(headingIDs[index]))\">\(escapeHTML(entry.title))</a>"
+        }
+        while !levels.isEmpty {
+            html += "</li>\n</ul>\n"
+            levels.removeLast()
+        }
+        return html + "</div>\n"
     }
 
     mutating func visitHeading(_ heading: Heading) -> String {
@@ -426,6 +635,8 @@ private struct HTMLVisitor: MarkupVisitor {
         let language = codeBlock.language?
             .split(whereSeparator: \.isWhitespace).first
             .map(String.init)?
+            // HackMD suffixes (`js=`, `js=101`, `js!`, `js=+`) follow the language; none is rendered.
+            .prefix { $0 != "=" && $0 != "!" }
             .filter { $0.isLetter || $0.isNumber || "_+#.-".contains($0) } ?? ""
 
         if language.lowercased() == "mermaid" {
@@ -490,9 +701,39 @@ private struct HTMLVisitor: MarkupVisitor {
     /// that looks like a placeholder but isn't one of this render's comes back as text and is
     /// escaped like the rest.
     mutating func visitText(_ text: Text) -> String {
-        guard math.expressionCount > 0 else { return textWithFootnotes(text.string) }
+        textHTML(text.string, searchable: ImageSizes.mayHaveMatch(text.string) && ImageSizes.isVerbatim(text, source: source))
+    }
+
+    /// `string`, a `Text` node's text or a piece of it, with any HackMD-sized image in it written
+    /// as an `<img>` (#131, `ImageSizes`) when `searchable` (its node's source is verbatim), and
+    /// the rest rendered as text.
+    private func textHTML(_ string: String, searchable: Bool) -> String {
+        guard searchable else { return renderedText(string) }
+        let matches = ImageSizes.matches(in: string)
+        guard !matches.isEmpty else { return renderedText(string) }
+        let bytes = Array(string.utf8)
         var html = ""
-        for segment in math.segments(in: text.string) {
+        var copied = 0
+        for match in matches {
+            html += renderedText(String(decoding: bytes[copied..<match.range.lowerBound], as: UTF8.self))
+            html += sizedImageHTML(match)
+            copied = match.range.upperBound
+        }
+        return html + renderedText(String(decoding: bytes[copied...], as: UTF8.self))
+    }
+
+    /// The `<img>` for a sized image, under the same source policy as `visitImage`.
+    private func sizedImageHTML(_ match: ImageSizes.Match) -> String {
+        let source = sanitizedURL(options.resolveImageSource(match.source), allowData: true)
+        let width = match.width.map { " width=\"\($0)\"" } ?? ""
+        let height = match.height.map { " height=\"\($0)\"" } ?? ""
+        return "<img src=\"\(escapeAttribute(source))\" alt=\"\(escapeAttribute(match.alt))\"\(width)\(height)>"
+    }
+
+    private func renderedText(_ string: String) -> String {
+        guard math.expressionCount > 0 else { return textWithFootnotes(string) }
+        var html = ""
+        for segment in math.segments(in: string) {
             switch segment {
             case .text(let string):
                 html += textWithFootnotes(string)
@@ -529,8 +770,11 @@ private struct HTMLVisitor: MarkupVisitor {
         "<strong>\(visitChildren(strong))</strong>"
     }
 
+    /// cmark-gfm's strikethrough also takes one tilde, which HackMD writes as `~sub~` (#133).
+    /// `~~` stays `<del>`, and so does anything the source doesn't clearly show as one tilde.
     mutating func visitStrikethrough(_ strikethrough: Strikethrough) -> String {
-        "<del>\(visitChildren(strikethrough))</del>"
+        let tag = source.isSingleTilde(strikethrough) ? "sub" : "del"
+        return "<\(tag)>\(visitChildren(strikethrough))</\(tag)>"
     }
 
     mutating func visitInlineCode(_ inlineCode: InlineCode) -> String {
@@ -541,8 +785,10 @@ private struct HTMLVisitor: MarkupVisitor {
         neutralizingLinkTags(inlineHTML.rawHTML)
     }
 
+    /// Reached only for a soft break outside any container's children; `visitInline` decides the
+    /// ones inside, where the neighbouring characters are known.
     mutating func visitSoftBreak(_ softBreak: SoftBreak) -> String {
-        "\n"
+        options.softBreaksAsLineBreaks ? "<br>\n" : "\n"
     }
 
     mutating func visitLineBreak(_ lineBreak: LineBreak) -> String {
