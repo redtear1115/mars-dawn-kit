@@ -152,9 +152,11 @@ enum MarkupCheck {
     static let allowedTags: Set<String> = [
         "p", "h1", "h2", "h3", "h4", "h5", "h6", "hr", "blockquote", "pre", "code", "div", "ul", "ol", "li",
         "input", "table", "thead", "tbody", "tr", "th", "td", "em", "strong", "del", "br", "a", "img",
+        "mark", "sup", "sub",  // HackMD inline marks (#155)
     ]
     static let allowedAttributes: Set<String> = [
         "data-line", "id", "class", "start", "type", "disabled", "checked", "style", "href", "title", "src", "alt",
+        "width", "height",  // HackMD image sizes (#152)
     ]
 
     /// Nil if `html` consists only of renderer-owned tags with well-formed, fully escaped
@@ -405,7 +407,9 @@ struct ScalarRendererTests {
         return document
     }
 
-    @Test(arguments: [UInt64(0x5EED), UInt64.random(in: 1...UInt64.max)])
+    // 11267054678755217302 once made a legitimate <mark> (0.7.0's ==mark==, #155) that the tag list didn't know
+    // yet; it stays as a fixed case so the list keeps up with what the renderer writes.
+    @Test(arguments: [UInt64(0x5EED), UInt64(11267054678755217302), UInt64.random(in: 1...UInt64.max)])
     func fuzzedDocumentsStayWellFormed(seed: UInt64) {
         var rng = SplitMix64(state: seed)
         for iteration in 0..<3000 {
