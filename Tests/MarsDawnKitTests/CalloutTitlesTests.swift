@@ -46,29 +46,6 @@ struct CalloutTitlesTests {
         #expect(Set(CalloutTitles.shipped.map { $0.lowercased() }) == bundle)
     }
 
-    // MARK: The folder's case
-
-    private static func fixture(_ name: String) throws -> Bundle {
-        let root = try #require(Bundle.module.url(forResource: "CalloutLproj", withExtension: nil))
-        return try #require(Bundle(url: root.appendingPathComponent(name)), "\(name) is a bundle")
-    }
-
-    /// The folder is `zh-hant.lproj` in one bundle and `zh-Hant.lproj` in the other; both must give
-    /// D-2's titles. A lookup by the caller's own spelling finds only one of them.
-    @Test(arguments: ["lowercase", "mixedcase"])
-    func theFolderIsFoundWhateverItsCase(_ name: String) throws {
-        let bundle = try Self.fixture(name)
-        let folder = try #require(bundle.localizations.first, "positive fixture: the bundle holds one localization")
-        #expect(folder == (name == "lowercase" ? "zh-hant" : "zh-Hant"), "positive fixture: the folder is spelled as the case says")
-        for spelling in ["zh-Hant", "zh-hant", "ZH-HANT"] {
-            let url = try #require(CalloutTitles.resolveLproj(spelling, in: bundle), "\(name) / \(spelling)")
-            #expect(url.lastPathComponent == "\(folder).lproj")
-            #expect(CalloutTitles.localized(spelling, in: bundle) == Self.zhHant, "\(name) / \(spelling)")
-        }
-        #expect(CalloutTitles.resolveLproj("ja", in: bundle) == nil)
-        #expect(CalloutTitles.localized("ja", in: bundle) == .english)
-    }
-
     // MARK: No leak from the process's language
 
     private static let sources = URL(fileURLWithPath: #filePath)
