@@ -92,6 +92,44 @@ struct PreviewMermaidRedrawSafetyTests {
         #expect(try await Self.runThemePath(theme) == 0, "theme path still green with only :828 reverted")
     }
 
+    // MARK: The last good drawing survives repeated failing edits and a redraw.
+
+    static func diagram(_ source: String) -> String {
+        #"<div class="mermaid-block" data-line="1"><pre class="mermaid-source">"# + source + #"</pre></div>"#
+    }
+
+    /// valid → invalid → invalid → theme change. Returns, after each step, how many drawn SVGs the
+    /// page shows. The base page shows the last good drawing throughout: 1/1/1/1.
+    static func lastGoodDrawingSequence(_ copy: PreviewPageCopy) async throws -> [Int] {
+        let webView = try await loadSecurityPreview(configuration: copy.makeConfiguration())
+        let shown = { try await previewInt(webView, "document.querySelectorAll('#content .mermaid-output svg').length") }
+        var counts: [Int] = []
+        try await previewUpdate(diagram("flowchart TD\n  A --> B"), in: webView)
+        try await settleRender(webView); counts.append(try await shown())
+        try await previewUpdate(diagram("flowchart TD\n  A --> B -->"), in: webView)
+        try await settleRender(webView); counts.append(try await shown())
+        try await previewUpdate(diagram("flowchart TD\n  A --> B --> -->"), in: webView)
+        try await settleRender(webView); counts.append(try await shown())
+        _ = try await webView.evaluateJavaScript("window.MarsDawn.setTheme('classic')")
+        try await settleRender(webView); counts.append(try await shown())
+        return counts
+    }
+
+    @Test func lastGoodDrawingSurvivesFailingEditsAndRedraw() async throws {
+        let copy = try PreviewPageCopy(); defer { copy.cleanUp() }
+        let counts = try await Self.lastGoodDrawingSequence(copy)
+        #expect(counts == [1, 1, 1, 1])
+    }
+
+    /// Control: without keeping the placeholder, the drawing is lost on the second failing edit.
+    @Test func droppingPlaceholderKeepLosesTheDrawing() async throws {
+        let copy = try PreviewPageCopy(); defer { copy.cleanUp() }
+        try copy.dropPlaceholderKeep()
+        let counts = try await Self.lastGoodDrawingSequence(copy)
+        #expect(counts.count == 4 && counts[0] == 1 && counts[1] == 1)
+        #expect(counts[2] == 0 && counts[3] == 0, "control should lose the drawing: \(counts)")
+    }
+
     // MARK: S0b (F3) — a diagram can't lower Mermaid's security level.
 
     /// Renders a diagram that asks for loose mode and returns Mermaid's effective level, plus

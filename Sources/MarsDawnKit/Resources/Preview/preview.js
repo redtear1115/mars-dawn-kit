@@ -380,6 +380,9 @@
     // Keep the previous diagram on screen while the edited one renders (no flicker).
     if (placeholderSVG) {
       target.innerHTML = placeholderSVG;
+      // Only ever another block's `_mdSVG`, so it stays this code's own output; keeping it means a
+      // second failing edit or a theme change still has the last good drawing to show.
+      block._mdSVG = placeholderSVG;
       block.classList.add("rendered", "stale");
     }
     const id = `mermaid-${++renderCounter}`;

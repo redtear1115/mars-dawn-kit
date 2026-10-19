@@ -84,6 +84,13 @@ final class PreviewPageCopy {
         return self
     }
 
+    /// Drops the line that keeps a shown placeholder as the block's own SVG, so a second failing
+    /// edit or a redraw has nothing to show (control for the last-good-drawing test).
+    @discardableResult func dropPlaceholderKeep() throws -> PreviewPageCopy {
+        try patch(previewJSURL, "      block._mdSVG = placeholderSVG;\n", "      // control: placeholder not kept\n")
+        return self
+    }
+
     /// Plants `loose` into `configureMermaid`'s `mermaid.initialize` call (F3 control).
     @discardableResult func plantLooseMermaid() throws -> PreviewPageCopy {
         try patch(previewJSURL, #"securityLevel: "strict","#, #"securityLevel: "loose","#)
