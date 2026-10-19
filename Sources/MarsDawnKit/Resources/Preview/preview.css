@@ -341,6 +341,61 @@ img { max-width: 100%; }
 }
 .math-error { color: var(--hl-keyword); }
 
+/* ---- Japanese documents (kit #164) ----
+   preview.js sets `#content`'s `lang` to "ja" (or a ja-… tag) when the renderer says the document
+   is Japanese. Its kana and Han characters then take a Japanese face of the theme's design
+   (preview.js sets `data-font-design` from the theme's body stack), in front of the theme's own
+   stack: every other character -- Latin letters, digits, everything outside these ranges -- skips
+   the alias, which has no glyph for it, and gets exactly the font it had. Code (`--font-mono`),
+   KaTeX, highlight.js and Mermaid (which reads the root's `--font-body`) are untouched.
+   `local()` names an installed face and fetches nothing, so the page's CSP `font-src` is not
+   involved. Static rules, before the generated theme rules below, so no theme's output changes. */
+@font-face {
+  font-family: "MD JA Sans";
+  src: local("HiraginoSans-W3");
+  font-weight: 400;
+  unicode-range: U+3000-303F, U+3040-30FF, U+31F0-31FF, U+FF66-FF9F, U+3400-4DBF, U+4E00-9FFF, U+F900-FAFF, U+20000-2FA1F;
+}
+@font-face {
+  font-family: "MD JA Sans";
+  src: local("HiraginoSans-W6");
+  font-weight: 700;
+  unicode-range: U+3000-303F, U+3040-30FF, U+31F0-31FF, U+FF66-FF9F, U+3400-4DBF, U+4E00-9FFF, U+F900-FAFF, U+20000-2FA1F;
+}
+@font-face {
+  font-family: "MD JA Serif";
+  src: local("HiraMinProN-W3");
+  font-weight: 400;
+  unicode-range: U+3000-303F, U+3040-30FF, U+31F0-31FF, U+FF66-FF9F, U+3400-4DBF, U+4E00-9FFF, U+F900-FAFF, U+20000-2FA1F;
+}
+@font-face {
+  font-family: "MD JA Serif";
+  src: local("HiraMinProN-W6");
+  font-weight: 700;
+  unicode-range: U+3000-303F, U+3040-30FF, U+31F0-31FF, U+FF66-FF9F, U+3400-4DBF, U+4E00-9FFF, U+F900-FAFF, U+20000-2FA1F;
+}
+@font-face {
+  font-family: "MD JA Rounded";
+  src: local("HiraMaruProN-W4");
+  font-weight: 400;
+  unicode-range: U+3000-303F, U+3040-30FF, U+31F0-31FF, U+FF66-FF9F, U+3400-4DBF, U+4E00-9FFF, U+F900-FAFF, U+20000-2FA1F;
+}
+/* Maru Gothic has no bold. A synthesized bold is drawn several times over in a PDF, so its text
+   layer would read every bold run several times: bold rounded text takes Hiragino Sans W6. */
+@font-face {
+  font-family: "MD JA Rounded";
+  src: local("HiraginoSans-W6");
+  font-weight: 700;
+  unicode-range: U+3000-303F, U+3040-30FF, U+31F0-31FF, U+FF66-FF9F, U+3400-4DBF, U+4E00-9FFF, U+F900-FAFF, U+20000-2FA1F;
+}
+#content:lang(ja) {
+  --font-ja: "MD JA Sans";
+  font-family: var(--font-ja), var(--font-body);
+  --font-heading: var(--font-ja), var(--font-body);
+}
+:root[data-font-design="serif"] #content:lang(ja) { --font-ja: "MD JA Serif"; }
+:root[data-font-design="rounded"] #content:lang(ja) { --font-ja: "MD JA Rounded"; }
+
 /* ---- Per-theme style rules (kit #124) ----
    Generated from each built-in's theme.json by ThemeCSSGenerator and spliced in here by
    PreviewSchemeHandler, at this exact position: after the shared rules above, and before the
