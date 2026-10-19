@@ -22,3 +22,17 @@
 "Important" = "重要";
 "Warning" = "警告";
 "Caution" = "危険";
+
+/* JSON and YAML tree page (mars-dawn-kit#128). Placeholders are replaced as plain text; keep them unchanged. */
+"{n} items" = "{n} 項目";
+"1 item" = "1 項目";
+"Show {n} More" = "さらに {n} 項目を表示";
+"Circular reference" = "循環参照";
+"Part of this file is collapsed to keep the preview responsive. Click a row to expand it." = "プレビューの動作を軽く保つため、一部を折りたたんでいます。行をクリックすると展開されます。";
+"This file is too deeply nested or too large to show as a tree." = "このファイルは階層が深すぎるか大きすぎるため、ツリーで表示できません。";
+"This file is larger than {size} MB, so it can't be shown as a tree." = "このファイルは {size} MB を超えているため、ツリーで表示できません。";
+"This file isn't UTF-8 text, so it can't be shown as a tree." = "このファイルは UTF-8 のテキストではないため、ツリーで表示できません。";
+"This file isn't valid {format} (line {line}, column {column})." = "このファイルは有効な {format} ではありません（{line} 行目、{column} 列目）。";
+"This file isn't valid {format}." = "このファイルは有効な {format} ではありません。";
+"To read it as text, choose View ▸ Source Only in MarsDawn." = "テキストとして読むには、MarsDawn で「表示」▸「ソースのみ」を選択してください。";
+"Show Source Only" = "ソースのみを表示";

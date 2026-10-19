@@ -1,0 +1,50 @@
+js-yaml 5.5.0
+https://github.com/nodeca/js-yaml
+
+Vendored from the npm package js-yaml@5.5.0 (package.json "version": "5.5.0"; the browser build
+carries no version banner, so this record and VendoredJSYAMLTests are where the version is kept)
+https://registry.npmjs.org/js-yaml/-/js-yaml-5.5.0.tgz
+(registry integrity
+sha512-paNr4LFIFPjeeSmwNYdrb8FafLLG/Cr2Af3GjbsHJ5CxIjH4r0c2emlmRdAtpPAieP1gRVzk6buBbVP5gBMGAg==,
+checked against the downloaded tarball before extracting it;
+tarball SHA-256 23cb2e121ad69acd15fc786b7a9265a81eeeaa9f684ee73e717d6ecdbd8b0c90;
+the tarball's package.json SHA-256 3ad7fe3eba5cf97410524a34ae9638f9c711cf0f25b3239c2ff2b2a604ecea1d).
+js-yaml.umd.min.js is the package's dist/browser/js-yaml.umd.min.js, verbatim, including its
+last line `//# sourceMappingURL=js-yaml.umd.min.js.map` (the map is not vendored; nothing asks
+for it unless Web Inspector is open). It is a classic script that sets the global `jsyaml`; the
+package's .mjs builds are not used (they need a module loader, which data.html does not allow).
+Only data.html loads it; index.html never does.
+
+Advisories: npm bulk advisory API and the GitHub advisory database, 2026-10-19 12:28 CST: none
+for js-yaml 5.5.0 (the same lookups list GHSA-r3ph-w7gj-g6xm for 5.4.0). RELEASING.md asks for
+the lookup again before every kit release.
+
+Replacing js-yaml.umd.min.js means redoing this record; VendoredJSYAMLTests fails until the
+record matches the file.
+
+SHA-256 of each vendored file, relative to this folder:
+  02970a652376ad653ff069c606ee7440b0514f52ed94a98426cb52426c8e5a02  js-yaml.umd.min.js
+
+The package's licence follows, verbatim.
+
+(The MIT License)
+
+Copyright (C) 2011-2015 by Vitaly Puzrin
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.

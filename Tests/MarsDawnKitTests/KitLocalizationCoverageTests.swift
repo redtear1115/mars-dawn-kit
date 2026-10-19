@@ -12,10 +12,21 @@ struct KitLocalizationCoverageTests {
     nonisolated static let others = ["zh-Hans", "ja", "de", "fr", "es", "ko"]
     /// Translations that are the English word itself on purpose, so "equals the key" isn't a fallback.
     nonisolated static let sameAsEnglish: [String: Set<String>] = ["de": ["Modern"], "fr": ["Important"]]
-    /// Keys allowed to be missing from a language, per language. Empty: every language ships every
-    /// key (the callout titles of kit #135 landed in all seven with kit #183). A pending entry
-    /// FAILS once its translation lands: delete it from here then.
-    nonisolated static let pending: [String: Set<String>] = [:]
+    /// Keys allowed to be missing from a language, per language. A pending entry FAILS once its
+    /// translation lands: delete it from here then. The callout titles of kit #135 landed in all
+    /// seven with kit #183. The JSON and YAML page's labels (kit #128) are approved in zh-Hant and
+    /// ja; these five languages get them through needs-i18n, gated before the 0.7.2 tag.
+    nonisolated static let pendingDataLabelKeys: Set<String> = Set(DataLabels.english.dictionary.values)
+    nonisolated static let pendingLocalizations = ["de", "es", "fr", "ko", "zh-Hans"]
+    nonisolated static let pending: [String: Set<String>] = Dictionary(
+        uniqueKeysWithValues: pendingLocalizations.map { ($0, pendingDataLabelKeys) }
+    )
+
+    @Test func thePendingSetIsExactlyFiveLanguagesTimesTheTwelveLabels() {
+        #expect(Self.pendingDataLabelKeys.count == 12)
+        #expect(Set(Self.pending.keys) == ["de", "es", "fr", "ko", "zh-Hans"])
+        #expect(Set(Self.others + [Self.reference]).subtracting(Self.pending.keys) == ["zh-Hant", "ja"])
+    }
 
     nonisolated private static let tables = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
@@ -37,6 +48,18 @@ struct KitLocalizationCoverageTests {
         let reference = try Self.keys(Self.reference)
         #expect(reference.count >= 16, "positive fixture: zh-Hant has the kit's strings (found \(reference.count))")
         #expect(reference["Dawn"] == "黎明")
+    }
+
+    /// The JSON and YAML page's labels (kit #128) were written into every table as marked
+    /// placeholders while their copy waits for approval (needs-copy). This fails, naming each one,
+    /// until every placeholder is replaced by the approved translation.
+    nonisolated static let placeholderMarker = "NEEDS-COPY"
+
+    @Test(arguments: [reference] + others)
+    func noPlaceholderCopyIsLeft(in localization: String) throws {
+        let table = try Self.keys(localization)
+        let placeholders = table.filter { $0.value.contains(Self.placeholderMarker) }.keys.sorted()
+        #expect(placeholders.isEmpty, "\(localization): \(placeholders.count) placeholder(s) awaiting copy (kit #128): \(placeholders)")
     }
 
     @Test(arguments: others)
