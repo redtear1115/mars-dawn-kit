@@ -19,7 +19,7 @@ import WebKit
 struct DataDocumentMeasurementTests {
     nonisolated static let set = ProcessInfo.processInfo.environment["MARSDAWN_DATA_MEASURE_SET"]
     static let mebibyte = 1024 * 1024
-    static let killAt: UInt64 = 8 * 1024 * 1024 * 1024
+    nonisolated static let killAt: UInt64 = 8 * 1024 * 1024 * 1024
 
     struct Footprint { let current: UInt64; let peak: UInt64 }
 
