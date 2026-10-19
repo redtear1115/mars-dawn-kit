@@ -121,7 +121,9 @@ struct ContentLanguageTests {
 
     // MARK: G5 — only a validated tag reaches the marker
 
-    @Test(arguments: ["ja\"><script>x</script>", "ja\" onclick=\"x", "\"ja\"><b>", "ja'><i>", "ja&quot;", "ja\u{0}", "ja\n"])
+    /// The `ja-…` ones pass a primary-subtag check, so only the shape check stops them.
+    @Test(arguments: ["ja-\"><script>x</script>", "ja-x\" onclick=\"y", "ja-<b>", "'ja-\"><i>'", "ja-JP\u{301}",
+                      "ja\"><script>x</script>", "ja\" onclick=\"x", "\"ja\"><b>", "ja'><i>", "ja&quot;", "ja\u{0}", "ja\n"])
     func aHostileLangNeverReachesTheMarker(_ value: String) {
         for body in ["かなかな\n", "English.\n"] {
             let markdown = Self.withLang(value, body: body)
