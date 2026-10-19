@@ -13,7 +13,9 @@ import cmark_gfm_extensions
 // 1. A depth and size pre-scan with cmark-gfm's own C parser, configured exactly as
 //    swift-markdown configures it, walked without recursion. Input nested past
 //    `ParseLimits.maxDepth`, or with more than `ParseLimits.maxNodes` nodes, is never turned
-//    into Swift nodes.
+//    into Swift nodes. The pre-scan feeds cmark in fixed-size chunks and stops as soon as the
+//    blocks built so far already prove the budget is exceeded (`CMarkDepthScan`), so a
+//    document whose excess is in blocks over many lines never gets its whole cmark tree.
 // 2. Before that, a linear scan of the source bounds what cmark's table extension would
 //    build and how long it would take (see `TableCostBound`), so hostile tables are refused
 //    before cmark sees them.
@@ -50,8 +52,18 @@ public struct ParseLimits: Sendable, Equatable {
     /// Documents whose tree (the document node counts as 1) plus two levels of headroom
     /// is deeper than this are rejected. Clamped to `1...depthCeiling`.
     public let maxDepth: Int
-    /// Documents larger than this many UTF-8 bytes are rejected. `nil` means no limit.
+    /// Documents larger than this many UTF-8 bytes are rejected (`.tooLarge`), before anything
+    /// else looks at them. `nil` means no limit.
     public let maxBytes: Int?
+
+    /// The default byte cap: 16 MiB (16,777,216 UTF-8 bytes).
+    ///
+    /// The node budget bounds what a document becomes, but not every part of it can be stopped
+    /// early: cmark builds inline nodes only once the whole source is in, and a single line is
+    /// processed in one step. This cap bounds those too, by the size of the input. It sits far
+    /// above any document the node budget accepts (about 2.4 MB at the densest), so it only
+    /// decides for documents that would be refused anyway, sooner and at a known cost.
+    public static let defaultMaxBytes = 16_777_216
 
     /// The default node budget.
     ///
@@ -67,7 +79,8 @@ public struct ParseLimits: Sendable, Equatable {
     /// At least 1.
     public let maxNodes: Int
 
-    public init(maxDepth: Int = ParseLimits.depthCeiling, maxBytes: Int? = nil, maxNodes: Int = ParseLimits.defaultMaxNodes) {
+    /// `maxBytes` defaults to `defaultMaxBytes`; pass `nil` explicitly for no byte limit.
+    public init(maxDepth: Int = ParseLimits.depthCeiling, maxBytes: Int? = ParseLimits.defaultMaxBytes, maxNodes: Int = ParseLimits.defaultMaxNodes) {
         self.maxDepth = min(max(maxDepth, 1), Self.depthCeiling)
         self.maxBytes = maxBytes.map { max($0, 0) }
         self.maxNodes = max(maxNodes, 1)
@@ -233,22 +246,60 @@ public enum MarkdownParsing {
     /// The only parse in the package. Worker threads only.
     static func parseChecked(_ source: String, limits: ParseLimits = .default) -> ParseOutcome {
         precondition(isOnWorker, "Markdown is parsed only on a parsing worker")
+        switch decide(source, limits: limits) {
+        case .tooLarge:
+            return .tooLarge
+        case .tooComplexTables, .tooComplexEarly, .tooComplexFinal:
+            return .tooComplex
+        case .tooDeep(let depth):
+            return .tooDeep(depth: depth)
+        case .accept:
+            return .document(Document(parsing: source))
+        }
+    }
+
+    /// Which check decided a document, and on what (test instrumentation, and `parseChecked`'s
+    /// own logic). `.tooComplexEarly` is the pre-scan stopping before cmark has the whole
+    /// source; `.tooComplexFinal` is the exact count after it.
+    enum Decision: Equatable {
+        case tooLarge
+        case tooComplexTables
+        case tooComplexEarly(checkpoint: Int, bound: Int)
+        case tooDeep(depth: Int)
+        case tooComplexFinal(nodes: Int)
+        case accept(depth: Int, nodes: Int)
+    }
+
+    /// The checks `parseChecked` makes, in order. Needs no worker: nothing here recurses.
+    ///
+    /// `chunkSize` and `earlyStop` exist for tests; everywhere else they are the defaults.
+    static func decide(
+        _ source: String,
+        limits: ParseLimits,
+        chunkSize: Int = CMarkDepthScan.chunkSize,
+        earlyStop: Bool = CMarkInternals.isAudited
+    ) -> Decision {
         if let maxBytes = limits.maxBytes, source.utf8.count > maxBytes {
             return .tooLarge
         }
         let tables = TableCostBound.measure(source)
         if tables.cells > limits.maxNodes || tables.work > TableCostBound.maxWork {
-            return .tooComplex
+            return .tooComplexTables
         }
-        let scan = CMarkDepthScan.measure(source)
-        // swift-markdown adds one level cmark doesn't have (a table body); keep one more spare.
-        if scan.depth > limits.maxDepth - 2 {
-            return .tooDeep(depth: scan.depth)
+        let budget = earlyStop ? limits.maxNodes : nil
+        switch CMarkDepthScan.scan(source, stopAbove: budget, chunkSize: chunkSize) {
+        case .stoppedEarly(let checkpoint, let bound):
+            return .tooComplexEarly(checkpoint: checkpoint, bound: bound)
+        case .measured(let depth, let nodes):
+            // swift-markdown adds one level cmark doesn't have (a table body); keep one more spare.
+            if depth > limits.maxDepth - 2 {
+                return .tooDeep(depth: depth)
+            }
+            if nodes > limits.maxNodes {
+                return .tooComplexFinal(nodes: nodes)
+            }
+            return .accept(depth: depth, nodes: nodes)
         }
-        if scan.nodes > limits.maxNodes {
-            return .tooComplex
-        }
-        return .document(Document(parsing: source))
     }
 
     /// `stackSize` is `workerStackSize` everywhere but `StackMarginTests`, which asks for a
@@ -288,28 +339,139 @@ private let workerKey: pthread_key_t = {
 // MARK: - Depth pre-scan
 
 /// Measures a document's nesting depth and node count with cmark-gfm directly, without recursion.
+///
+/// `scan` feeds cmark the source in chunks of `chunkSize` bytes. Between two chunks (a
+/// checkpoint) it counts a lower bound on the final node count from the tree built so far, and
+/// stops when that bound is over the budget: the parser is freed with `cmark_parser_free` and
+/// nothing else, so the rest of the tree, and every inline node, is never built. A document it
+/// does not stop goes on through `cmark_parser_finish` on the same parser and is counted exactly,
+/// as before; that count, not the bound, decides it.
+///
+/// The bound (`lowerBound(below:)`) is the number of block nodes reachable from the parser's
+/// root, minus every paragraph on the chain of last children from the root. Why every node it
+/// counts is still in the finished tree (swift-cmark 0.8.0; `CMarkInternals` turns this off for
+/// any other build):
+/// - A checkpoint falls between complete lines: `cmark_parser_feed` processes only whole lines
+///   and keeps a trailing partial line in its line buffer. The table row that table.c frees when
+///   a line turns out not to be a row (table.c:574) is created and freed within one line, so no
+///   checkpoint sees it.
+/// - Apart from that row, the block phase removes a node only in `finalize`, which frees a
+///   paragraph that held nothing but link reference or `^[…]:` attribute definitions
+///   (blocks.c:345-349, 289-305). `finalize` runs only on an open node (it asserts so), and the
+///   only open paragraph between two lines is `parser->current`, the deepest node on the chain of
+///   last children: a paragraph is opened only as the line's container (blocks.c:1468-1476), and
+///   it is closed as soon as a later line adds a block after it or above it, or doesn't continue
+///   it. A closed node is never opened again. So every paragraph that can still be freed is on
+///   that chain, and it is not counted.
+/// - Nothing else unlinks or frees a block: no postprocess hook is attached (table, strikethrough
+///   and tasklist have none), footnotes are off, and `cmark_parser_finish`'s inline phase and
+///   text consolidation add and merge only inline nodes. Setext headings and table headers
+///   change a paragraph's type in place (blocks.c:1236, table.c:481), keeping the node; a table
+///   header may insert a paragraph before the table (table.c:416), adding one.
+/// - Inline nodes count zero: none exist before `cmark_parser_finish`, and the text nodes it
+///   makes are consolidated before the exact count (blocks.c:1573).
+/// So the counted nodes are distinct nodes of the final tree, and the bound is at most its count.
+/// A lazy continuation line, or a line that a fenced code block, an HTML block or indented code
+/// swallows, adds no node and so cannot lower the bound below anything already counted.
+///
+/// A single line cannot be interrupted (cmark processes it in one call, and the final
+/// unterminated line inside `cmark_parser_finish`), so a document whose excess is on one line
+/// (`>>>>…`, `- - - …`) is built whole, as before, and refused by the exact count or depth. The
+/// byte cap (`ParseLimits.defaultMaxBytes`) bounds those.
 enum CMarkDepthScan {
+    /// Bytes fed between two checkpoints. Fixed, so the checkpoints don't depend on the content.
+    /// At 1 MiB a document under it is fed in one piece, exactly as before, and a 16 MiB one
+    /// has 15 checkpoints; the bound is a walk over at most the budget plus one chunk's blocks.
+    static let chunkSize = 1 << 20
+
+    enum Result: Equatable {
+        /// The finished tree: the depth of its deepest node (the document node counts as 1) and
+        /// its number of nodes. Both `Int.max` if cmark fails to allocate.
+        case measured(depth: Int, nodes: Int)
+        /// Stopped at checkpoint `checkpoint` (1-based: after `checkpoint` chunks) with a lower
+        /// bound `bound` over the budget.
+        case stoppedEarly(checkpoint: Int, bound: Int)
+    }
+
     /// The depth of the deepest node, counting the document node as 1.
     static func maximumDepth(of source: String) -> Int {
         measure(source).depth
     }
 
-    /// The depth of the deepest node (the document node counts as 1) and the number of nodes.
+    /// The depth of the deepest node (the document node counts as 1) and the number of nodes,
+    /// with no budget: the whole source in one feed, as swift-markdown parses it.
     /// Both are `Int.max` if cmark fails to allocate, so a failure is always rejected.
     static func measure(_ source: String) -> (depth: Int, nodes: Int) {
+        guard case .measured(let depth, let nodes) = scan(source, stopAbove: nil, chunkSize: .max) else {
+            preconditionFailure("A scan with no budget never stops early")
+        }
+        return (depth, nodes)
+    }
+
+    /// Feeds `source` in `chunkSize`-byte chunks. With a `stopAbove` budget, stops at the first
+    /// checkpoint whose lower bound is over it; `onCheckpoint` sees every checkpoint's bound
+    /// (tests), and `stopAtCheckpoint` stops at that checkpoint whatever its bound (tests).
+    static func scan(
+        _ source: String,
+        stopAbove budget: Int?,
+        chunkSize: Int = chunkSize,
+        onCheckpoint: ((_ checkpoint: Int, _ bound: Int) -> Void)? = nil,
+        stopAtCheckpoint: Int? = nil
+    ) -> Result {
+        precondition(chunkSize > 0)
+        var copy = source
+        return copy.withUTF8 { bytes in
+            scan(bytes: bytes, stopAbove: budget, chunkSize: chunkSize, onCheckpoint: onCheckpoint,
+                 stopAtCheckpoint: stopAtCheckpoint)
+        }
+    }
+
+    private static func scan(
+        bytes: UnsafeBufferPointer<UInt8>,
+        stopAbove budget: Int?,
+        chunkSize: Int,
+        onCheckpoint: ((_ checkpoint: Int, _ bound: Int) -> Void)?,
+        stopAtCheckpoint: Int?
+    ) -> Result {
         // The same setup as swift-markdown's MarkupParser.parseString (swift-markdown 0.8.0):
         // TABLE_SPANS | SMART | SOURCEPOS; table, strikethrough and tasklist; fed by length.
         cmark_gfm_core_extensions_ensure_registered()
         let options = CMARK_OPT_TABLE_SPANS | CMARK_OPT_SMART | CMARK_OPT_SOURCEPOS
-        guard let parser = cmark_parser_new(options) else { return (.max, .max) }
+        guard let parser = cmark_parser_new(options) else { return .measured(depth: .max, nodes: .max) }
+        // On every path, early stop included, this is the only call that frees the parser and the
+        // tree under it: never `cmark_parser_finish` on a stop, and never the root by hand first.
         defer { cmark_parser_free(parser) }
         cmark_parser_attach_syntax_extension(parser, cmark_find_syntax_extension("table"))
         cmark_parser_attach_syntax_extension(parser, cmark_find_syntax_extension("strikethrough"))
         cmark_parser_attach_syntax_extension(parser, cmark_find_syntax_extension("tasklist"))
-        cmark_parser_feed(parser, source, source.utf8.count)
-        guard let root = cmark_parser_finish(parser) else { return (.max, .max) }
+
+        // Never a zero-length chunk (blocks.c:751 reads the first byte after a trailing `\r`): an
+        // empty source isn't fed at all, which leaves the parser exactly as feeding nothing would.
+        if let base = bytes.baseAddress, !bytes.isEmpty {
+            let start = UnsafeRawPointer(base).assumingMemoryBound(to: CChar.self)
+            var offset = 0
+            var checkpoint = 0
+            while offset < bytes.count {
+                let length = min(chunkSize, bytes.count - offset)
+                cmark_parser_feed(parser, start + offset, length)
+                offset += length
+                // A checkpoint between two chunks; after the last one, the exact count decides.
+                guard offset < bytes.count, budget != nil || onCheckpoint != nil || stopAtCheckpoint != nil else { continue }
+                checkpoint += 1
+                let bound = CMarkInternals.lowerBound(of: parser)
+                onCheckpoint?(checkpoint, bound)
+                if let budget, bound > budget {
+                    return .stoppedEarly(checkpoint: checkpoint, bound: bound)
+                }
+                if checkpoint == stopAtCheckpoint {
+                    return .stoppedEarly(checkpoint: checkpoint, bound: bound)
+                }
+            }
+        }
+
+        guard let root = cmark_parser_finish(parser) else { return .measured(depth: .max, nodes: .max) }
         defer { cmark_node_free(root) }
-        guard let iterator = cmark_iter_new(root) else { return (.max, .max) }
+        guard let iterator = cmark_iter_new(root) else { return .measured(depth: .max, nodes: .max) }
         defer { cmark_iter_free(iterator) }
 
         // Leaves get only an ENTER event and empty containers get ENTER then EXIT, so only
@@ -330,11 +492,124 @@ enum CMarkDepthScan {
                     open -= 1
                 }
             case CMARK_EVENT_DONE:
-                return (deepest, nodes)
+                return .measured(depth: deepest, nodes: nodes)
             default:
-                return (.max, .max)
+                return .measured(depth: .max, nodes: .max)
             }
         }
+    }
+}
+
+// MARK: - cmark internals
+
+/// The one place the pre-scan reads cmark-gfm's internals: `cmark_parser.root`, the tree under
+/// construction, which the public API only hands out from `cmark_parser_finish`. Everything else
+/// goes through public functions.
+///
+/// `lowerBound(below:)`'s proof (see `CMarkDepthScan`) was made by reading swift-cmark 0.8.0, so
+/// the early stop runs only when `isAudited` says this is that cmark-gfm; otherwise the pre-scan
+/// counts every document exactly, as it did before. No runtime check can tell swift-cmark 0.8.0
+/// from 0.9.0, whose C sources differ in one string literal's spelling and compile to the same
+/// code, so `isAudited` checks what a different cmark-gfm would most likely change: the version
+/// string, the layout of the struct it reads, and the node counts of a few documents chosen to
+/// exercise what the proof relies on. It does not detect a behaviour change that leaves all
+/// three alone. `CMarkVersionPinTests` fails when the package resolves any swift-cmark other than
+/// 0.8.0, and RELEASING.md says a bump means redoing the audit.
+enum CMarkInternals {
+    /// What `isAudited` compares, recorded from swift-cmark 0.8.0 (924936d0) on 64-bit Apple
+    /// platforms.
+    struct Fingerprint: Equatable {
+        var version: String
+        var parserSize: Int
+        var rootOffset: Int?
+        var probeNodes: [Int]
+        /// Whether, fed one byte at a time, every probe's bound stays at or under its exact count.
+        var probeBoundsHold: Bool
+
+        static let audited = Fingerprint(
+            version: "0.29.0.gfm.13", parserSize: 176, rootOffset: 16, probeNodes: probeNodeCounts, probeBoundsHold: true
+        )
+
+        static var current: Fingerprint {
+            Fingerprint(
+                version: String(cString: cmark_version_string()),
+                parserSize: MemoryLayout<cmark_parser>.size,
+                rootOffset: MemoryLayout<cmark_parser>.offset(of: \cmark_parser.root),
+                probeNodes: probes.map { CMarkDepthScan.measure($0).nodes },
+                probeBoundsHold: probes.allSatisfy { probe in
+                    let exact = CMarkDepthScan.measure(probe).nodes
+                    var holds = true
+                    _ = CMarkDepthScan.scan(probe, stopAbove: nil, chunkSize: 1) { _, bound in
+                        holds = holds && bound <= exact
+                    }
+                    return holds
+                }
+            )
+        }
+    }
+
+    /// Documents whose exact node counts are part of the fingerprint: reference and attribute
+    /// definitions that empty a paragraph, setext headings, a table with an inserted paragraph,
+    /// task lists, lazy lines, fences, HTML and a footnote-like definition.
+    static let probes: [String] = [
+        "[a]: /u\n[b]: /v\n\n[a] [b]\n",
+        "^[a]: (k: v)\n\npara ^[a](k: v)\n",
+        "[a]: /u\n===\n\nSetext\n---\n",
+        "lead\n| a | b |\n|---|:-:|\n| 1 | 2 |\n| 3 |\n",
+        "- [ ] task\n- [x] done\n  > quote\nlazy\n",
+        "```\n- a\n> b\n```\n<div>\n- c\n</div>\n\n    code\n",
+        "Term[^1]\n\n[^1]: note\n",
+    ]
+    static let probeNodeCounts = [7, 5, 5, 18, 13, 4, 5]
+
+    /// Whether this process's cmark-gfm matches `Fingerprint.audited`. Computed once.
+    static let isAudited: Bool = matches(.current, audited: .audited)
+
+    static func matches(_ current: Fingerprint, audited: Fingerprint) -> Bool {
+        current == audited
+    }
+
+    /// A lower bound on the final node count, from the tree under construction: block nodes
+    /// reachable from the root, minus every paragraph on the chain of last children.
+    static func lowerBound(of parser: UnsafeMutablePointer<cmark_parser>) -> Int {
+        guard let root = parser.pointee.root else { return 0 }
+        return lowerBound(below: root)
+    }
+
+    static func lowerBound(below root: UnsafeMutablePointer<cmark_node>) -> Int {
+        var count = 0
+        var node = root
+        // Pre-order, without recursion or allocation, descending only through blocks.
+        walk: while true {
+            if isBlock(node) {
+                count += 1
+                if let child = cmark_node_first_child(node) {
+                    node = child
+                    continue
+                }
+            }
+            while node != root {
+                if let next = cmark_node_next(node) {
+                    node = next
+                    continue walk
+                }
+                guard let parent = cmark_node_parent(node) else { break walk }
+                node = parent
+            }
+            break
+        }
+        var tip: UnsafeMutablePointer<cmark_node>? = root
+        while let current = tip {
+            if cmark_node_get_type(current) == CMARK_NODE_PARAGRAPH {
+                count -= 1
+            }
+            tip = cmark_node_last_child(current)
+        }
+        return count
+    }
+
+    private static func isBlock(_ node: UnsafeMutablePointer<cmark_node>) -> Bool {
+        (UInt32(cmark_node_get_type(node).rawValue) & UInt32(CMARK_NODE_TYPE_MASK)) == UInt32(CMARK_NODE_TYPE_BLOCK)
     }
 }
 

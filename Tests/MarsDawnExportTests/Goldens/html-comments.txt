@@ -1,0 +1,13 @@
+OS build: Version 26.6.2 (Build 25G83) | WebKit: 21624.5.1.11.3 | Paper: a4
+Page count: 1
+
+--- Page 1 ---
+Comments HCTITLE
+Text after the note HCTEXT1. Measurements were taken at the start and at the end of the
+period, and the difference between them is reported below.
+Lower case marker is not a marker HCLOWER.
+trailing words HCTRAIL
+HCDIV block
+Spaced marker is not a marker HCSPACED. Where the instructions say to wait, wait until the
+indicator stops flashing and only then continue with the next step.
+HCEND99

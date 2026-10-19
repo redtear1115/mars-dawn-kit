@@ -32,6 +32,34 @@ struct CLITests {
         #expect(help.contains("HackMD"))
     }
 
+    /// `--layout` (mars-dawn#432): the document layout is the default, and only the two layouts parse.
+    @Test func exportLayoutDefaultsToDocumentAndRejectsOthers() throws {
+        #expect(try MarsDawnCommand.Export.parse(["plan.md"]).layout == .document)
+        #expect(try MarsDawnCommand.Export.parse(["plan.md", "--layout", "document"]).layout == .document)
+        #expect(try MarsDawnCommand.Export.parse(["plan.md", "--layout", "manual"]).layout == .manual)
+        #expect(throws: (any Error).self) { try MarsDawnCommand.Export.parse(["plan.md", "--layout", "handout"]) }
+        #expect(throws: (any Error).self) { try MarsDawnCommand.Export.parse(["plan.md", "--layout"]) }
+        let help = MarsDawnCommand.Export.helpMessage()
+        #expect(help.contains("--layout") && help.contains("manual") && help.contains("<!--BREAK-->"))
+    }
+
+    /// `--toc-title` (mars-dawn#432 S2): "Contents" unless given.
+    @Test func exportTOCTitleDefaultsToContents() throws {
+        #expect(try MarsDawnCommand.Export.parse(["plan.md"]).tocTitle == "Contents")
+        #expect(try MarsDawnCommand.Export.parse(["plan.md", "--layout", "manual", "--toc-title", "目錄"]).tocTitle == "目錄")
+        #expect(MarsDawnCommand.Export.helpMessage().contains("--toc-title"))
+    }
+
+    /// `export --json` keeps to the published export.v1 schema (marsdawn-mcp, mars-dawn-website),
+    /// which has `additionalProperties: false`: exactly its fields, so no `layout` (S2 of
+    /// mars-dawn#432 removed the one S1 added).
+    @Test func exportJSONHasExactlyTheExportV1Fields() throws {
+        let fields = MarsDawnCommand.Export.jsonFields(
+            output: "/tmp/a.pdf", pages: 3, theme: "dawn", paper: .a4, diagramErrors: [], diagramErrorDetails: []
+        )
+        #expect(Set(fields.keys) == ["output", "pages", "theme", "paper", "diagramErrors", "diagramErrorDetails"])
+    }
+
     @Test func exportParsesEveryOption() throws {
         let command = try MarsDawnCommand.Export.parse([
             "plan.md", "-o", "/tmp/out.pdf", "--theme", "Classic", "--paper", "letter",

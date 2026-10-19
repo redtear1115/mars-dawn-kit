@@ -369,6 +369,10 @@
     const cached = svgCache.get(source);
     if (cached) {
       target.innerHTML = cached;
+      // The SVG a render produced, kept on the block itself (kit #157). Redraw paths read this,
+      // never .mermaid-output's current markup, so a diagram's output is always something this
+      // code produced and never markup a document supplied.
+      block._mdSVG = cached;
       block.classList.add("rendered");
       matchSequenceBands(target);
       return;
@@ -376,6 +380,9 @@
     // Keep the previous diagram on screen while the edited one renders (no flicker).
     if (placeholderSVG) {
       target.innerHTML = placeholderSVG;
+      // Only ever another block's `_mdSVG`, so it stays this code's own output; keeping it means a
+      // second failing edit or a theme change still has the last good drawing to show.
+      block._mdSVG = placeholderSVG;
       block.classList.add("rendered", "stale");
     }
     const id = `mermaid-${++renderCounter}`;
@@ -386,6 +393,7 @@
       if (svgCache.size > 64) svgCache.delete(svgCache.keys().next().value);
       if (!block.isConnected) return;
       target.innerHTML = svg;
+      block._mdSVG = svg;  // kit #157: see the cached path above.
       block.classList.add("rendered");
       matchSequenceBands(target);
       block.classList.remove("stale", "error");
@@ -777,8 +785,11 @@
   }
 
   // Every tag in RawHTMLSafety.swift's `neutralizedRawHTMLTags`, plus `meta` (a refresh navigates)
-  // and `base` (changes how relative URLs resolve).
-  const blockedElements = "link, meta, base, iframe, frame, object, embed, portal, fencedframe";
+  // and `base` (changes how relative URLs resolve). `script` and `noscript` are dropped as well
+  // (kit #157, owner decision 2026-10-19 D-157): rendered document output never needs either, and
+  // neither should reach the page even though the CSP and template parsing already keep a script
+  // inert.
+  const blockedElements = "link, meta, base, iframe, frame, object, embed, portal, fencedframe, script, noscript";
 
   function update(html, lines) {
     if (lines) lineCount = lines;
@@ -825,7 +836,7 @@
     for (const leftovers of pool.values()) {
       for (const el of leftovers) {
         if (el.classList.contains("mermaid-block")) {
-          const svg = el.querySelector(".mermaid-output")?.innerHTML;
+          const svg = el._mdSVG;  // kit #157: the SVG this code produced, not .mermaid-output's markup.
           if (svg) staleSVGs.push(svg);
         }
       }
@@ -859,7 +870,7 @@
     const all = [...content().querySelectorAll(".mermaid-block")].map((block) => {
       clearMermaidSkip(block);
       const output = block.querySelector(".mermaid-output");
-      const previous = output?.innerHTML;
+      const previous = block._mdSVG;  // kit #157: the SVG this code produced, not .mermaid-output's markup.
       output?.remove();
       return [block, previous];
     });

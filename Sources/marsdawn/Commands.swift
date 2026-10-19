@@ -17,7 +17,7 @@ struct MarsDawnCommand: AsyncParsableCommand {
         Pass --json for machine-readable results. Exit codes: 0 success, 1 invalid theme (theme commands only), \
         \(CLIFailure.Code.inputNotFound.rawValue) input not found, \
         \(CLIFailure.Code.appNotInstalled.rawValue) MarsDawn not installed (open only), \(CLIFailure.Code.outputExists.rawValue) output exists \
-        (use --force), \(CLIFailure.Code.exportFailed.rawValue) export failed, \(CLIFailure.Code.appCannotOpenFolders.rawValue) this MarsDawn \
+        (use --force), \(CLIFailure.Code.exportFailed.rawValue) export failed or input too large, \(CLIFailure.Code.appCannotOpenFolders.rawValue) this MarsDawn \
         can't show a folder (open only), \(CLIFailure.Code.skillInstallFailed.rawValue) skill --install couldn't write the file, 64 usage error (including theme preview's refused -o).
         """,
         version: MarsDawnCLI.version,
@@ -51,8 +51,17 @@ func printJSON(_ object: [String: Any]) {
     print(jsonString(object))
 }
 
+/// What `--json` prints for a `CLIFailure`.
+func failureJSONObject(_ failure: CLIFailure) -> [String: Any] {
+    ["ok": false, "error": failure.kind, "message": failure.message]
+}
+
 /// A failure with a stable exit code and a machine-readable kind.
+///
+/// The kind is its own value, not derived from the code alone: two kinds can share an exit code
+/// (`export_failed` and `input_too_large` both exit 5).
 struct CLIFailure: Error, CustomStringConvertible {
+    /// The exit code, and the kind each code reports unless a failure names another.
     enum Code: Int32 {
         case inputNotFound = 2
         case appNotInstalled = 3
@@ -73,9 +82,45 @@ struct CLIFailure: Error, CustomStringConvertible {
         }
     }
 
+    /// Kinds that share another kind's exit code.
+    enum SharedKind: String, CaseIterable {
+        /// The input is over the renderer's byte cap (`ParseLimits.defaultMaxBytes`); nothing was
+        /// rendered or written. Exits 5, like `export_failed`.
+        case inputTooLarge = "input_too_large"
+
+        var code: Code {
+            switch self {
+            case .inputTooLarge: .exportFailed
+            }
+        }
+    }
+
     let code: Code
+    /// The machine-readable kind `--json` prints as `error`.
+    let kind: String
     let message: String
     var description: String { message }
+
+    init(code: Code, message: String) {
+        self.code = code
+        self.kind = code.kind
+        self.message = message
+    }
+
+    init(_ shared: SharedKind, message: String) {
+        self.code = shared.code
+        self.kind = shared.rawValue
+        self.message = message
+    }
+
+    /// `export` refused an input over the byte cap.
+    static func inputTooLarge(_ input: URL, limit: Int) -> CLIFailure {
+        CLIFailure(
+            .inputTooLarge,
+            message: "\(input.path) is larger than \(limit.formatted(.number.grouping(.never))) bytes "
+                + "(\(limit.formatted(.byteCount(style: .memory)))), the most marsdawn renders. Nothing was written."
+        )
+    }
 
     /// Wording approved by the owner (#165).
     static func appCannotOpenFolders(app: URL) -> CLIFailure {
@@ -293,6 +338,7 @@ extension PreviewTheme: ExpressibleByArgument {
 }
 
 extension DocumentExporter.Paper: ExpressibleByArgument {}
+extension ExportLayout: ExpressibleByArgument {}
 
 // MARK: - open
 
@@ -619,6 +665,12 @@ extension MarsDawnCommand {
         @Option(help: "Paper size.")
         var paper: DocumentExporter.Paper = .a4
 
+        @Option(help: "Page layout: document (the default) or manual, with wider margins, a 25 mm binding side and every top-level heading on a new page, plus a cover (from the front matter's title, subtitle, version, date, author and logo), a table of contents of the level 1 and 2 headings, \"n / N\" page numbers and PDF bookmarks. <!--BREAK--> on its own line starts a new page in either.")
+        var layout: ExportLayout = .document
+
+        @Option(help: "Title of the manual layout's table of contents.")
+        var tocTitle: String = "Contents"
+
         @Flag(help: "Load images from the web while rendering.")
         var allowRemoteImages = false
 
@@ -671,13 +723,17 @@ extension MarsDawnCommand {
                     baseDirectory: input.deletingLastPathComponent(),
                     allowRemoteImages: allowRemoteImages,
                     paper: paper,
-                    softBreaksAsLineBreaks: breaks
+                    softBreaksAsLineBreaks: breaks,
+                    layout: layout,
+                    tocTitle: tocTitle
                 )
                 if FileManager.default.fileExists(atPath: destination.path) {
                     _ = try FileManager.default.replaceItemAt(destination, withItemAt: temporary)
                 } else {
                     try FileManager.default.moveItem(at: temporary, to: destination)
                 }
+            } catch DocumentExporter.ExportError.inputTooLarge(let limit) {
+                throw CLIFailure.inputTooLarge(input, limit: limit)
             } catch {
                 throw CLIFailure(code: .exportFailed, message: "Export failed: \(error.localizedDescription)")
             }
@@ -687,21 +743,34 @@ extension MarsDawnCommand {
                 text += "\nwarning: Mermaid diagram failed to render: \(message)"
             }
             options.report(
-                [
-                    "output": destination.path,
-                    "pages": result.pageCount,
-                    "theme": resolvedTheme().id,
-                    "paper": paper.rawValue,
-                    "diagramErrors": result.diagramErrors,
-                    "diagramErrorDetails": result.diagramErrorDetails.map { error -> [String: Any] in
-                        var entry: [String: Any] = ["message": error.message]
-                        if let fenceLine = error.fenceLine { entry["fenceLine"] = fenceLine }
-                        if let line = error.line { entry["line"] = line }
-                        return entry
-                    },
-                ],
+                Self.jsonFields(
+                    output: destination.path, pages: result.pageCount, theme: resolvedTheme().id, paper: paper,
+                    diagramErrors: result.diagramErrors, diagramErrorDetails: result.diagramErrorDetails
+                ),
                 text: text
             )
+        }
+
+        /// The `--json` result's fields (`report` adds `ok`). This is the published export.v1
+        /// schema (marsdawn-mcp, mars-dawn-website), which has `additionalProperties: false`, so
+        /// a new field here breaks its readers: the layout, for one, is not reported.
+        static func jsonFields(
+            output: String, pages: Int, theme: String, paper: DocumentExporter.Paper,
+            diagramErrors: [String], diagramErrorDetails: [DocumentExporter.DiagramError]
+        ) -> [String: Any] {
+            [
+                "output": output,
+                "pages": pages,
+                "theme": theme,
+                "paper": paper.rawValue,
+                "diagramErrors": diagramErrors,
+                "diagramErrorDetails": diagramErrorDetails.map { error -> [String: Any] in
+                    var entry: [String: Any] = ["message": error.message]
+                    if let fenceLine = error.fenceLine { entry["fenceLine"] = fenceLine }
+                    if let line = error.line { entry["line"] = line }
+                    return entry
+                },
+            ]
         }
     }
 }

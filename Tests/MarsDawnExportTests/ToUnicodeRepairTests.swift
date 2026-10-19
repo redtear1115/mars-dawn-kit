@@ -202,6 +202,59 @@ struct ToUnicodeRepairTests {
         #expect(outcome == .unchanged("already updated"))
     }
 
+    // MARK: Generated text (the manual layout's footer, mars-dawn#432 S2)
+
+    /// Text drawn after printing in a font of its own keeps the radicals of that text, not the
+    /// document's. The body font draws 頁目 with ⾴ in the source; the generated font draws 頁 and
+    /// the radical ⾯, neither of which the source has. Checked on the CMaps themselves: PDFKit's
+    /// extraction can read 頁 even where the CMap says ⾴ (spike M3), so it would hide the twin.
+    @Test func generatedTextKeepsItsOwnRadicalsInItsOwnFont() throws {
+        let body = "PingFangTC-Semibold", footer = "PingFangTC-Regular"
+        let original = Self.glyphRunPDF([(body, "頁目"), (footer, "頁⾯")])
+        func destinations(_ pdf: Data) -> [String: Set<UInt32>] {
+            Dictionary(ManualProbe.cmapDestinations(pdf).map { ($0.font, $0.destinations) }, uniquingKeysWith: { $0.union($1) })
+        }
+        let names = Set(ToUnicodeRepair.baseFontNames(forToUnicodeIn: [UInt8](original)).values)
+        #expect(names == [body, footer], "BaseFont names without subset tags: \(names)")
+        let unrepaired = destinations(original)
+        #expect(unrepaired[footer]?.isSuperset(of: [0x2FB4, 0x2FAF]) == true, "precondition: the footer font's CMap maps to radicals: \(String(describing: unrepaired[footer]))")
+        #expect(unrepaired[body]?.contains(0x2FB4) == true, "precondition: the body font's CMap maps 頁 to ⾴")
+
+        let source = "⾴ 目"
+        let generated = ToUnicodeRepair.GeneratedText(fonts: [footer], text: "頁 ⾯")
+        let (repaired, outcome) = ToUnicodeRepair.repair(original, source: source, generated: generated)
+        guard case .repaired = outcome else {
+            Issue.record("expected a repair, got \(outcome)")
+            return
+        }
+        let after = destinations(repaired)
+        // The footer: 頁 is the ideograph (its twin is only in the source), ⾯ stays the radical.
+        #expect(after[footer]?.contains(0x9801) == true && after[footer]?.contains(0x2FB4) == false, "footer: \(String(describing: after[footer]))")
+        #expect(after[footer]?.contains(0x2FAF) == true && after[footer]?.contains(0x9762) == false, "footer: \(String(describing: after[footer]))")
+        // The body keeps the source's radical and repairs the rest.
+        #expect(after[body]?.contains(0x2FB4) == true && after[body]?.contains(0x76EE) == true, "body: \(String(describing: after[body]))")
+        #expect(after[body].map { ManualProbe.radicals(in: $0) } == [0x2FB4], "body: \(String(describing: after[body]))")
+
+        // Control: with the source's keep set for every font (no generated text), the footer
+        // reads 頁 as the radical and ⾯ as the ideograph.
+        let sourceOnly = destinations(ToUnicodeRepair.repair(original, source: source).0)
+        #expect(sourceOnly[footer]?.contains(0x2FB4) == true && sourceOnly[footer]?.contains(0x9762) == true, "control: \(String(describing: sourceOnly[footer]))")
+        // A generated font that isn't in the file changes nothing.
+        let unknown = ToUnicodeRepair.repair(original, source: source, generated: .init(fonts: ["NoSuchFont-Regular"], text: "頁 ⾯")).0
+        #expect(destinations(unknown) == sourceOnly)
+    }
+
+    /// The footer the manual layout draws, "n / N" in its own font, maps nothing but ASCII.
+    @Test func theFooterFontMapsNoCJK() throws {
+        let original = Self.glyphRunPDF([(ManualLayout.footerFontName, "12 / 345"), ("PingFangTC-Regular", "頁")])
+        let generated = ToUnicodeRepair.GeneratedText(fonts: [ManualLayout.footerFontName], text: "12 / 345")
+        let repaired = ToUnicodeRepair.repair(original, source: "", generated: generated).0
+        for cmap in ManualProbe.cmapDestinations(repaired) where cmap.font == ManualLayout.footerFontName {
+            #expect(cmap.destinations.allSatisfy { $0 < 0x80 }, "\(cmap.destinations.sorted())")
+        }
+        #expect(ManualProbe.cmapDestinations(repaired).first { $0.font == "PingFangTC-Regular" }?.destinations.contains(0x9801) == true)
+    }
+
     // MARK: CMap syntax
 
     @Test func bfcharBfrangeAndArraysAreAllRewritten() throws {

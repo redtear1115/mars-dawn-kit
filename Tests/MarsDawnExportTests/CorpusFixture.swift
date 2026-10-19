@@ -1,5 +1,6 @@
 #if os(macOS)
 import Foundation
+@testable import MarsDawnExport
 
 /// One `expect.json` file: what a corpus fixture's export must contain
 /// (redtear1115/mars-dawn#2; schema documented in the corpus contract, not repeated here).
@@ -17,11 +18,37 @@ struct FixtureExpectation: Decodable {
     var images: Int?
     var allowRemoteImages: Bool = false
     var notes: String?
+    /// "manual" exports in the manual layout; absent is the document layout (S1 of mars-dawn#432).
+    var layout: ExportLayout = .document
+    /// Each string must be the first text on the page it appears on.
+    var startsPage: [String] = []
+    /// Each group's strings must all be on one page.
+    var samePage: [[String]] = []
+    /// The export has at least this many pages.
+    var minPages: Int?
+    /// No page may be without text (a blank page can still have ink, e.g. a rule).
+    var textOnEveryPage: Bool = false
+    /// Manual layout (S2 of mars-dawn#432): whether page 1 is a cover. Every manual fixture is
+    /// checked for its cover, contents, page numbers, bookmarks and links whether or not it
+    /// declares these; a declared value is checked as well.
+    var cover: Bool?
+    /// Manual layout: whether the cover shows an image (the front matter's `logo`).
+    var logo: Bool?
+    /// Manual layout: how many entries the contents lists (0: no contents).
+    var tocEntries: Int?
+    /// Manual layout: the contents spans at least this many pages.
+    var minTocPages: Int?
+    /// Manual layout: the final file's ToUnicode repair outcome, "repaired" or "unchanged"
+    /// (which means exactly `.unchanged("no radical destinations")`). Absent: either of the two,
+    /// and never another `.unchanged` reason.
+    var repair: String?
 
     init() {}
 
     private enum CodingKeys: String, CodingKey {
         case markers, markersOnLastPage, absent, placeholders, diagrams, images, allowRemoteImages, notes
+        case layout, startsPage, samePage, minPages, textOnEveryPage
+        case cover, logo, tocEntries, minTocPages, repair
     }
 
     init(from decoder: Decoder) throws {
@@ -34,6 +61,21 @@ struct FixtureExpectation: Decodable {
         images = try container.decodeIfPresent(Int.self, forKey: .images)
         allowRemoteImages = try container.decodeIfPresent(Bool.self, forKey: .allowRemoteImages) ?? false
         notes = try container.decodeIfPresent(String.self, forKey: .notes)
+        if let name = try container.decodeIfPresent(String.self, forKey: .layout) {
+            guard let parsed = ExportLayout(rawValue: name) else {
+                throw DecodingError.dataCorruptedError(forKey: .layout, in: container, debugDescription: "unknown layout \(name)")
+            }
+            layout = parsed
+        }
+        startsPage = try container.decodeIfPresent([String].self, forKey: .startsPage) ?? []
+        samePage = try container.decodeIfPresent([[String]].self, forKey: .samePage) ?? []
+        minPages = try container.decodeIfPresent(Int.self, forKey: .minPages)
+        textOnEveryPage = try container.decodeIfPresent(Bool.self, forKey: .textOnEveryPage) ?? false
+        cover = try container.decodeIfPresent(Bool.self, forKey: .cover)
+        logo = try container.decodeIfPresent(Bool.self, forKey: .logo)
+        tocEntries = try container.decodeIfPresent(Int.self, forKey: .tocEntries)
+        minTocPages = try container.decodeIfPresent(Int.self, forKey: .minTocPages)
+        repair = try container.decodeIfPresent(String.self, forKey: .repair)
     }
 }
 

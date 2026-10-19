@@ -1,0 +1,12 @@
+{
+  "layout": "manual",
+  "cover": true,
+  "logo": false,
+  "tocEntries": 10,
+  "repair": "repaired",
+  "textOnEveryPage": true,
+  "markers": ["JATITLE", "JASUB", "JALEAD", "JAC2S3P6", "JAEND99"],
+  "markersOnLastPage": ["JAEND99"],
+  "startsPage": ["JALEAD", "第一章 準備", "第二章 点検手順", "第三章 修理報告"],
+  "notes": "Manual layout S2 (mars-dawn#432), Japanese. Cover without a date or logo. Body kanji with radical twins (目 言 示 文), no radical in the source, so the repair is .repaired. The heading 目視点検 occurs twice."
+}
