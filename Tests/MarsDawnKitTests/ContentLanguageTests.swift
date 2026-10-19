@@ -64,7 +64,14 @@ struct ContentLanguageTests {
     }
 
     @Test func chineseMarksAreNotKana() {
+        #expect(ContentLanguage.detect(markdown: "「哈利・波特」\n") == nil)
         #expect(ContentLanguage.detect(markdown: "「哈利・波特」是一部小說，作者是英國人。\n") == nil)
+        // Each Common or Inherited scalar on its own counts as neither kana nor Han.
+        for value: UInt32 in [0x30FB, 0x30A0, 0x30FC, 0x3099, 0x309A, 0x309B, 0x309C, 0xFF65, 0xFF70, 0xFF9E, 0xFF9F] {
+            let text = String(Character(Unicode.Scalar(value)!))
+            let counts = ContentLanguage.counts(text)
+            #expect(counts.kana == 0 && counts.han == 0, "U+\(String(value, radix: 16, uppercase: true))")
+        }
         #expect(ContentLanguage.detect(markdown: "ー\n") == nil)
         #expect(ContentLanguage.detect(markdown: "ーー゛゜゠･ｰﾞﾟ\n") == nil)
         #expect(ContentLanguage.detect(markdown: "Plain English, no CJK at all.\n") == nil)
