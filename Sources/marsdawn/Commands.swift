@@ -725,7 +725,8 @@ extension MarsDawnCommand {
                     paper: paper,
                     softBreaksAsLineBreaks: breaks,
                     layout: layout,
-                    tocTitle: tocTitle
+                    tocTitle: tocTitle,
+                    calloutTitles: .preferred()
                 )
                 if FileManager.default.fileExists(atPath: destination.path) {
                     _ = try FileManager.default.replaceItemAt(destination, withItemAt: temporary)
