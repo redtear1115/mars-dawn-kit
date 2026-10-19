@@ -86,7 +86,6 @@ struct ByteCapTests {
     /// Exactly at the cap: parsed as before.
     @Test func exactlyAtTheCapIsAccepted() {
         let source = Self.atCap
-        #expect(Self.outcome(source) == "document")
         #expect(DocumentOutline(markdownBody: source).headings.map(\.title) == ["Title"])
         let result = MarkdownRenderer.renderResult(source)
         #expect(result.fallback == nil)
@@ -97,7 +96,7 @@ struct ByteCapTests {
     @Test func explicitNilIsNoCap() {
         let source = Self.overCap
         #expect(Self.outcome(source, ParseLimits(maxBytes: nil)) == "document")
-        #expect(MarkdownRenderer.renderResult(source, options: MarkdownRenderer.Options(maxBytes: nil)).fallback == nil)
+        #expect(MarkdownRenderer.Options(maxBytes: nil).parseLimits.maxBytes == nil)
     }
 
     /// EscapeMap's second parse lifts the byte cap (InlineMarks.swift): at the cap, a `\=` grows

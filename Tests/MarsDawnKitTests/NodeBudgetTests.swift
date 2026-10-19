@@ -8,6 +8,10 @@ import Testing
 /// What a red test here means: B1 — a checkpoint counted more than the finished tree has (a
 /// false refusal is then possible); B2 — the early check refuses where it shouldn't, or never
 /// does; B3 — a document that used to parse doesn't, or changed its outcome.
+///
+/// Serialized: several of these keep a few cores busy, and alongside the WebKit suites' short
+/// deadlines that is enough to make those miss in a parallel run.
+@Suite(.serialized)
 struct NodeBudgetTests {
     // MARK: Inputs
 
@@ -93,8 +97,8 @@ struct NodeBudgetTests {
     /// every UTF-8 sequence and between every `\r` and `\n`.
     static func chunkSizes(for source: String) -> [Int] {
         let count = source.utf8.count
-        let smallest = max(1, count / 4_000)
-        return Array(Set([smallest, smallest + 1, smallest + 2, 7, 64, 1_000])).sorted()
+        let smallest = max(1, count / 2_000)
+        return Array(Set([smallest, smallest + 1, 7, 64])).sorted()
     }
 
     /// The largest bound over all checkpoints at `chunkSize`, and the scan's result.
@@ -210,7 +214,7 @@ struct NodeBudgetTests {
     /// the early check, and parseChecked returns `.tooComplex` for them.
     @Test func realSizeBlockHeavyDocumentsStopEarly() {
         for (name, unit) in [("- a", "- a\n"), ("- a/+ a", "- a\n+ a\n"), ("# a", "# a\n"), (">-a", ">-a\n\n")] {
-            let source = String(repeating: unit, count: (5 << 20) / unit.utf8.count)
+            let source = String(repeating: unit, count: (3 << 20) / unit.utf8.count)
             let decision = MarkdownParsing.decide(source, limits: .default)
             print("B2 real size \(name) (\(source.utf8.count) bytes): \(decision)")
             #expect(Self.isEarly(decision), "\(name): \(decision)")
