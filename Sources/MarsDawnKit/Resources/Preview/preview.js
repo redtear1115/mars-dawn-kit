@@ -780,12 +780,36 @@
   // and `base` (changes how relative URLs resolve).
   const blockedElements = "link, meta, base, iframe, frame, object, embed, portal, fencedframe";
 
+  // The document's language (kit #164). The renderer writes one `<md-content-lang data-lang="…">`
+  // as the fragment's very first node when a document is Japanese, and nowhere else; a document
+  // can put elements at the top level only after a node the renderer wrote, so an element of that
+  // name anywhere but first is the document's own and is left alone as content. The value is
+  // checked again (ASCII BCP 47 shape, primary subtag `ja`, at most 35 characters) and only ever
+  // set as a property, so it can't become markup. JavaScript's `$` without the `m` flag matches
+  // only at the very end.
+  const languageTagPattern = /^[A-Za-z]{2,3}(-[A-Za-z0-9]{1,8})*$/;
+  function takeContentLanguage(fragment) {
+    const first = fragment.firstChild;
+    if (!first || first.nodeType !== Node.ELEMENT_NODE || first.localName !== "md-content-lang"
+        || first.attributes.length !== 1 || !first.hasAttribute("data-lang") || first.hasChildNodes()) {
+      return null;
+    }
+    first.remove();
+    const tag = first.getAttribute("data-lang");
+    return tag.length <= 35 && languageTagPattern.test(tag) && /^ja(-|$)/i.test(tag) ? tag : null;
+  }
+
   function update(html, lines) {
     if (lines) lineCount = lines;
     invalidateAnchors();
     const root = content();
     const template = document.createElement("template");
     template.innerHTML = html;
+    // First, before the filter and the pool see the fragment, so its children are exactly those
+    // of the same document without a marker. Every update sets or clears it.
+    const language = takeContentLanguage(template.content);
+    if (language) root.lang = language;
+    else root.removeAttribute("lang");
     // Defence in depth for RawHTMLSafety.swift: drop every element that can open a connection or
     // a nested document before anything reaches the page. Template content is inert, so none of
     // these has loaded anything yet.

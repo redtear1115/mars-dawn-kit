@@ -162,6 +162,12 @@ enum MarkupCheck {
     /// Nil if `html` consists only of renderer-owned tags with well-formed, fully escaped
     /// attribute values, and text with no '>' and only known entities; else what went wrong.
     static func problem(in html: String) -> String? {
+        // The language marker (kit #164) is renderer-owned only as the very first node, in exactly
+        // this shape; anywhere else, or in any other shape, it is a tag the renderer doesn't write.
+        var html = Substring(html)
+        if let marker = html.prefixMatch(of: /<md-content-lang data-lang="[A-Za-z0-9-]{2,35}"><\/md-content-lang>/) {
+            html = html[marker.range.upperBound...]
+        }
         let bytes = Array(html.utf8)
         guard ampersandsAreEntities(bytes) else { return "unknown entity" }
         var i = 0

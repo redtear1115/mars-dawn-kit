@@ -88,7 +88,7 @@ public enum MarkdownRenderer {
     /// Like `render`, also saying whether the source fallback was used and why.
     public static func renderResult(_ markdown: String, options: Options = Options()) -> RenderResult {
         if let tooLarge = tooLargeResult(markdown, options: options) { return tooLarge }
-        return renderSplit(markdown, options: options)
+        return markingLanguage(of: markdown, in: renderSplit(markdown, options: options))
     }
 
     /// Like `render`, waiting for a parsing worker without blocking.
@@ -99,7 +99,17 @@ public enum MarkdownRenderer {
         // and this overload must not block its caller doing it. Inside `onWorker` every
         // nested `withDocument` runs inline on that one worker, so the extraction and the
         // render still take one worker slot between them, as the render alone did before.
-        return await MarkdownParsing.onWorker { renderSplit(markdown, options: options) }
+        return await MarkdownParsing.onWorker { markingLanguage(of: markdown, in: renderSplit(markdown, options: options)) }
+    }
+
+    /// `result` with the language marker in front when `markdown` is Japanese (kit #164), and
+    /// `result` itself otherwise, byte for byte. The marker becomes the fragment's first node, so
+    /// it must go in front of HTML whose own first node the renderer wrote: front matter, a block,
+    /// the html-block wrapper or the source fallback, never a document's raw markup. `preview.js`
+    /// recognises it only there. A document over the byte limit is never scanned and gets none.
+    private static func markingLanguage(of markdown: String, in result: RenderResult) -> RenderResult {
+        guard let tag = ContentLanguage.detect(markdown: markdown) else { return result }
+        return RenderResult(html: ContentLanguage.markerHTML(tag) + result.html, fallback: result.fallback)
     }
 
     /// Splits off the front matter, lifts the math out and renders what is left. Parses, so it

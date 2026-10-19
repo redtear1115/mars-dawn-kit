@@ -300,7 +300,15 @@ struct PDFCorpus {
             let page = index + 1
             #expect(extent.minX >= margins.left - 0.5, "\(fixture.name): page \(page) text starts at x \(extent.minX), margin \(margins.left)")
             #expect(extent.maxX <= paper.width - margins.right + 0.5, "\(fixture.name): page \(page) text ends at x \(extent.maxX), margin edge \(paper.width - margins.right)")
-            #expect(extent.maxY <= paper.height - margins.top + 0.5, "\(fixture.name): page \(page) text reaches y \(extent.maxY), top margin edge \(paper.height - margins.top)")
+            // The top edge is measured on ink, not on the line boxes: a line's selection box spans
+            // the font's ascent and line gap, and Hiragino's stands about 4 pt above its glyphs
+            // (kit #164: boxes to y 789.1, ink to 781.5, against an edge at 785.3). Printing clips
+            // at that edge, so ink can never cross it: content pushed past it is cut there, and its
+            // ink then reaches the edge (784.75 in the planted control). So the ink must stay a
+            // point clear of the edge; the corpus's highest ink is 781.75.
+            if let inkTop = outcome.pageInkTops[index] {
+                #expect(inkTop <= paper.height - margins.top - 1, "\(fixture.name): page \(page) ink reaches y \(inkTop), top margin edge \(paper.height - margins.top) (cut there?)")
+            }
             #expect(extent.minY >= margins.bottom - 0.5, "\(fixture.name): page \(page) text reaches y \(extent.minY), bottom margin edge \(margins.bottom)")
             minX = min(minX, extent.minX)
             maxX = max(maxX, extent.maxX)
@@ -371,6 +379,9 @@ struct PDFCorpus {
         var manual: ManualReport?
         /// The final file, for the manual layout's own checks.
         var data: Data
+        /// The manual layout only: the y (PDF points, origin bottom left) of each page's topmost
+        /// painted pixel; nil for a blank page or the document layout.
+        var pageInkTops: [CGFloat?] = []
     }
 
     /// Every DOM query the corpus needs, read through `inspect` on the exporter that then
@@ -440,12 +451,45 @@ struct PDFCorpus {
             return boxes.dropFirst().reduce(boxes.first) { $0?.union($1) }
         }
         let paperSize = pages.first??.bounds(for: .mediaBox).size ?? .zero
+        let pageInkTops = layout == .manual ? pages.map { $0.flatMap(Self.inkTop) } : []
 
         return ExportOutcome(
             pageCount: document.pageCount, pageTexts: pageTexts,
             pageHasInk: pageHasInk, inspected: inspected, imageXObjectCount: imageXObjectCount,
-            pageExtents: pageExtents, paperSize: paperSize, manual: manual, data: try Data(contentsOf: pdfURL)
+            pageExtents: pageExtents, paperSize: paperSize, manual: manual, data: try Data(contentsOf: pdfURL),
+            pageInkTops: pageInkTops
         )
+    }
+
+    /// How many device pixels per PDF point `inkTop` renders at: a quarter-point grid.
+    static let inkScale: CGFloat = 4
+
+    /// The y (PDF points, origin bottom left) of the top edge of the topmost row of `page` with a
+    /// painted pixel, rendered on white at `inkScale`; nil if nothing is painted. What paper shows,
+    /// unlike a text line's selection box, which spans the font's whole ascent and line gap
+    /// whether or not any glyph reaches that high (kit #164: Hiragino's boxes stand above the
+    /// first line's ink).
+    static func inkTop(_ page: PDFPage) -> CGFloat? {
+        let box = page.bounds(for: .mediaBox)
+        let width = Int(box.width * inkScale), height = Int(box.height * inkScale)
+        guard let context = CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+        context.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        context.scaleBy(x: inkScale, y: inkScale)
+        page.draw(with: .mediaBox, to: context)
+        guard let pixels = context.data?.assumingMemoryBound(to: UInt8.self) else { return nil }
+        // Row 0 of a bitmap context's memory is the top of the image.
+        for row in 0..<height {
+            let start = row * width * 4
+            for offset in stride(from: start, to: start + width * 4, by: 4)
+            where pixels[offset] < 250 || pixels[offset + 1] < 250 || pixels[offset + 2] < 250 {
+                return CGFloat(height - row) / inkScale
+            }
+        }
+        return nil
     }
 
     /// A 1-bit threshold on a small raster: non-white pixels mean the page has ink.
