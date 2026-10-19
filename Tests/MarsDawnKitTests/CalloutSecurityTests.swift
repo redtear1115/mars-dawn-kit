@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import MarsDawnKit
 
-/// Kit #135, F19: what an author can put in a callout reaches the page as escaped text and
+/// Kit #135: what an author can put in a callout reaches the page as escaped text and
 /// nowhere else; the work grows linearly; nesting is capped.
 struct CalloutSecurityTests {
     struct Element: Equatable {

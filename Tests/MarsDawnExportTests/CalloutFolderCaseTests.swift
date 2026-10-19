@@ -5,7 +5,7 @@ import Testing
 
 /// The language folder of a bundle is found whatever the case of its name (kit #135, #35): SwiftPM
 /// writes `zh-hant.lproj` under Xcode 26 (what CI uses) and `zh-Hant.lproj` under Xcode 27. Two
-/// copied fixture bundles hold D-2's Traditional Chinese titles under each spelling.
+/// copied fixture bundles hold the Traditional Chinese titles approved on kit #135 under each spelling.
 struct CalloutFolderCaseTests {
     static let zhHant = CalloutTitles(note: "附註", tip: "提示", important: "重要", warning: "警告", caution: "小心")
 
@@ -14,7 +14,7 @@ struct CalloutFolderCaseTests {
         return try #require(Bundle(url: root.appendingPathComponent(name)), "\(name) is a bundle")
     }
 
-    /// The folder is `zh-hant.lproj` in one bundle and `zh-Hant.lproj` in the other; both give D-2's
+    /// The folder is `zh-hant.lproj` in one bundle and `zh-Hant.lproj` in the other; both give the approved
     /// titles, whichever way the caller spells the language.
     @Test(arguments: ["lowercase", "mixedcase"])
     func theFolderIsFoundWhateverItsCase(_ name: String) throws {

@@ -6,7 +6,7 @@ import Testing
 @testable import MarsDawnExport
 @testable import MarsDawnKit
 
-/// Callouts in the exported PDF (kit #135, D-3): the same bar and the same titles as the preview,
+/// Callouts in the exported PDF (kit #135): the same bar and the same titles as the preview,
 /// in the language the exporter is given.
 @MainActor
 @Suite(.serialized, .timeLimit(.minutes(5)))
@@ -77,7 +77,7 @@ struct CalloutExportTests {
         let scale: CGFloat = 4
         let image = page.thumbnail(of: NSSize(width: box.width * scale, height: box.height * scale), for: .mediaBox)
         let rep = try #require(image.tiffRepresentation.flatMap { NSBitmapImageRep(data: $0) })
-        // Dawn on white paper: accent, string, function, number, keyword (D-1).
+        // Dawn on white paper: accent, string, function, number, keyword (the mapping approved on kit #135).
         let palette = try #require(PreviewTheme.dawn.validated?.light)
         let expected = [palette.accent, palette.syntax.string, palette.syntax.function, palette.syntax.number, palette.syntax.keyword]
         for (word, hex) in zip(Self.languages[0].words, expected) {

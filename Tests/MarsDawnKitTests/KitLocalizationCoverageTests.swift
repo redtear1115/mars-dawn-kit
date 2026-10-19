@@ -13,7 +13,7 @@ struct KitLocalizationCoverageTests {
     /// Translations that are the English word itself on purpose, so "equals the key" isn't a fallback.
     nonisolated static let sameAsEnglish: [String: Set<String>] = ["de": ["Modern"]]
     /// The callout titles (kit #135) exist in zh-Hant and ja; the other five languages come from
-    /// Grok in kit #183 (milestone 0.7.1, closed before the tag). Until then exactly these keys are
+    /// kit #183 (milestone 0.7.1, closed before the tag). Until then exactly these keys are
     /// missing from exactly these languages, and nothing else is allowed to be. A pending entry
     /// FAILS once its translation lands: delete it from here then.
     nonisolated static let pendingCalloutTitleKeys: Set<String> = ["Note", "Tip", "Important", "Warning", "Caution"]

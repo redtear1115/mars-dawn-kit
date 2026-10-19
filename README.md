@@ -4,7 +4,7 @@ The rendering core of [MarsDawn](https://marsdawn.southern-light.dev), a Markdow
 
 | Product | Platforms | What it does |
 |---|---|---|
-| `MarsDawnKit` | macOS 15, iOS 17 | Markdown → HTML renderer, preview page (Mermaid diagrams, code highlighting, KaTeX math), preview themes |
+| `MarsDawnKit` | macOS 15, iOS 17 | Markdown → HTML renderer, preview page (Mermaid diagrams, code highlighting, KaTeX math, GitHub alerts and HackMD `:::` callouts), preview themes |
 | `MarsDawnExport` | macOS 15 | Paginated PDF export of the preview, the same exporter the app uses |
 | `marsdawn` | macOS 15 | Command-line tool: open documents in MarsDawn, export them to PDF |
 

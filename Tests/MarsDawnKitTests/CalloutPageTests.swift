@@ -10,7 +10,7 @@ import WebKit
 @MainActor
 @Suite(.serialized, .timeLimit(.minutes(5)))
 struct CalloutPageTests {
-    /// D-1: the palette role each type's bar is drawn in (CSS variable names).
+    /// The palette role each type's bar is drawn in (CSS variable names).
     static let roles: [(type: String, variable: String)] = [
         ("note", "accent"), ("tip", "hl-string"), ("important", "hl-function"), ("warning", "hl-number"), ("caution", "hl-keyword"),
     ]
@@ -102,7 +102,7 @@ struct CalloutPageTests {
     }
 
     @Test func classicSharesHuesAndTheTitleTellsThemApart() async throws {
-        // Classic is greyscale: light IMPORTANT = CAUTION; dark also NOTE = WARNING (D-1). The
+        // Classic is greyscale: light IMPORTANT = CAUTION; dark also NOTE = WARNING (kit #135). The
         // title, not the colour, tells them apart there.
         let validated = try #require(PreviewTheme.classic.validated)
         let light = Dictionary(uniqueKeysWithValues: validated.light.cssVariables.map { ($0.name, $0.value) })

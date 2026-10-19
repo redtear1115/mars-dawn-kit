@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import MarsDawnKit
 
-/// The default titles of callouts (kit #135, D-2) and how they are chosen. In-process: no
+/// The default titles of callouts (kit #135) and how they are chosen. In-process: no
 /// subprocess, no change to the CLI.
 struct CalloutTitlesTests {
     static let zhHant = CalloutTitles(note: "附註", tip: "提示", important: "重要", warning: "警告", caution: "小心")
@@ -33,7 +33,7 @@ struct CalloutTitlesTests {
         }
     }
 
-    /// The five languages Grok translates in kit #183 (milestone 0.7.1) have no titles yet, so
+    /// The five languages whose translations are tracked in kit #183 (milestone 0.7.1) have no titles yet, so
     /// they read as English, and each is held in `KitLocalizationCoverageTests.pendingCalloutTitles`.
     @Test(arguments: KitLocalizationCoverageTests.pendingLocalizations)
     func aPendingLanguageReadsAsEnglish(_ localization: String) {

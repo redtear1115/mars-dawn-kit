@@ -2,14 +2,14 @@ import Foundation
 import Testing
 @testable import MarsDawnThemes
 
-/// The callout bars (kit #135, D-1) are composed pairs like any other: a bar in a palette role on
+/// The callout bars (kit #135) are composed pairs like any other: a bar in a palette role on
 /// the page background, held to 3:1 for every theme, built-in or published.
 struct CalloutPairTests {
     static let themes = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         .appendingPathComponent("Sources/MarsDawnThemes/Resources/Themes")
 
-    /// D-1: NOTE=accent, TIP=string, IMPORTANT=function, WARNING=number, CAUTION=keyword.
+    /// NOTE=accent, TIP=string, IMPORTANT=function, WARNING=number, CAUTION=keyword.
     static let bars: [(element: String, role: String)] = [
         ("note callout bar", "accent"), ("tip callout bar", "string"), ("important callout bar", "function"),
         ("warning callout bar", "number"), ("caution callout bar", "keyword"),
