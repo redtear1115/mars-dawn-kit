@@ -62,7 +62,8 @@ struct CalloutTitlesTests {
     func theRendererNeverAsksForALocalizedString(_ file: String) throws {
         let text = try Self.source(file)
         #expect(text.count > 2000, "positive fixture: read \(file)")
-        for needle in ["KitStrings", "String(localized:"] {
+        // The renderer does not touch the titles at all: not the kit's strings, not `CalloutTitles`.
+        for needle in ["KitStrings", "String(localized:", "CalloutTitles", "preferredLanguages"] {
             #expect(!text.contains(needle), "\(file) contains \(needle)")
         }
     }

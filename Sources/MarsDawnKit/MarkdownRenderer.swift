@@ -505,7 +505,7 @@ private struct HTMLVisitor: MarkupVisitor {
 
     /// The start of a callout or a spoiler, with its title element. The type is a fixed class
     /// string; the only author text is an author title, as escaped text. A default title is
-    /// empty here: the stylesheet draws it, in the page's language (see `CalloutTitles`), so the
+    /// empty here: the stylesheet draws it, in the page's language (preview.css, setLabels), so the
     /// HTML never depends on the locale.
     private func calloutOpening(_ opening: Callouts.Opening) -> String {
         switch opening {
