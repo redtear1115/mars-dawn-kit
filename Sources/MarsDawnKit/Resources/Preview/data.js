@@ -421,14 +421,16 @@
   }
 
   // Draws one row for `value` under `parent` (a container's record), or nothing when the budget
-  // is spent. Returns the new container's record when it is one that may be opened.
+  // is spent. Returns the new container's record when it is one that may be opened. `false` when a
+  // container was skipped for the depth limit.
   function drawRow(parent, key, value, limits, budget, documentRow) {
     if (!spend(budget)) return undefined;
     // The depth limit holds for what is drawn, whatever nestsDeeperThan let through: a container
-    // below it stops the pass like an exhausted budget does.
+    // below it stops the pass (the notice shows) but is skipped, not retried: unlike a spent
+    // budget, a later click can never draw it, so "Show more" must move past it.
     if (isContainer(value) && !documentRow && parent.depth + 1 > limits.maximumTreeDepth) {
       budget.stopped = true;
-      return undefined;
+      return false;
     }
     const row = element("div", documentRow ? "data-node data-document" : "data-node");
     if (isContainer(value) && isAncestor(parent, value)) {
@@ -484,6 +486,7 @@
       const drawn = drawRow(record, key, childAt(record.value, index), limits, budget, record.documents);
       if (drawn === undefined) break;
       record.next += 1;
+      if (drawn === false) continue;
       if (drawn !== null && queue !== null && drawn.depth <= limits.autoExpandDepth) queue.push(drawn);
     }
     if (record.next < record.count) {
