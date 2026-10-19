@@ -62,7 +62,7 @@ public struct TextStatistics: Sendable, Equatable {
     private static func readableText(_ markdown: String) -> String? {
         MarkdownParsing.withDocument(markdown) { outcome -> String? in
             guard case .document(let document) = outcome else { return nil }
-            var visitor = ReadableTextVisitor()
+            var visitor = ReadableTextVisitor(containers: Callouts.mayContainContainers(markdown))
             visitor.visit(document)
             return visitor.output
         }
@@ -172,6 +172,14 @@ private struct ReadableTextVisitor: MarkupWalker {
     /// document is inside a `script`, `style` or `template` from one piece of HTML to the next,
     /// so the text nodes between an inline `<script>` and its `</script>` aren't counted either.
     private var html = VisibleHTMLText()
+    /// Whether the Markdown has `:::` in it anywhere: only then are containers looked for (#135).
+    private let containers: Bool
+    /// Paragraphs that end in a `:::` closer a list absorbed: how many inline children to keep.
+    private var trims: [Callouts.Position: Int] = [:]
+
+    init(containers: Bool) {
+        self.containers = containers
+    }
 
     mutating func visitText(_ text: Text) {
         guard !html.isHiding else { return }
@@ -212,22 +220,89 @@ private struct ReadableTextVisitor: MarkupWalker {
     }
 
     mutating func visitParagraph(_ paragraph: Paragraph) {
-        descendInto(paragraph)
+        if !trims.isEmpty, let position = Callouts.Position(paragraph), let keep = trims[position] {
+            for child in Array(paragraph.children)[..<keep] { visit(child) }
+        } else {
+            descendInto(paragraph)
+        }
+        output += " "
+    }
+
+    // MARK: Callouts (#135)
+    //
+    // The page shows no marker line (`[!NOTE]`, `:::info`, `:::`), and no default title: that is
+    // generated content, which `innerText` leaves out, so the count does not depend on the page's
+    // language. An author title is text on the page and is counted. A `:::spoiler` is a closed
+    // `<details>`: its title is counted and its body is not, as for a collapsed `<details>` below.
+
+    mutating func visitDocument(_ document: Document) {
+        walkChildren(of: document)
+    }
+
+    mutating func visitBlockQuote(_ blockQuote: BlockQuote) {
+        if let alert = Callouts.alert(in: blockQuote) {
+            walkBlocks(alert.blocks)
+        } else {
+            descendInto(blockQuote)
+        }
+        output += " "
+    }
+
+    mutating func visitListItem(_ listItem: ListItem) {
+        walkChildren(of: listItem)
+        output += " "
+    }
+
+    private mutating func walkChildren(of container: any Markup) {
+        guard containers else {
+            descendInto(container)
+            return
+        }
+        walkBlocks(container.children.map { Callouts.Block($0) })
+    }
+
+    /// The text of a container's blocks, with the markers of `:::` containers applied.
+    private mutating func walkBlocks(_ blocks: [Callouts.Block]) {
+        guard let events = Callouts.events(for: blocks) else {
+            for block in blocks { walk(block, trim: nil) }
+            return
+        }
+        // Inside a spoiler: how many containers have opened since, so its closer is known.
+        var hidden = 0
+        for event in events {
+            switch event {
+            case .content(let block, let trim):
+                if hidden == 0 { walk(block, trim: trim) }
+            case .open(let opening):
+                if hidden > 0 {
+                    hidden += 1
+                    continue
+                }
+                switch opening {
+                case .callout(_, let title, _):
+                    if let title { output += title + " " }
+                case .spoiler(let title, _):
+                    output += title + " "
+                    hidden = 1
+                }
+            case .close:
+                if hidden > 0 { hidden -= 1 }
+            }
+        }
+    }
+
+    private mutating func walk(_ block: Callouts.Block, trim: Callouts.Trim?) {
+        if let trim { trims[trim.position] = trim.keep }
+        guard let range = block.inline else {
+            visit(block.node)
+            return
+        }
+        for child in block.inlines[range] { visit(child) }
         output += " "
     }
 
     mutating func visitHeading(_ heading: Heading) {
         descendInto(heading)
-        output += " "
-    }
-
-    mutating func visitListItem(_ listItem: ListItem) {
-        descendInto(listItem)
-        output += " "
-    }
-
-    mutating func visitBlockQuote(_ blockQuote: BlockQuote) {
-        descendInto(blockQuote)
         output += " "
     }
 

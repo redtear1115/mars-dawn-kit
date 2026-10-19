@@ -1,0 +1,13 @@
+{
+  "markers": [
+    "CALLHEAD01", "CALLINTRO02",
+    "NOTEBODY03", "TIPBODY04", "IMPBODY05", "WARNBODY06", "CAUTBODY07",
+    "INFOBODY08", "Done well", "SUCCBODY09", "WARNITEM10", "WARNITEM11",
+    "Careful now", "DANGBODY12", "CODEIN13", "Open me", "SPOILBODY14",
+    "CALLENDMARK99"
+  ],
+  "markersOnLastPage": ["CALLENDMARK99"],
+  "absent": [":::", "[!NOTE]", "[!TIP]", "[!IMPORTANT]", "[!WARNING]", "[!CAUTION]"],
+  "textOnEveryPage": true,
+  "notes": "Callouts (kit #135): the five GitHub alerts, four HackMD containers (one with a list closed by lazy continuation, one holding a code block, two with author titles) and a spoiler, which the export opens like any other details. No marker line may reach the PDF. The default titles (Note, Tip, Important, Warning, Caution) are generated content drawn from the host's labels; the corpus exports with the English ones, whatever the language of the machine."
+}

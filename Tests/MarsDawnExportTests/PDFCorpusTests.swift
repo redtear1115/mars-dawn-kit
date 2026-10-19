@@ -402,7 +402,9 @@ struct PDFCorpus {
         hooks.report = { manual = $0 }
         let result = try await DocumentExporter.exportPDF(
             markdown: markdown, to: pdfURL, theme: .dawn,
-            baseDirectory: baseDirectory, allowRemoteImages: allowRemoteImages, layout: layout, inspect: { exporter in
+            baseDirectory: baseDirectory, allowRemoteImages: allowRemoteImages, layout: layout,
+            // The goldens are English whatever the language of the machine that runs them.
+            calloutTitles: .english, inspect: { exporter in
             let raw = try await exporter.webView.evaluateJavaScript(Self.domInspectionScript) as? String ?? "{}"
             let dom = try JSONDecoder().decode(DOMState.self, from: Data(raw.utf8))
             // Lay the page out for print to read what printing shows, then hand it back as it was.

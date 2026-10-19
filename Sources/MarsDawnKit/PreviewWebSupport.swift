@@ -256,11 +256,13 @@ public enum PreviewWebView {
     }
 
     /// JavaScript that replaces the preview content with a freshly rendered fragment.
-    /// `lineCount` lets scroll sync map the document's end.
-    public nonisolated static func updateScript(html: String, lineCount: Int = 0) -> String {
-        // The note's wording travels with every update, so each host (app, Quick Look, export)
+    /// `lineCount` lets scroll sync map the document's end. `calloutTitles` are the default titles
+    /// of callouts (#135); `nil` takes the process's preferred languages (`CalloutTitles.preferred()`).
+    public nonisolated static func updateScript(html: String, lineCount: Int = 0, calloutTitles: CalloutTitles? = nil) -> String {
+        // The labels' wording travels with every update, so each host (app, Quick Look, export)
         // shows the kit's own localization without a separate call.
-        "window.MarsDawn && MarsDawn.setLabels({ diagramLimitNote: \(jsonStringLiteral(diagramLimitNoteLabel)) }); "
+        let titles = (calloutTitles ?? .preferred()).labelsObject
+        return "window.MarsDawn && MarsDawn.setLabels({ diagramLimitNote: \(jsonStringLiteral(diagramLimitNoteLabel)), calloutTitles: \(titles) }); "
             + "window.MarsDawn && MarsDawn.update(\(jsonStringLiteral(html)), \(lineCount));"
     }
 

@@ -30,6 +30,27 @@ struct CountMatchesPageTests {
         return TextStatistics(plainText: text).words
     }
 
+    /// The oracle again, after the test opens every `<details>` (the page's `open` attribute).
+    private func pageWords(_ markdown: String, openingDetails: Bool) async throws -> Int {
+        let webView = PreviewWKWebView(frame: NSRect(x: 0, y: 0, width: 600, height: 800),
+                                       configuration: PreviewWebView.makeConfiguration())
+        webView.applyContentRuleList(try await PreviewContentRules.ruleList(allowRemoteImages: false))
+        #expect(webView.load(URLRequest(url: PreviewSchemeHandler.pageURL(theme: .dawn))) != nil)
+        let deadline = ContinuousClock.now + .seconds(20)
+        while webView.isLoading, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        _ = try await webView.evaluateJavaScript(
+            PreviewWebView.updateScript(html: MarkdownRenderer.render(markdown), lineCount: LineIndex(markdown).lineCount)
+        )
+        _ = try? await webView.callAsyncJavaScript("return await MarsDawn.idle();", contentWorld: .page)
+        if openingDetails {
+            _ = try await webView.evaluateJavaScript(#"document.querySelectorAll("details").forEach((d) => { d.open = true; })"#)
+        }
+        let text = try await webView.evaluateJavaScript(#"document.getElementById("content").innerText"#) as? String ?? ""
+        return TextStatistics(plainText: text).words
+    }
+
     /// Each probe pairs what the page hides with words it shows, so a count of zero can't pass.
     nonisolated static let probes = [
         // The `hidden` attribute, on a block, inline, and with the same element nested inside.
@@ -67,6 +88,22 @@ struct CountMatchesPageTests {
         "<div><img hidden> words after the image</div>\n",
         "<div>a &bogus; b</div>\n",
         "<details open><summary>Outer</summary>outer body<details><summary>Inner</summary>inner body</details>after</details>\n",
+        // Callouts (kit #135): the marker line and the default title are not counted, because the
+        // page does not show them as text (the title is generated content); an author title is.
+        "> [!NOTE]\n> note body words\n",
+        "> [!TIP]\n> tip body words\n",
+        "> [!IMPORTANT]\n> important body words\n",
+        "> [!WARNING]\n> warning body words\n",
+        "> [!CAUTION]\n> caution body words\n",
+        "> [!note]\n> lower case marker words\n",
+        ":::info\ncontainer body words\n:::\n",
+        ":::warning Author title here\n\ncontainer body words\n\n:::\n",
+        ":::danger Another title\n- item one\n- item two\n:::\n",
+        // An unknown type is text, marker included.
+        ":::nope\nunknown type words\n:::\n",
+        // A spoiler is a closed `<details>`: its title shows, its body does not.
+        ":::spoiler Spoiler title here\nhidden spoiler body words\n:::\n\nShown after.\n",
+        ":::info\nbefore\n\n:::spoiler Inner spoiler\nhidden words\n:::\n\nafter\n:::\n",
     ]
 
     @Test(arguments: probes)
@@ -74,6 +111,16 @@ struct CountMatchesPageTests {
         let page = try await pageWords(markdown)
         #expect(page > 0, "precondition: the page shows words")
         #expect(TextStatistics(markdownBody: markdown).words == page, "counted vs shown")
+    }
+
+    /// An opened spoiler adds exactly its body's words to the closed one's count, on the page.
+    @Test func anOpenedSpoilerAddsItsBody() async throws {
+        let markdown = ":::spoiler Spoiler title here\nhidden spoiler body words\n:::\n\nShown after.\n"
+        let closed = try await pageWords(markdown)
+        let opened = try await pageWords(markdown, openingDetails: true)
+        #expect(closed > 0, "precondition: the page shows words")
+        #expect(opened - closed == 4, "the body is four words: \(closed) closed, \(opened) opened")
+        #expect(TextStatistics(markdownBody: markdown).words == closed, "counted vs shown, closed")
     }
 
     /// <select>: measured, whatever the page shows of it.

@@ -92,6 +92,36 @@ blockquote {
 }
 blockquote > :last-child { margin-bottom: 0; }
 
+/* Callouts (#135): GitHub alerts and HackMD containers. A bar in a palette role and the title; the
+   look takes no quote style option. The default title is generated content, so the HTML never
+   holds a word of any language: the host sets these five properties through MarsDawn.setLabels
+   (CalloutTitles), and what is declared here is only the English fallback. */
+:root {
+  --callout-title-note: "Note";
+  --callout-title-tip: "Tip";
+  --callout-title-important: "Important";
+  --callout-title-warning: "Warning";
+  --callout-title-caution: "Caution";
+}
+.callout {
+  margin: 0 0 1em;
+  padding: 0.05em 1em;
+  color: var(--fg);
+  border-left: 4px solid transparent;
+}
+.callout > :last-child { margin-bottom: 0; }
+.callout-note { border-left-color: var(--accent); }
+.callout-tip { border-left-color: var(--hl-string); }
+.callout-important { border-left-color: var(--hl-function); }
+.callout-warning { border-left-color: var(--hl-number); }
+.callout-caution { border-left-color: var(--hl-keyword); }
+.callout-title { margin: 0.6em 0 0.4em; font-weight: 650; }
+.callout-note > .callout-title:not(.callout-title-author)::before { content: var(--callout-title-note); }
+.callout-tip > .callout-title:not(.callout-title-author)::before { content: var(--callout-title-tip); }
+.callout-important > .callout-title:not(.callout-title-author)::before { content: var(--callout-title-important); }
+.callout-warning > .callout-title:not(.callout-title-author)::before { content: var(--callout-title-warning); }
+.callout-caution > .callout-title:not(.callout-title-author)::before { content: var(--callout-title-caution); }
+
 code {
   font: 0.88em var(--font-mono);
   background: var(--code-chip);
@@ -341,7 +371,7 @@ img { max-width: 100%; }
      after it (when that block is short) and keeps the pair on one page. */
   .keep-with-next { break-inside: avoid; page-break-inside: avoid; }
   p, li, blockquote { orphans: 3; widows: 3; }
-  pre, blockquote, tr, img, .mermaid-block, .math-block, .image-placeholder, .footnotes li {
+  pre, blockquote, .callout, tr, img, .mermaid-block, .math-block, .image-placeholder, .footnotes li {
     break-inside: avoid;
     page-break-inside: avoid;
   }

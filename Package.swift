@@ -53,7 +53,10 @@ let package = Package(
                 "MarsDawnThemes",
                 .product(name: "cmark-gfm", package: "swift-cmark"),
                 .product(name: "cmark-gfm-extensions", package: "swift-cmark"),
-            ]
+            ],
+            // Two bundles whose Traditional Chinese folder is spelled `zh-hant` and `zh-Hant`
+            // (CalloutTitlesTests): SwiftPM writes the one under Xcode 26 and the other under 27.
+            resources: [.copy("CalloutLproj")]
         ),
         .testTarget(
             name: "MarsDawnExportTests",

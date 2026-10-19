@@ -909,8 +909,29 @@
     window.scrollTo(0, y);
   }
 
+  // A callout's default title is CSS generated content (#135): the host's wording reaches the
+  // stylesheet only as a custom property holding a quoted string, built here. Every character
+  // outside [A-Za-z0-9 ] is written as a six-digit hex escape, so no label can end the string,
+  // open a block or start a rule; there is no other path from label text to CSS.
+  function cssString(text) {
+    let out = '"';
+    for (const ch of String(text)) {
+      out += /^[A-Za-z0-9 ]$/.test(ch) ? ch : "\\" + ch.codePointAt(0).toString(16).padStart(6, "0") + " ";
+    }
+    return out + '"';
+  }
+  const calloutTypes = ["note", "tip", "important", "warning", "caution"];
+
   function setLabels(labels) {
     if (labels && typeof labels.diagramLimitNote === "string") diagramLimitNote = labels.diagramLimitNote;
+    const titles = labels && labels.calloutTitles;
+    if (titles && typeof titles === "object") {
+      for (const type of calloutTypes) {
+        if (typeof titles[type] === "string") {
+          document.documentElement.style.setProperty("--callout-title-" + type, cssString(titles[type]));
+        }
+      }
+    }
   }
 
   window.MarsDawn = { update, setLabels, setTheme, setThemes, scrollToLine, setAssetState, setRemoteImageState, restoreScroll, idle };

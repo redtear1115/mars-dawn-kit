@@ -12,6 +12,15 @@ struct KitLocalizationCoverageTests {
     nonisolated static let others = ["zh-Hans", "ja", "de", "fr", "es", "ko"]
     /// Translations that are the English word itself on purpose, so "equals the key" isn't a fallback.
     nonisolated static let sameAsEnglish: [String: Set<String>] = ["de": ["Modern"]]
+    /// The callout titles (kit #135) exist in zh-Hant and ja; the other five languages come from
+    /// Grok in kit #183 (milestone 0.7.1, closed before the tag). Until then exactly these keys are
+    /// missing from exactly these languages, and nothing else is allowed to be. A pending entry
+    /// FAILS once its translation lands: delete it from here then.
+    nonisolated static let pendingCalloutTitleKeys: Set<String> = ["Note", "Tip", "Important", "Warning", "Caution"]
+    nonisolated static let pendingLocalizations = ["de", "es", "fr", "ko", "zh-Hans"]
+    nonisolated static let pending: [String: Set<String>] = Dictionary(
+        uniqueKeysWithValues: pendingLocalizations.map { ($0, pendingCalloutTitleKeys) }
+    )
 
     nonisolated private static let tables = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
@@ -31,7 +40,7 @@ struct KitLocalizationCoverageTests {
 
     @Test func theReferenceTableIsTheRealOne() throws {
         let reference = try Self.keys(Self.reference)
-        #expect(reference.count >= 11, "positive fixture: zh-Hant has the kit's strings (found \(reference.count))")
+        #expect(reference.count >= 16, "positive fixture: zh-Hant has the kit's strings (found \(reference.count))")
         #expect(reference["Dawn"] == "黎明")
     }
 
@@ -39,10 +48,20 @@ struct KitLocalizationCoverageTests {
     func everyKeyIsTranslated(into localization: String) throws {
         let reference = try Self.keys(Self.reference)
         let table = try Self.keys(localization)
-        #expect(Set(table.keys) == Set(reference.keys), "\(localization) keys differ: \(Set(table.keys).symmetricDifference(reference.keys).sorted())")
+        let pending = Self.pending[localization] ?? []
+        for key in pending {
+            #expect(reference[key] != nil, "\(localization): \"\(key)\" is pending but the reference table has no such key")
+            #expect(table[key] == nil, "\(localization): \"\(key)\" now has a translation: remove it from `pending`")
+        }
+        let expected = Set(reference.keys).subtracting(pending)
+        #expect(Set(table.keys) == expected, "\(localization) keys differ: \(Set(table.keys).symmetricDifference(expected).sorted())")
         for (key, referenceValue) in reference {
             let shipped = try #require(PreviewWebView.moduleLocalizedString(key, localization: localization),
                                        "\(localization) doesn't ship in the resource bundle")
+            if pending.contains(key) {
+                #expect(shipped == key, "\(localization): pending \"\(key)\" ships as \(shipped)")
+                continue
+            }
             if !(Self.sameAsEnglish[localization]?.contains(key) ?? false) {
                 #expect(shipped != key, "\(localization): \"\(key)\" falls back to English")
             }
