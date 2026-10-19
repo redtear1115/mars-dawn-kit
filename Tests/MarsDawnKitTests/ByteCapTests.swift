@@ -79,12 +79,15 @@ struct ByteCapTests {
         #expect(result.fallback == .tooLarge)
         #expect(result.html == MarkdownRenderer.sourceFallbackHTML(source))
 
-        // TextStatistics counts a refused body as plain text, URL and markers included: more words
-        // than the parsed count of the same text one byte shorter.
-        let plain = Self.privately { TextStatistics(markdownBody: source).words }
-        let parsed = Self.privately { TextStatistics(markdownBody: Self.atCap).words }
-        print("B4b TextStatistics: over the cap \(plain) words (plain text), at the cap \(parsed) (parsed)")
-        #expect(plain > parsed)
+        // TextStatistics counts a refused body as plain text: every run of letters and digits,
+        // the link's URL included. The lead has 11 such runs (Title Some x text a link https
+        // example com one two); parsed, it would be 6, since a URL isn't text. Each line of the
+        // code block is one more either way.
+        let codeLines = source.utf8.split(separator: UInt8(ascii: "\n"))
+            .filter { $0.first == UInt8(ascii: "a") || $0.first == UInt8(ascii: "b") }.count
+        let words = Self.privately { TextStatistics(markdownBody: source).words }
+        print("B4b TextStatistics over the cap: \(words) words; plain text would be \(11 + codeLines), parsed \(6 + codeLines)")
+        #expect(words == 11 + codeLines)
         // DocumentOutline has no headings for a refused body.
         #expect(Self.privately { DocumentOutline(markdownBody: source).headings.isEmpty })
         // MathExtractor has its own, smaller cap (256,000 bytes) and leaves the body alone.
