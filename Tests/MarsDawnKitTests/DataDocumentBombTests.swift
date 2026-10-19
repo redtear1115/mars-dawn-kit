@@ -120,14 +120,49 @@ struct DataDocumentBombTests {
 
     // Schema.
 
+    static func emptyMerges(_ count: Int) -> String {
+        "e: &e {}\nl:\n" + String(repeating: "- {<<: *e}\n", count: count)
+    }
+
     /// CORE_SCHEMA has no merge: `<<` is a plain key, 20,000 times (aliases to one empty mapping).
-    /// The row cap is relaxed so the whole document is drawn.
+    /// The row cap is relaxed so the whole document is drawn. The draw is not timed tightly (a
+    /// loaded hosted runner took 3.4 s and 4.2 s for it, kit #198); the parse is what this guards,
+    /// and is timed by the next test.
     @Test func twentyThousandEmptyMergesAreLiteralKeys() async throws {
-        let text = "e: &e {}\nl:\n" + String(repeating: "- {<<: *e}\n", count: 20_000)
+        let text = Self.emptyMerges(20_000)
         #expect(text.utf8.count <= DataDocumentPreview.maximumYAMLBytes)
-        let (outcome, page) = try await timed(text, .yaml, limits: ["maximumRenderedNodes": 100_000, "autoExpandBudgetMilliseconds": 60_000])
+        let (outcome, page) = try await timed(text, .yaml, limits: ["maximumRenderedNodes": 100_000, "autoExpandBudgetMilliseconds": 60_000], bound: .seconds(30))
         #expect(outcome == .rendered)
         #expect(try await DataPage.int("Array.from(document.querySelectorAll('#data .data-key')).filter((k) => k.textContent === '<<').length", in: page) == 20_000)
+    }
+
+    /// Kit #198: the parse and construct of the same shape, timed in the page with the page's own
+    /// js-yaml calls and nothing drawn. Two guards: the 20k parse is under 500 ms (observed
+    /// about 7 ms locally), and doubling the input costs under 3x (linear is 2x,
+    /// quadratic 4x), taking the best of three runs of each size so one slow run on a loaded
+    /// runner cannot fail it.
+    @Test func parsingEmptyMergesGrowsLinearly() async throws {
+        let page = try await DataPage.load()
+        func parseMilliseconds(_ count: Int) async throws -> Double {
+            let text = Self.emptyMerges(count)
+            let result = try await page.callAsyncJavaScript("""
+            let best = Infinity;
+            for (let run = 0; run < 3; run++) {
+              const start = performance.now();
+              const events = jsyaml.parseEvents(text, { maxDepth: 1000 });
+              jsyaml.constructFromEvents(events, { source: text, schema: jsyaml.CORE_SCHEMA, json: false, maxAliases: 1000000 });
+              best = Math.min(best, performance.now() - start);
+            }
+            return best;
+            """, arguments: ["text": text], contentWorld: .page)
+            return result as? Double ?? -1
+        }
+        let small = try await parseMilliseconds(20_000)
+        let large = try await parseMilliseconds(40_000)
+        #expect(small > 0 && large > 0, "\(small) \(large)")
+        #expect(small < 500, "20k parse took \(small) ms")
+        // Timer resolution is about 1 ms and the parse about 7 ms, so the floor keeps the ratio honest.
+        #expect(large < max(small, 20) * 3, "20k \(small) ms, 40k \(large) ms: not linear")
     }
 
     @Test func aLargeOmapIsAnUnknownTagWithItsLine() async throws {
@@ -209,6 +244,32 @@ struct DataDocumentBombTests {
         #expect(deepest <= DataDocumentPreview.maximumDepth, "deepest drawn container: \(deepest)")
         #expect(deepest > Self.ringLength, "the click walk must get past one ring, or it proves nothing: \(deepest)")
         #expect(try await DataPage.int("document.querySelectorAll('#data .data-notice').length", in: page) == (deepest == DataDocumentPreview.maximumDepth ? 1 : 0))
+    }
+
+    /// Kit #205: the depth stop refuses a child for good, so "Show ... More" must move past it. After
+    /// the click walk every "Show more" button is clicked until none is left: each click either
+    /// draws rows or removes the button, and the buttons are gone within a few passes. Before the
+    /// fix the same child was refused on every click and the button came back.
+    @Test(arguments: [2, 3]) func showMoreAfterTheDepthStopMakesProgress(rings: Int) async throws {
+        let (outcome, page) = try await timed(Self.chainedRings(rings), .yaml, bound: .seconds(10))
+        #expect(outcome == .rendered)
+        let (_, deepest) = try await expandOneClickAtATime(page)
+        #expect(deepest == DataDocumentPreview.maximumDepth, "the walk must reach the depth stop, or this tests nothing: \(deepest)")
+        let rowsBefore = try await DataPage.rows(in: page)
+        let passes = try await DataPage.int("""
+        (() => {
+          let passes = 0;
+          for (; passes < 20; passes++) {
+            const buttons = Array.from(document.querySelectorAll('#data .data-more'));
+            if (buttons.length === 0) break;
+            for (const b of buttons) b.click();
+          }
+          return passes;
+        })()
+        """, in: page)
+        #expect(passes < 20, "the buttons never ran out: \(passes) passes")
+        #expect(try await DataPage.int("document.querySelectorAll('#data .data-more').length", in: page) == 0)
+        #expect(try await DataPage.rows(in: page) >= rowsBefore)
     }
 }
 #endif
