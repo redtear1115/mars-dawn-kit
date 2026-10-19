@@ -27,6 +27,11 @@ struct NodeBudgetTests {
             ("indented code", "para\n    - not code\n\n" + String(repeating: "    - a\n", count: 300)),
             ("lazy lines", String(repeating: "> a\nlazy\n- b\nlazy\n", count: 150)),
             ("trailing reference definition", String(repeating: "[a]\n\n", count: 300) + "[a]: /u\n"),
+            // Nothing but definitions: the finished tree is the document node alone, so a
+            // checkpoint that counted the open paragraph would already be over it.
+            ("definitions only", String(repeating: "[a]: /u\n", count: 300)),
+            ("definitions only, then blank lines", String(repeating: "[a]: /u\n", count: 300) + "\n\n\n"),
+            ("attribute definitions only", String(repeating: "^[a]: (k: v)\n", count: 150)),
             ("definitions-only paragraph open", String(repeating: "[a]: /u\n", count: 300) + "\n" + String(repeating: "- x\n", count: 50)),
             ("definitions then text", String(repeating: "[a]: /u\n", count: 200) + "text\n" + String(repeating: "- x\n", count: 50)),
             ("closed paragraph then definitions", String(repeating: "a\n\n[x]: /u\n\n", count: 200)),
