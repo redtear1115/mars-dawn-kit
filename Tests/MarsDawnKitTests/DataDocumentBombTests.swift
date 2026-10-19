@@ -156,5 +156,59 @@ struct DataDocumentBombTests {
         #expect(outcome == .rendered)
         #expect(try await DataPage.int("document.querySelectorAll('#data .data-cycle').length", in: page) >= 1)
     }
+
+    // Chained alias cycles (kit #191). nestsDeeperThan keeps heights that a cycle cut short, so a
+    // container reached again from another entry can be taller than it said. A ring is
+    // `ringLength` nested lists whose deepest points back at its first. The list above a ring's
+    // deepest also points at the previous ring's deepest, which the screen has by then kept at
+    // its cut height, so one click at a time walks ring after ring: about k x 700 levels.
+
+    static let ringLength = 700
+
+    static func chainedRings(_ rings: Int) -> String {
+        let n = ringLength
+        let names = ["a", "b", "c", "d"]
+        let bodies = (0..<rings).map { r -> String in
+            let name = names[r]
+            let cross = r > 0 ? ", *\(names[r - 1])\(n)" : ""
+            return (1..<n).map { "&\(name)\($0) [" }.joined() + "&\(name)\(n) [*\(name)1]" + cross + String(repeating: "]", count: n - 1)
+        }
+        return "[" + bodies.joined(separator: ", ") + "]\n"
+    }
+
+    /// Clicks the first closed toggle until none is left, one level per click, and returns the
+    /// deepest container drawn (a container's level is the number of `.data-children` around it, plus one).
+    func expandOneClickAtATime(_ page: WKWebView) async throws -> (clicks: Int, deepest: Int) {
+        let result = try await DataPage.value("""
+        (() => {
+          let clicks = 0;
+          for (; clicks < 10000; clicks++) {
+            const button = document.querySelector('#data .data-toggle[aria-expanded="false"]');
+            if (!button) break;
+            button.click();
+          }
+          let deepest = 0;
+          for (const toggle of document.querySelectorAll('#data .data-toggle')) {
+            let level = 1;
+            for (let at = toggle.parentElement.parentElement; at; at = at.parentElement) if (at.classList.contains('data-children')) level++;
+            deepest = Math.max(deepest, level);
+          }
+          return [clicks, deepest];
+        })()
+        """, in: page) as? [Int]
+        return (result?[0] ?? -1, result?[1] ?? -1)
+    }
+
+    /// Two rings (the issue's fixture) and three: k rings used to draw about k x 700 levels.
+    /// Time is linear: the screen walks each container once; a click draws one level's children.
+    @Test(arguments: [2, 3]) func clickingThroughChainedCyclesNeverDrawsPastTheLimit(rings: Int) async throws {
+        let (outcome, page) = try await timed(Self.chainedRings(rings), .yaml, bound: .seconds(10))
+        #expect(outcome == .rendered, "the fixture must pass the screen, or the click path is not what is tested")
+        let (clicks, deepest) = try await expandOneClickAtATime(page)
+        #expect(clicks > 0 && clicks < 10000, "clicks: \(clicks)")
+        #expect(deepest <= DataDocumentPreview.maximumDepth, "deepest drawn container: \(deepest)")
+        #expect(deepest > Self.ringLength, "the click walk must get past one ring, or it proves nothing: \(deepest)")
+        #expect(try await DataPage.int("document.querySelectorAll('#data .data-notice').length", in: page) == (deepest == DataDocumentPreview.maximumDepth ? 1 : 0))
+    }
 }
 #endif
