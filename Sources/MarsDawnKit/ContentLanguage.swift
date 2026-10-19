@@ -25,7 +25,7 @@ package enum ContentLanguage {
     ///   subtag is `ja` (any case) is returned as written; any other valid tag means the author
     ///   declared a language that isn't Japanese, and the answer is `nil` with no further look.
     ///   An invalid or empty value is ignored, as if the line weren't there.
-    /// - Otherwise the document is Japanese when it has kana letters and they are at least 10% of
+    /// - Otherwise the document is Japanese when it has kana letters and they are at least 20% of
     ///   its Han and kana letters together (`isMostlyKana`). Every character counts, including
     ///   those in code blocks, inline code, math and the front matter itself: a code block of
     ///   Japanese strings is still Japanese text, and skipping them would mean parsing first.
@@ -101,10 +101,15 @@ package enum ContentLanguage {
         return primary.count == 2 && primary.map { $0 | 0x20 } == [UInt8(ascii: "j"), UInt8(ascii: "a")]
     }
 
-    /// Kana letters are at least one, and at least 10% of Han and kana letters together.
+    /// Kana letters are at least one, and at least 20% of Han and kana letters together.
+    ///
+    /// 20% is measured, not a standard (owner decision 2026-10-19, kit #203): over real documents
+    /// the lowest Japanese share was 0.330 (67 documents: encyclopedic pages, legal texts, posts,
+    /// short READMEs) and the highest Chinese one 0.165 (31 documents, including Chinese pages about
+    /// Japanese topics). 10% tagged three of those Chinese pages as Japanese.
     static func isMostlyKana(_ text: String) -> Bool {
         let (kana, han) = counts(text)
-        return kana >= 1 && kana * 10 >= kana + han
+        return kana >= 1 && kana * 5 >= kana + han
     }
 
     /// Kana letters and Han ideographs in `text`, one pass over its scalars.

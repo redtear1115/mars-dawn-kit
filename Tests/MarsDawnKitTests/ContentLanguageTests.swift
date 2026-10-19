@@ -10,7 +10,7 @@ struct ContentLanguageTests {
         "---\nlang: \(value)\n---\n\(body)"
     }
 
-    /// A Chinese paragraph with one katakana word: 3 kana letters against 40 Han, under 10%.
+    /// A Chinese paragraph with one katakana word: 3 kana letters against 40 Han, under 20%.
     static let chineseWithOneKatakanaWord = "我昨天晚上和朋友一起在家裡看了一部很長的日本「アニメ」電影，大家都覺得故事非常感人而且畫面十分漂亮。\n"
 
     // MARK: G1 — front matter decides first
@@ -80,14 +80,25 @@ struct ContentLanguageTests {
 
     @Test func oneKatakanaWordInChineseIsNotJapanese() {
         let counts = ContentLanguage.counts(Self.chineseWithOneKatakanaWord)
-        #expect(counts.kana == 3 && counts.kana * 10 < counts.kana + counts.han, "fixture: \(counts)")
+        #expect(counts.kana == 3 && counts.kana * 5 < counts.kana + counts.han, "fixture: \(counts)")
         #expect(ContentLanguage.detect(markdown: Self.chineseWithOneKatakanaWord) == nil)
     }
 
-    @Test func theThresholdIsTenPercentInclusive() {
-        let han = String(repeating: "漢", count: 9)
-        #expect(ContentLanguage.detect(markdown: "か" + han) == "ja", "1 of 10")
-        #expect(ContentLanguage.detect(markdown: "か" + han + "漢") == nil, "1 of 11")
+    @Test func theThresholdIsTwentyPercentInclusive() {
+        func text(kana: Int, han: Int) -> String {
+            String(repeating: "か", count: kana) + String(repeating: "漢", count: han) + "\n"
+        }
+        #expect(ContentLanguage.detect(markdown: text(kana: 1, han: 4)) == "ja", "1 of 5: 20.0%")
+        #expect(ContentLanguage.detect(markdown: text(kana: 40, han: 160)) == "ja", "40 of 200: 20.0%")
+        #expect(ContentLanguage.detect(markdown: text(kana: 39, han: 161)) == nil, "39 of 200: 19.5%")
+        #expect(ContentLanguage.detect(markdown: text(kana: 199, han: 801)) == nil, "199 of 1000: 19.9%")
+        #expect(ContentLanguage.detect(markdown: text(kana: 1, han: 5)) == nil, "1 of 6: 16.7%")
+        // The mixed-CJK corpus fixture: Chinese, Japanese and Korean paragraphs, 39 kana of 263 (14.8%).
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        let cjk = try? String(contentsOf: root.appendingPathComponent("MarsDawnExportTests/Corpus/cjk/document.md"), encoding: .utf8)
+        let counts = ContentLanguage.counts(cjk ?? "")
+        #expect(counts.kana == 39 && counts.han == 224, "fixture: \(counts)")
+        #expect(ContentLanguage.detect(markdown: cjk ?? "") == nil)
     }
 
     /// Kana count wherever they are, code blocks included (the choice `detect` documents).
