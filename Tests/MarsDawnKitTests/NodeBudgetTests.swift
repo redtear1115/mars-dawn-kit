@@ -13,6 +13,9 @@ import Testing
 /// deadlines that is enough to make those miss in a parallel run.
 @Suite(.serialized)
 struct NodeBudgetTests {
+    /// This suite's own worker slot, so its parses never hold up other suites' on the shared gate.
+    static let gate = WorkerGate(slots: 1)
+
     // MARK: Inputs
 
     /// Generated shapes, each meant to exercise one thing the lower bound's proof relies on.
@@ -218,7 +221,7 @@ struct NodeBudgetTests {
             let decision = MarkdownParsing.decide(source, limits: .default)
             print("B2 real size \(name) (\(source.utf8.count) bytes): \(decision)")
             #expect(Self.isEarly(decision), "\(name): \(decision)")
-            let outcome = MarkdownParsing.withDocument(source) { outcome -> Bool in
+            let outcome = MarkdownParsing.withDocument(source, options: .default, gate: Self.gate) { outcome -> Bool in
                 if case .tooComplex = outcome { return true }
                 return false
             }

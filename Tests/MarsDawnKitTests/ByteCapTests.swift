@@ -26,8 +26,18 @@ struct ByteCapTests {
     static let atCap = document(bytes: cap)
     static let overCap = document(bytes: cap + 1)
 
+    /// A worker of this suite's own. Parses of 16 MiB take seconds, and on the shared gate's two
+    /// slots they would hold up every other suite's parses (the WebKit suites' deadlines miss in a
+    /// parallel run). A `withDocument` inside a worker body runs inline on that worker, so the
+    /// renderer, the outline and the statistics called from `privately` never touch the shared gate.
+    static let gate = WorkerGate(slots: 1)
+
+    static func privately<T: Sendable>(_ body: @escaping @Sendable () -> T) -> T {
+        MarkdownParsing.withDocument("", options: .default, gate: gate) { _ in body() }
+    }
+
     static func outcome(_ source: String, _ limits: ParseLimits = .default) -> String {
-        MarkdownParsing.withDocument(source, options: limits) { outcome in
+        MarkdownParsing.withDocument(source, options: limits, gate: gate) { outcome in
             switch outcome {
             case .document: "document"
             case .tooDeep: "tooDeep"
@@ -54,8 +64,8 @@ struct ByteCapTests {
 
         let mebibyte = Self.document(bytes: 1 << 20), overMebibyte = Self.document(bytes: (1 << 20) + 1)
         let oneMiB = MarkdownRenderer.Options(maxBytes: 1 << 20)
-        #expect(MarkdownRenderer.renderResult(mebibyte, options: oneMiB).fallback == nil)
-        #expect(MarkdownRenderer.renderResult(overMebibyte, options: oneMiB).fallback == .tooLarge)
+        #expect(Self.privately { MarkdownRenderer.renderResult(mebibyte, options: oneMiB).fallback } == nil)
+        #expect(Self.privately { MarkdownRenderer.renderResult(overMebibyte, options: oneMiB).fallback } == .tooLarge)
         #expect(Self.outcome(overMebibyte, ParseLimits(maxBytes: 1 << 20)) == "tooLarge")
     }
 
@@ -65,29 +75,32 @@ struct ByteCapTests {
         #expect(Self.outcome(source) == "tooLarge")
         #expect(MarkdownParsing.decide(source, limits: .default) == .tooLarge)
 
-        let result = MarkdownRenderer.renderResult(source)
+        let result = Self.privately { MarkdownRenderer.renderResult(source) }
         #expect(result.fallback == .tooLarge)
         #expect(result.html == MarkdownRenderer.sourceFallbackHTML(source))
 
         // TextStatistics counts a refused body as plain text, URL and markers included: more words
         // than the parsed count of the same text one byte shorter.
-        let plain = TextStatistics(markdownBody: source).words
-        let parsed = TextStatistics(markdownBody: Self.atCap).words
+        let plain = Self.privately { TextStatistics(markdownBody: source).words }
+        let parsed = Self.privately { TextStatistics(markdownBody: Self.atCap).words }
         print("B4b TextStatistics: over the cap \(plain) words (plain text), at the cap \(parsed) (parsed)")
         #expect(plain > parsed)
         // DocumentOutline has no headings for a refused body.
-        #expect(DocumentOutline(markdownBody: source).headings.isEmpty)
+        #expect(Self.privately { DocumentOutline(markdownBody: source).headings.isEmpty })
         // MathExtractor has its own, smaller cap (256,000 bytes) and leaves the body alone.
-        var generator = SystemRandomNumberGenerator()
-        let math = MathExtractor.extract(from: source, using: &generator)
-        #expect(math.expressions.isEmpty && math.markdown == source)
+        let math = Self.privately {
+            var generator = SystemRandomNumberGenerator()
+            let math = MathExtractor.extract(from: source, using: &generator)
+            return math.expressions.isEmpty && math.markdown == source
+        }
+        #expect(math)
     }
 
     /// Exactly at the cap: parsed as before.
     @Test func exactlyAtTheCapIsAccepted() {
         let source = Self.atCap
-        #expect(DocumentOutline(markdownBody: source).headings.map(\.title) == ["Title"])
-        let result = MarkdownRenderer.renderResult(source)
+        #expect(Self.privately { DocumentOutline(markdownBody: source).headings.map(\.title) } == ["Title"])
+        let result = Self.privately { MarkdownRenderer.renderResult(source) }
         #expect(result.fallback == nil)
         #expect(result.html.contains("<h1"))
     }
@@ -104,7 +117,7 @@ struct ByteCapTests {
     @Test func escapesAtTheCapAreStillRead() {
         let source = Self.document(bytes: Self.cap, lead: "x ==a== \\=\n\ny ==b==\n\n")
         #expect(source.utf8.count == Self.cap)
-        let html = MarkdownRenderer.render(source)
+        let html = Self.privately { MarkdownRenderer.render(source) }
         #expect(html.contains("x <mark>a</mark> =") && html.contains("y <mark>b</mark>"), "\(html.prefix(300))")
     }
 }
