@@ -29,7 +29,9 @@ jobs:
     # the CLI exports), so the next suite added tipped it over 30 and the run was cancelled.
     # Main's #165 (3d0c948) had raised it to 45 for the 20k-element DetailsPageTests A17
     # measurements, which run in both the debug and release passes; 50 covers both.
-    timeout-minutes: 50
+    # 70, not 50: the JSON/YAML tree page (#128) added WebKit suites that run in both passes, and
+    # macos-15 hit 50 twice in the release pass with every test passing (run 39231688388).
+    timeout-minutes: 70
     permissions:
       contents: read
     steps:
