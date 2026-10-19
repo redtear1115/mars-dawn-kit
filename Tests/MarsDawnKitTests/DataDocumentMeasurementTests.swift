@@ -166,10 +166,11 @@ struct DataDocumentMeasurementTests {
     }
 
     @Test func yamlShapesAtCandidateSizes() async throws {
-        let sizes = (ProcessInfo.processInfo.environment["MARSDAWN_DATA_MEASURE_SIZES"] ?? "1,2,4,8")
-            .split(separator: ",").compactMap { Int($0) }
+        // Sizes in MiB, or in KiB with a trailing k ("512k").
+        let sizes = (ProcessInfo.processInfo.environment["MARSDAWN_DATA_MEASURE_SIZES"] ?? "512k,1,2,4,8")
+            .split(separator: ",").compactMap { $0.hasSuffix("k") ? Int($0.dropLast()).map { $0 * 1024 } : Int($0).map { $0 * Self.mebibyte } }
         for size in sizes {
-            for (name, text) in Self.shapes(bytes: size * Self.mebibyte) where Self.set == nil || Self.set == "yaml" || name.hasPrefix(Self.set ?? "") {
+            for (name, text) in Self.shapes(bytes: size) where Self.set == nil || Self.set == "yaml" || name.hasPrefix(Self.set ?? "") {
                 _ = try await Self.measure(name, text)
             }
         }
