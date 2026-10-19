@@ -88,8 +88,16 @@ struct ContentLanguagePageTests {
         let outer = try await js(withMarker, "return document.getElementById('content').outerHTML;") as? String ?? ""
         #expect(!outer.contains("md-content-lang"), "marker absent")
         #expect(outer.contains("<h1"), "positive fixture: the content landed")
-        let margin = try await js(withMarker, "return getComputedStyle(document.getElementById('content').firstElementChild).marginTop;") as? String
-        #expect(margin == "0px", "first child's margin-top: \(String(describing: margin))")
+        // The document's first block is still `#content`'s first child: no margin above it.
+        let margin = try await js(withMarker, "return getComputedStyle(document.querySelector('#content > h1')).marginTop;") as? String
+        #expect(margin == "0px", "the first block's margin-top: \(String(describing: margin))")
+        // The instrument: an h1 that is not the first child does have a margin above it.
+        let later = try await js(withMarker, """
+            const h = document.createElement('h1'); h.textContent = 'x';
+            document.getElementById('content').appendChild(h);
+            const m = getComputedStyle(h).marginTop; h.remove(); return m;
+            """) as? String
+        #expect(later != nil && later != "0px", "instrument: a later h1's margin-top is \(String(describing: later))")
         let first = try await js(withMarker, "return document.getElementById('content').firstElementChild.tagName;") as? String
         #expect(first == "H1")
     }
