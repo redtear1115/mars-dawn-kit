@@ -21,6 +21,15 @@ let previewSourceFolderURL: URL = URL(fileURLWithPath: #filePath)
     .deletingLastPathComponent()      // repo root
     .appendingPathComponent("Sources/MarsDawnKit/Resources/Preview", isDirectory: true)
 
+
+/// TEMP diagnostics (#157 hang hunt): appends a line to $MD157_TRACE, unbuffered.
+func md157Trace(_ line: String) {
+    guard let path = ProcessInfo.processInfo.environment["MD157_TRACE"] else { return }
+    let data = Data("\(Date().timeIntervalSince1970) \(line)\n".utf8)
+    if let h = FileHandle(forWritingAtPath: path) { h.seekToEndOfFile(); h.write(data); try? h.close() }
+    else { FileManager.default.createFile(atPath: path, contents: data) }
+}
+
 /// A throwaway, patchable copy of the bundled `Preview/` folder.
 @MainActor
 final class PreviewPageCopy {
@@ -134,8 +143,10 @@ func loadSecurityPreview(configuration: WKWebViewConfiguration, theme: PreviewTh
     let webView = PreviewWKWebView(frame: NSRect(x: 0, y: 0, width: 600, height: 600), configuration: configuration)
     webView.applyContentRuleList(try await PreviewContentRules.ruleList(allowRemoteImages: false))
     guard webView.load(URLRequest(url: PreviewSchemeHandler.pageURL(theme: theme))) != nil else { throw URLError(.cancelled) }
+    md157Trace("load: started")
     let deadline = ContinuousClock.now + .seconds(20)
     while webView.isLoading, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(20)) }
+    md157Trace("load: isLoading=\(webView.isLoading)")
     // Sentinel plus the instruments the security review asked for (F7): CSP violations and the
     // identity of the page's own globals, so a page-script re-run is caught even if it is silent.
     _ = try await webView.callAsyncJavaScript(
@@ -147,14 +158,18 @@ func loadSecurityPreview(configuration: WKWebViewConfiguration, theme: PreviewTh
         window.__md157katexRef = window.katex;
         return true;
         """, contentWorld: .page)
+    md157Trace("load: bootstrap done")
     return webView
 }
 
 /// Feeds `html` through the page's own `update()` and waits for its diagrams to settle.
 @MainActor
 func previewUpdate(_ html: String, lineCount: Int = 40, in webView: PreviewWKWebView) async throws {
+    md157Trace("update: eval")
     _ = try await webView.evaluateJavaScript(PreviewWebView.updateScript(html: html, lineCount: lineCount))
+    md157Trace("update: idle")
     _ = try? await webView.callAsyncJavaScript("return await MarsDawn.idle();", contentWorld: .page)
+    md157Trace("update: idle done")
 }
 
 /// Reads an integer out of the page world.
@@ -177,22 +192,30 @@ func sentinel(_ webView: WKWebView) async throws -> Int {
     try await previewInt(webView, "window.__md157 | 0")
 }
 
-/// Yields through several fresh macrotasks and frames so a theme/appearance redraw — which
+/// Yields through several fresh macrotasks and a short timer so a theme/appearance redraw — which
 /// `renderMermaidSequentially` runs off `pendingWork`, out of reach of `MarsDawn.idle()` — has
 /// finished its single invalid diagram before the test reads the DOM.
 @MainActor
 func settleRender(_ webView: WKWebView) async throws {
+    md157Trace("settle: start")
+    defer { md157Trace("settle: done") }
     _ = try? await webView.callAsyncJavaScript(
         """
-        await new Promise((resolve) => {
-          let n = 0;
-          const tick = () => {
-            const ch = new MessageChannel();
-            ch.port2.onmessage = () => { n += 1; if (n < 8) requestAnimationFrame(tick); else resolve(); };
-            ch.port1.postMessage(0);
-          };
-          tick();
-        });
+        // No requestAnimationFrame: a web view outside a window never runs frames, so a promise
+        // waiting on one never settles (and callAsyncJavaScript can't be cancelled). Fresh tasks
+        // and a short timer only, with a hard cap so this always returns.
+        await Promise.race([
+          new Promise((resolve) => {
+            let n = 0;
+            const tick = () => {
+              const ch = new MessageChannel();
+              ch.port2.onmessage = () => { n += 1; if (n < 16) tick(); else setTimeout(resolve, 100); };
+              ch.port1.postMessage(0);
+            };
+            tick();
+          }),
+          new Promise((resolve) => setTimeout(resolve, 5000)),
+        ]);
         return true;
         """, contentWorld: .page)
 }

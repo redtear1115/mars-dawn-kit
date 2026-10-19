@@ -23,7 +23,7 @@ import AppKit
 import WebKit
 
 @MainActor
-@Suite(.serialized, .timeLimit(.minutes(3)))
+@Suite(.serialized, .timeLimit(.minutes(2)))
 struct PreviewFilterAndCSPSecurityTests {
     /// A document carrying HTML and SVG `<script>` and a `<noscript>`.
     static let scriptMarkup = """

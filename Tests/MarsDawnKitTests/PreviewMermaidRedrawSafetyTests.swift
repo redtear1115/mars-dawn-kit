@@ -12,7 +12,7 @@ import WebKit
 // which is what makes the difference observable.
 
 @MainActor
-@Suite(.serialized, .timeLimit(.minutes(3)))
+@Suite(.serialized, .timeLimit(.minutes(2)))
 struct PreviewMermaidRedrawSafetyTests {
     /// A mermaid block that fails to render and carries a document-supplied `.mermaid-output`
     /// holding the harmless marker.
@@ -94,7 +94,9 @@ struct PreviewMermaidRedrawSafetyTests {
 
     // MARK: S0b (F3) — a diagram can't lower Mermaid's security level.
 
-    static func effectiveSecurityLevel(_ copy: PreviewPageCopy) async throws -> String {
+    /// Renders a diagram that asks for loose mode and returns Mermaid's effective level, plus
+    /// whether the diagram actually drew (so "strict" can't come from a diagram that never rendered).
+    static func effectiveSecurityLevel(_ copy: PreviewPageCopy) async throws -> (level: String, drew: Bool) {
         let webView = try await loadSecurityPreview(configuration: copy.makeConfiguration())
         // A diagram asking for loose mode through an init directive, plus a `click ... call`.
         let diagram = """
@@ -105,18 +107,29 @@ struct PreviewMermaidRedrawSafetyTests {
         """
         try await previewUpdate(diagram, in: webView)
         try await settleRender(webView)
-        return try await previewString(webView, "window.mermaid && window.mermaid.getConfig ? window.mermaid.getConfig().securityLevel : 'unknown'")
+        let drew = try await previewInt(webView, "document.querySelectorAll('.mermaid-block.rendered .mermaid-output svg').length") > 0
+        // Mermaid 12 exposes its effective configuration through `mermaidAPI.getConfig()`.
+        let level = try await previewString(webView, """
+            (() => { const api = window.mermaid && window.mermaid.mermaidAPI;
+              const cfg = api && (api.getConfig ? api.getConfig() : api.getSiteConfig && api.getSiteConfig());
+              return cfg ? cfg.securityLevel : 'unknown'; })()
+            """)
+        return (level, drew)
     }
 
     @Test func diagramCannotLowerSecurityLevel() async throws {
         let copy = try PreviewPageCopy(); defer { copy.cleanUp() }
-        #expect(try await Self.effectiveSecurityLevel(copy) == "strict")
+        let result = try await Self.effectiveSecurityLevel(copy)
+        #expect(result.drew, "the directive-bearing diagram must render for this to mean anything")
+        #expect(result.level == "strict")
+        // renderMermaid never calls bindFunctions, so a `click ... call` has nothing to bind to.
     }
 
     @Test func plantingLooseMakesTheLevelControlRed() async throws {
         let copy = try PreviewPageCopy(); defer { copy.cleanUp() }
         try copy.plantLooseMermaid()
-        #expect(try await Self.effectiveSecurityLevel(copy) == "loose")
+        let result = try await Self.effectiveSecurityLevel(copy)
+        #expect(result.level == "loose")
     }
 }
 #endif
