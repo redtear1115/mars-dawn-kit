@@ -49,6 +49,12 @@ struct SourceBytes: Sendable {
         return offset <= bytes.count ? offset : nil
     }
 
+    /// Up to `count` bytes from `location`, or nil when it is not in the source.
+    func prefix(at location: SourceLocation, count: Int) -> ArraySlice<UInt8>? {
+        guard let start = offset(of: location), start < bytes.count else { return nil }
+        return bytes[start..<min(start + count, bytes.count)]
+    }
+
     /// The bytes a one-line range covers (its end column is exclusive), or nil. Only for a check
     /// that refuses what doesn't match (`ImageSizes.isVerbatim`): cmark's ranges can be wrong.
     func slice(_ range: SourceRange?) -> ArraySlice<UInt8>? {

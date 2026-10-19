@@ -164,15 +164,30 @@ enum Callouts {
         let trim: Trim?
     }
 
+    /// What a reader of the tree needs from the source to tell a marker from text that only
+    /// decodes to one.
+    struct Source {
+        let bytes: SourceBytes
+        /// Lines of `bytes` that hold math the page shows as math, in a source whose math has not
+        /// been swapped for placeholders (the word counter's). The renderer parses a source that
+        /// has been, and finds the placeholder instead.
+        let mathLines: Set<Int>
+
+        init(_ text: String, mathLines: Set<Int> = []) {
+            bytes = SourceBytes(text)
+            self.mathLines = mathLines
+        }
+    }
+
     /// `blocks` as a list of events with every paired marker applied, or nil when no opener has a
     /// closer (the blocks then render exactly as they would without this).
-    static func events(for blocks: [Block]) -> [Event]? {
+    static func events(for blocks: [Block], source: Source? = nil) -> [Event]? {
         var perBlock = [[Occurrence]](repeating: [], count: blocks.count)
         var openers = 0
         for (index, block) in blocks.enumerated() {
             guard block.node is Paragraph else { continue }
             let range = block.inline ?? 0..<block.inlines.count
-            perBlock[index] = markers(in: block.inlines, range: range, block: index)
+            perBlock[index] = markers(in: block.inlines, range: range, block: index, source: source)
             openers += perBlock[index].reduce(0) { count, occurrence in
                 if case .opener = occurrence.marker { count + 1 } else { count }
             }
@@ -180,7 +195,7 @@ enum Callouts {
         guard openers > 0 else { return nil }
         // A closer that cmark folded into the end of a list is its last line.
         for (index, block) in blocks.enumerated() where block.node is UnorderedList || block.node is OrderedList {
-            if let trim = tailCloser(of: block.node) {
+            if let trim = tailCloser(of: block.node, source: source) {
                 perBlock[index] = [Occurrence(block: index, start: 0, end: 0, marker: .closer, trim: trim)]
             }
         }
@@ -244,7 +259,7 @@ enum Callouts {
     }
 
     /// The marker lines of one paragraph's inline children `range`, in order.
-    private static func markers(in inlines: [any Markup], range: Range<Int>, block: Int) -> [Occurrence] {
+    private static func markers(in inlines: [any Markup], range: Range<Int>, block: Int, source: Source?) -> [Occurrence] {
         var found: [Occurrence] = []
         var start = range.lowerBound
         while start < range.upperBound {
@@ -252,7 +267,8 @@ enum Callouts {
             while end < range.upperBound, !(inlines[end] is SoftBreak || inlines[end] is LineBreak) { end += 1 }
             // Cheap test first: a marker line begins with a colon.
             if let head = inlines[start] as? Text, head.string.utf8.first == UInt8(ascii: ":"),
-               let text = plainText(of: inlines[start..<end]), let marker = parse(text, line: inlines[start].range?.lowerBound.line) {
+               !isEscaped(inlines[start], in: source),
+               let text = plainText(of: inlines[start..<end]), let marker = parse(text, line: inlines[start].range?.lowerBound.line, source: source) {
                 found.append(Occurrence(block: block, start: start, end: end, marker: marker, trim: nil))
             }
             start = end + 1
@@ -262,7 +278,7 @@ enum Callouts {
 
     /// `:::info`, `:::success`, `:::warning`, `:::danger` (each with an optional title), `:::spoiler
     /// Title` or `:::`, as a whole line of text.
-    private static func parse(_ line: String, line sourceLine: Int?) -> Marker? {
+    private static func parse(_ line: String, line sourceLine: Int?, source: Source?) -> Marker? {
         let bytes = trimmed(Array(line.utf8))
         let colon = UInt8(ascii: ":")
         guard bytes.count >= 3, bytes[0] == colon, bytes[1] == colon, bytes[2] == colon else { return nil }
@@ -273,6 +289,8 @@ enum Callouts {
         let title = String(decoding: trimmed(Array(bytes[end...])), as: UTF8.self)
         // A placeholder of this render (math, footnote) is not a title.
         guard !title.unicodeScalars.contains(where: { $0 == "\u{E000}" || $0 == "\u{E001}" }) else { return nil }
+        // The same for math the renderer's source has not had swapped out yet.
+        if let sourceLine, source?.mathLines.contains(sourceLine) == true { return nil }
         let author = title.isEmpty ? nil : title
         switch String(decoding: bytes[3..<end], as: UTF8.self) {
         case "info": return .opener(.callout(.note, title: author, line: sourceLine))
@@ -289,7 +307,7 @@ enum Callouts {
     /// For a list whose last line is a closer: the paragraph that holds it and how much of it to
     /// keep. "Last line" means the final line of the final paragraph of the final item, at any
     /// depth of lists in lists; a closer anywhere else in a list is left literal.
-    private static func tailCloser(of list: any Markup) -> Trim? {
+    private static func tailCloser(of list: any Markup, source: Source?) -> Trim? {
         var node: any Markup = list
         while node.childCount > 0, let last = node.child(at: node.childCount - 1) {
             if let paragraph = last as? Paragraph {
@@ -297,8 +315,9 @@ enum Callouts {
                 var start = inlines.count
                 while start > 0, !(inlines[start - 1] is SoftBreak || inlines[start - 1] is LineBreak) { start -= 1 }
                 guard start > 0, start < inlines.count, let position = Position(paragraph),
+                      !isEscaped(inlines[start], in: source),
                       let text = plainText(of: inlines[start...]),
-                      case .closer? = parse(text, line: nil) else { return nil }
+                      case .closer? = parse(text, line: nil, source: source) else { return nil }
                 return Trim(position: position, keep: start - 1)
             }
             guard last is ListItem || last is UnorderedList || last is OrderedList else { return nil }
@@ -308,6 +327,19 @@ enum Callouts {
     }
 
     // MARK: - Helpers
+
+    /// Whether the marker line that begins with `first` was written with an escape for a colon
+    /// (`\:::info`, `&#58;&#58;&#58;info`): cmark decodes those to the same `Text` as the plain
+    /// line, but HackMD matches the line as written and shows them as text. Judged from the
+    /// source bytes at the start of the line; where the range is missing or points at anything
+    /// else, the decoded text is believed, as cmark's ranges can be wrong.
+    private static func isEscaped(_ first: any Markup, in source: Source?) -> Bool {
+        guard let source, let start = first.range?.lowerBound,
+              let bytes = source.bytes.prefix(at: start, count: 3), let head = bytes.first else { return false }
+        let colon = UInt8(ascii: ":")
+        if head == colon { return !bytes.allSatisfy { $0 == colon } }
+        return head == UInt8(ascii: "\\") || head == UInt8(ascii: "&")
+    }
 
     /// The text of `inlines` when every one is text or raw inline HTML (read as the characters
     /// written, so a title such as `"><img src=x onerror=…>` is text and reaches the page escaped),

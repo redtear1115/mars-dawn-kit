@@ -80,6 +80,15 @@ struct CalloutRenderTests {
         Case(name: "spoiler without a title", source: ":::spoiler\nx\n:::", html: "<p data-line=\"1\">:::spoiler\nx\n:::</p>\n"),
         Case(name: "outer opener never closed", source: ":::info\n:::warning\nx\n:::",
              html: "<p data-line=\"1\">:::info</p>\n" + callout("warning", line: 2, "<p data-line=\"3\">x</p>\n")),
+        // Kit #189: a marker written with an escape or an entity is text, as in HackMD.
+        Case(name: "escaped opener", source: "\\:::info\nx\n:::", html: "<p data-line=\"1\">:::info\nx\n:::</p>\n"),
+        Case(name: "entity opener", source: "&#58;&#58;&#58;info\nx\n:::", html: "<p data-line=\"1\">:::info\nx\n:::</p>\n"),
+        Case(name: "escaped closer", source: ":::info\nx\n\\:::", html: "<p data-line=\"1\">:::info\nx\n:::</p>\n"),
+        Case(name: "entity closer", source: ":::info\nx\n&#58;&#58;&#58;", html: "<p data-line=\"1\">:::info\nx\n:::</p>\n"),
+        Case(name: "escaped opener in a quote", source: "> \\:::info\n> x\n> :::",
+             html: "<blockquote data-line=\"1\">\n<p data-line=\"1\">:::info\nx\n:::</p>\n</blockquote>\n"),
+        Case(name: "a title with math is not a marker", source: ":::info $x^2$\nx\n:::",
+             html: "<p data-line=\"1\">:::info <span class=\"math-inline\">x^2</span>\nx\n:::</p>\n"),
         Case(name: "a title with formatting is not a marker", source: ":::info **b**\nx\n:::",
              html: "<p data-line=\"1\">:::info <strong>b</strong>\nx\n:::</p>\n"),
     ]

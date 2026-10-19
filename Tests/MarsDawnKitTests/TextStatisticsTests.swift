@@ -198,3 +198,31 @@ struct TextStatisticsTests {
         #expect(TextStatistics(markdownBody: "<div>a &bogus; b</div>\n").words == 3, "an unknown name shows as written")
     }
 }
+
+/// Three small edges of the `:::` reading (kit #189): the counter reads the lines the page shows.
+struct TextStatisticsCalloutEdgeTests {
+    private func words(_ markdown: String) -> Int { TextStatistics(markdownBody: markdown).words }
+
+    /// A container inside a plain block quote is a callout on the page: its marker lines are not text.
+    @Test func aContainerInAPlainQuoteLosesItsMarkerLines() {
+        #expect(words("> :::info\n> x\n> :::\n") == 1)
+        #expect(words("- > :::info\n  > x\n  > :::\n") == 1)
+        #expect(words("- - > :::info\n    > x\n    > :::\n") == 1)
+    }
+
+    /// A marker written with an escape or an entity is text on the page.
+    @Test func anEscapedMarkerIsCounted() {
+        #expect(words(":::info\nx\n:::\n") == 1, "control: the plain marker")
+        #expect(words("\\:::info\nx\n:::\n") == 2)
+        #expect(words("&#58;&#58;&#58;info\nx\n:::\n") == 2)
+        #expect(words(":::info\nx\n\\:::\n") == 2)
+        #expect(words("> \\:::info\n> x\n> :::\n") == 2)
+    }
+
+    /// The renderer leaves a title with math as text (kit #189), so the counter counts the line.
+    @Test func aTitleWithMathIsNotAMarker() {
+        #expect(words(":::info y\nx\n:::\n") == 2, "control: a title without math")
+        #expect(words(":::info $x^2$\nx\n:::\n") == 4)
+        #expect(words("> :::info $x^2$\n> x\n> :::\n") == 4)
+    }
+}

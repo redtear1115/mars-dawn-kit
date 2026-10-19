@@ -104,6 +104,15 @@ struct CountMatchesPageTests {
         // A spoiler is a closed `<details>`: its title shows, its body does not.
         ":::spoiler Spoiler title here\nhidden spoiler body words\n:::\n\nShown after.\n",
         ":::info\nbefore\n\n:::spoiler Inner spoiler\nhidden words\n:::\n\nafter\n:::\n",
+        // Containers in a plain block quote or a list (kit #189): the page shows the callout, so
+        // the marker lines are not counted.
+        "> :::info\n> x\n> :::\n",
+        "- > :::info\n  > x\n  > :::\n",
+        "- - > :::info\n    > x\n    > :::\n",
+        // An escaped marker is text on the page, and counted (kit #189).
+        "\\:::info\nescaped words\n:::\n",
+        "&#58;&#58;&#58;info\nentity words\n:::\n",
+        ":::info\nopen words\n\\:::\n",
     ]
 
     @Test(arguments: probes)
