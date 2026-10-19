@@ -43,3 +43,17 @@
 "Important" = "Important";
 "Warning" = "Avertissement";
 "Caution" = "Danger";
+
+/* JSON and YAML tree page (mars-dawn-kit#128). Placeholders are replaced as plain text; keep them unchanged. */
+"{n} items" = "{n} éléments";
+"1 item" = "1 élément";
+"Show {n} More" = "Afficher {n} de plus";
+"Circular reference" = "Référence circulaire";
+"Part of this file is collapsed to keep the preview responsive. Click a row to expand it." = "Une partie de ce fichier est réduite pour que l’aperçu reste fluide. Cliquez sur une ligne pour la développer.";
+"This file is too deeply nested or too large to show as a tree." = "Ce fichier est trop imbriqué ou trop volumineux pour être affiché sous forme d’arborescence.";
+"This file is larger than {size} MB, so it can't be shown as a tree." = "Ce fichier dépasse {size} Mo et ne peut donc pas être affiché sous forme d’arborescence.";
+"This file isn't UTF-8 text, so it can't be shown as a tree." = "Ce fichier n’est pas du texte UTF-8 et ne peut donc pas être affiché sous forme d’arborescence.";
+"This file isn't valid {format} (line {line}, column {column})." = "Ce fichier n’est pas un {format} valide (ligne {line}, colonne {column}).";
+"This file isn't valid {format}." = "Ce fichier n’est pas un {format} valide.";
+"To read it as text, choose View ▸ Source Only in MarsDawn." = "Pour le lire en tant que texte, choisissez Présentation ▸ Source uniquement dans MarsDawn.";
+"Show Source Only" = "Afficher la source uniquement";

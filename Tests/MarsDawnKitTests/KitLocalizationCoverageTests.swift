@@ -14,18 +14,12 @@ struct KitLocalizationCoverageTests {
     nonisolated static let sameAsEnglish: [String: Set<String>] = ["de": ["Modern"], "fr": ["Important"]]
     /// Keys allowed to be missing from a language, per language. A pending entry FAILS once its
     /// translation lands: delete it from here then. The callout titles of kit #135 landed in all
-    /// seven with kit #183. The JSON and YAML page's labels (kit #128) are approved in zh-Hant and
-    /// ja; these five languages get them through needs-i18n, gated before the 0.7.2 tag.
-    nonisolated static let pendingDataLabelKeys: Set<String> = Set(DataLabels.english.dictionary.values)
-    nonisolated static let pendingLocalizations = ["de", "es", "fr", "ko", "zh-Hans"]
-    nonisolated static let pending: [String: Set<String>] = Dictionary(
-        uniqueKeysWithValues: pendingLocalizations.map { ($0, pendingDataLabelKeys) }
-    )
+    /// seven with kit #183, and the JSON and YAML page's labels (kit #128) in all seven with this
+    /// change, so nothing is pending.
+    nonisolated static let pending: [String: Set<String>] = [:]
 
-    @Test func thePendingSetIsExactlyFiveLanguagesTimesTheTwelveLabels() {
-        #expect(Self.pendingDataLabelKeys.count == 12)
-        #expect(Set(Self.pending.keys) == ["de", "es", "fr", "ko", "zh-Hans"])
-        #expect(Set(Self.others + [Self.reference]).subtracting(Self.pending.keys) == ["zh-Hant", "ja"])
+    @Test func nothingIsPending() {
+        #expect(Self.pending.isEmpty)
     }
 
     nonisolated private static let tables = URL(fileURLWithPath: #filePath)

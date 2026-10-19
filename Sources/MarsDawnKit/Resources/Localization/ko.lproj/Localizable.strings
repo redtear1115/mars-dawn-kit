@@ -43,3 +43,17 @@
 "Important" = "중요";
 "Warning" = "경고";
 "Caution" = "위험";
+
+/* JSON and YAML tree page (mars-dawn-kit#128). Placeholders are replaced as plain text; keep them unchanged. */
+"{n} items" = "{n}개 항목";
+"1 item" = "1개 항목";
+"Show {n} More" = "{n}개 더 보기";
+"Circular reference" = "순환 참조";
+"Part of this file is collapsed to keep the preview responsive. Click a row to expand it." = "미리보기가 원활하게 동작하도록 일부를 접었습니다. 행을 클릭하면 펼쳐집니다.";
+"This file is too deeply nested or too large to show as a tree." = "이 파일은 계층이 너무 깊거나 너무 커서 트리로 표시할 수 없습니다.";
+"This file is larger than {size} MB, so it can't be shown as a tree." = "이 파일은 {size}MB를 초과하여 트리로 표시할 수 없습니다.";
+"This file isn't UTF-8 text, so it can't be shown as a tree." = "이 파일은 UTF-8 텍스트가 아니어서 트리로 표시할 수 없습니다.";
+"This file isn't valid {format} (line {line}, column {column})." = "이 파일은 올바른 {format} 형식이 아닙니다({line}행, {column}열).";
+"This file isn't valid {format}." = "이 파일은 올바른 {format} 형식이 아닙니다.";
+"To read it as text, choose View ▸ Source Only in MarsDawn." = "텍스트로 읽으려면 MarsDawn에서 보기 ▸ 소스만을 선택하십시오.";
+"Show Source Only" = "소스만 보기";
