@@ -5,7 +5,7 @@ import Testing
 /// D11 (kit #128), the Swift side: `DataLabels` reads the kit's own tables, whatever the
 /// process's language, and en / zh-Hant / ja are the owner-approved copy (kit #128
 /// issuecomment-6261371894; `DataLabelsApprovedCopy` is generated from it). de, es, fr, ko and
-/// zh-Hans are pending (KitLocalizationCoverageTests) and show English until they land.
+/// zh-Hans landed from kit #128 issuecomment-6261868591 and are read from their own tables.
 struct DataLabelsTests {
     static let tables = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
@@ -39,12 +39,7 @@ struct DataLabelsTests {
         }
     }
 
-    @Test(arguments: ["de", "es", "fr", "ko", "zh-Hans"])
-    func thePendingLanguagesShowEnglish(localization: String) {
-        #expect(DataLabels.localized(localization) == .english)
-    }
-
-    @Test(arguments: ["zh-Hant", "ja"])
+    @Test(arguments: ["zh-Hant", "ja", "de", "es", "fr", "ko", "zh-Hans"])
     func localizedReadsEachLabelFromThatTable(localization: String) throws {
         let table = try Self.table(localization)
         let labels = DataLabels.localized(localization)

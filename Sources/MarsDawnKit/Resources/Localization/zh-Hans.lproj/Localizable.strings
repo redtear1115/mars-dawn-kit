@@ -22,3 +22,17 @@
 "Important" = "重要";
 "Warning" = "警告";
 "Caution" = "小心";
+
+/* JSON and YAML tree page (mars-dawn-kit#128). Placeholders are replaced as plain text; keep them unchanged. */
+"{n} items" = "{n} 项";
+"1 item" = "1 项";
+"Show {n} More" = "再显示 {n} 项";
+"Circular reference" = "循环引用";
+"Part of this file is collapsed to keep the preview responsive. Click a row to expand it." = "为了让预览保持流畅，部分内容已折叠。点按该行即可展开。";
+"This file is too deeply nested or too large to show as a tree." = "此文件层级太深或内容太多，无法以树状结构显示。";
+"This file is larger than {size} MB, so it can't be shown as a tree." = "此文件超过 {size} MB，无法以树状结构显示。";
+"This file isn't UTF-8 text, so it can't be shown as a tree." = "此文件不是 UTF-8 文本，无法以树状结构显示。";
+"This file isn't valid {format} (line {line}, column {column})." = "此文件不是有效的 {format}（第 {line} 行，第 {column} 列）。";
+"This file isn't valid {format}." = "此文件不是有效的 {format}。";
+"To read it as text, choose View ▸ Source Only in MarsDawn." = "若要以纯文本阅读，请在 MarsDawn 中选择“显示”▸“仅显示源代码”。";
+"Show Source Only" = "仅显示源代码";
