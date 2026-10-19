@@ -106,9 +106,36 @@ public enum MarkdownRenderer {
     /// blocks unless it is already on a parsing worker.
     private static func renderSplit(_ markdown: String, options: Options) -> RenderResult {
         let split = SplitSource(markdown, options: options)
-        return MarkdownParsing.withDocument(split.parsedBody, options: options.parseLimits) { outcome in
+        let result = MarkdownParsing.withDocument(split.parsedBody, options: options.parseLimits) { outcome in
             renderResult(outcome, split: split, options: options)
         }
+        // Defence in depth (#187): a placeholder the parse split apart is never expanded, so its
+        // pieces would reach the page, different on every render (the nonce is random). When this
+        // extraction made placeholders and more placeholder scalars came out than went in, render
+        // again with the math left as source text. Costs nothing for a document without math.
+        guard split.math.expressionCount > 0,
+              placeholderScalarCount(result.html) > placeholderScalarCount(split.body) else { return result }
+        let plain = SplitSource(markdown, options: options, extractMath: false)
+        return MarkdownParsing.withDocument(plain.parsedBody, options: options.parseLimits) { outcome in
+            renderResult(outcome, split: plain, options: options)
+        }
+    }
+
+    /// How many U+E000 / U+E001 scalars `text` holds (the private-use pair math placeholders use).
+    private static func placeholderScalarCount(_ text: String) -> Int {
+        // UTF-8: U+E000 is EE 80 80 and U+E001 is EE 80 81.
+        let bytes = Array(text.utf8)
+        var count = 0
+        var index = 0
+        while index + 2 < bytes.count {
+            if bytes[index] == 0xEE, bytes[index + 1] == 0x80, bytes[index + 2] == 0x80 || bytes[index + 2] == 0x81 {
+                count += 1
+                index += 3
+            } else {
+                index += 1
+            }
+        }
+        return count
     }
 
     /// A document split into its front matter, rendered up front (it is never parsed as
@@ -131,7 +158,7 @@ public enum MarkdownRenderer {
         let footnotes: FootnoteExtraction
         let bodyLineOffset: Int
 
-        init(_ markdown: String, options: Options) {
+        init(_ markdown: String, options: Options, extractMath: Bool = true) {
             let (frontMatter, body, offset) = FrontMatter.split(markdown)
             if let frontMatter {
                 frontMatterHTML = MarkdownRenderer.frontMatterHTML(frontMatter, label: options.frontMatterLabel)
@@ -140,7 +167,9 @@ public enum MarkdownRenderer {
                 frontMatterHTML = ""
                 self.body = markdown
             }
-            math = MathExtractor.extract(from: self.body)
+            math = extractMath
+                ? MathExtractor.extract(from: self.body)
+                : MathExtractor.Extraction(markdown: self.body, nonce: "", expressions: [])
             // After the math, so `$[^1]$` stays TeX.
             footnotes = FootnoteExtractor.extract(from: math.markdown)
             parsedBody = footnotes.markdown
