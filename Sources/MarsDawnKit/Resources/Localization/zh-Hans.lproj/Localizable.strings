@@ -15,3 +15,10 @@
 
 /* Note under a Mermaid diagram left as source because the document has too many (mars-dawn-kit#95). */
 "Not rendered: too many diagrams in this document. Source shown." = "未渲染：此文档的图表过多。显示源代码。";
+
+/* Default titles of callouts (> [!NOTE], :::info), read by CalloutTitles; kit #135, #183. */
+"Note" = "附注";
+"Tip" = "提示";
+"Important" = "重要";
+"Warning" = "警告";
+"Caution" = "小心";

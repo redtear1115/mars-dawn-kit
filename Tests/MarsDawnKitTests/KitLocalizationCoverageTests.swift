@@ -11,16 +11,11 @@ struct KitLocalizationCoverageTests {
     nonisolated static let reference = "zh-Hant"
     nonisolated static let others = ["zh-Hans", "ja", "de", "fr", "es", "ko"]
     /// Translations that are the English word itself on purpose, so "equals the key" isn't a fallback.
-    nonisolated static let sameAsEnglish: [String: Set<String>] = ["de": ["Modern"]]
-    /// The callout titles (kit #135) exist in zh-Hant and ja; the other five languages come from
-    /// kit #183 (milestone 0.7.1, closed before the tag). Until then exactly these keys are
-    /// missing from exactly these languages, and nothing else is allowed to be. A pending entry
+    nonisolated static let sameAsEnglish: [String: Set<String>] = ["de": ["Modern"], "fr": ["Important"]]
+    /// Keys allowed to be missing from a language, per language. Empty: every language ships every
+    /// key (the callout titles of kit #135 landed in all seven with kit #183). A pending entry
     /// FAILS once its translation lands: delete it from here then.
-    nonisolated static let pendingCalloutTitleKeys: Set<String> = ["Note", "Tip", "Important", "Warning", "Caution"]
-    nonisolated static let pendingLocalizations = ["de", "es", "fr", "ko", "zh-Hans"]
-    nonisolated static let pending: [String: Set<String>] = Dictionary(
-        uniqueKeysWithValues: pendingLocalizations.map { ($0, pendingCalloutTitleKeys) }
-    )
+    nonisolated static let pending: [String: Set<String>] = [:]
 
     nonisolated private static let tables = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()

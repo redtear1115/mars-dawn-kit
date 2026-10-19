@@ -36,3 +36,10 @@
 
 /* Note under a Mermaid diagram left as source because the document has too many (mars-dawn-kit#95). */
 "Not rendered: too many diagrams in this document. Source shown." = "렌더링되지 않음: 이 문서에 다이어그램이 너무 많습니다. 소스를 표시합니다.";
+
+/* Default titles of callouts (> [!NOTE], :::info), read by CalloutTitles; kit #135, #183. */
+"Note" = "참고";
+"Tip" = "팁";
+"Important" = "중요";
+"Warning" = "경고";
+"Caution" = "위험";

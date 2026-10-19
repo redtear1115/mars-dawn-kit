@@ -33,12 +33,18 @@ struct CalloutTitlesTests {
         }
     }
 
-    /// The five languages whose translations are tracked in kit #183 (milestone 0.7.1) have no titles yet, so
-    /// they read as English, and each is held in `KitLocalizationCoverageTests.pendingCalloutTitles`.
-    @Test(arguments: KitLocalizationCoverageTests.pendingLocalizations)
-    func aPendingLanguageReadsAsEnglish(_ localization: String) {
-        #expect(CalloutTitles.localized(localization) == .english)
-        #expect(CalloutTitles.preferred(languages: [localization]) == .english)
+    /// The five languages added by kit #183 (Grok's titles, decided by the owner 2026-10-19).
+    @Test(arguments: [
+        ("zh-Hans", ["附注", "提示", "重要", "警告", "小心"]),
+        ("ko", ["참고", "팁", "중요", "경고", "위험"]),
+        ("de", ["Hinweis", "Tipp", "Wichtig", "Warnung", "Gefahr"]),
+        ("fr", ["Remarque", "Conseil", "Important", "Avertissement", "Danger"]),
+        ("es", ["Nota", "Consejo", "Importante", "Advertencia", "Peligro"]),
+    ] as [(String, [String])])
+    func theNewLanguagesHaveTheirTitles(localization: String, words: [String]) {
+        let expected = CalloutTitles(note: words[0], tip: words[1], important: words[2], warning: words[3], caution: words[4])
+        #expect(CalloutTitles.localized(localization) == expected)
+        #expect(CalloutTitles.preferred(languages: [localization]) == expected)
     }
 
     @Test func shippedIsTheBundlesOwnList() {

@@ -36,3 +36,10 @@
 
 /* Note under a Mermaid diagram left as source because the document has too many (mars-dawn-kit#95). */
 "Not rendered: too many diagrams in this document. Source shown." = "No renderizado: este documento tiene demasiados diagramas. Se muestra el código fuente.";
+
+/* Default titles of callouts (> [!NOTE], :::info), read by CalloutTitles; kit #135, #183. */
+"Note" = "Nota";
+"Tip" = "Consejo";
+"Important" = "Importante";
+"Warning" = "Advertencia";
+"Caution" = "Peligro";
