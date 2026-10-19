@@ -338,7 +338,16 @@ extension PreviewTheme: ExpressibleByArgument {
 }
 
 extension DocumentExporter.Paper: ExpressibleByArgument {}
-extension ExportLayout: ExpressibleByArgument {}
+extension ExportLayout: ExpressibleByArgument {
+    /// `handbook` is the name the app uses for the manual layout; `manual` stays for scripts that
+    /// already pass it. Both give `.manual`, so the export and its `--json` result are the same.
+    public init?(argument: String) {
+        guard let layout = ExportLayout(rawValue: argument) ?? (argument == "handbook" ? .manual : nil) else { return nil }
+        self = layout
+    }
+
+    public static var allValueStrings: [String] { allCases.map(\.rawValue) + ["handbook"] }
+}
 
 // MARK: - open
 
@@ -665,10 +674,10 @@ extension MarsDawnCommand {
         @Option(help: "Paper size.")
         var paper: DocumentExporter.Paper = .a4
 
-        @Option(help: "Page layout: document (the default) or manual, with wider margins, a 25 mm binding side and every top-level heading on a new page, plus a cover (from the front matter's title, subtitle, version, date, author and logo), a table of contents of the level 1 and 2 headings, \"n / N\" page numbers and PDF bookmarks. <!--BREAK--> on its own line starts a new page in either.")
+        @Option(help: "Page layout: document (the default) or manual (alias: handbook), the Handbook layout, with wider margins, a 25 mm binding side and every top-level heading on a new page, plus a cover (from the front matter's title, subtitle, version, date, author and logo), a table of contents of the level 1 and 2 headings, \"n / N\" page numbers and PDF bookmarks. <!--BREAK--> on its own line starts a new page in either.")
         var layout: ExportLayout = .document
 
-        @Option(help: "Title of the manual layout's table of contents.")
+        @Option(help: "Title of the Handbook layout's table of contents.")
         var tocTitle: String = "Contents"
 
         @Flag(help: "Load images from the web while rendering.")
