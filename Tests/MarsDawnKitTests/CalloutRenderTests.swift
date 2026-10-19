@@ -85,6 +85,8 @@ struct CalloutRenderTests {
         Case(name: "entity opener", source: "&#58;&#58;&#58;info\nx\n:::", html: "<p data-line=\"1\">:::info\nx\n:::</p>\n"),
         Case(name: "escaped closer", source: ":::info\nx\n\\:::", html: "<p data-line=\"1\">:::info\nx\n:::</p>\n"),
         Case(name: "entity closer", source: ":::info\nx\n&#58;&#58;&#58;", html: "<p data-line=\"1\">:::info\nx\n:::</p>\n"),
+        Case(name: "escaped closer a list absorbed", source: ":::info\n- a\n\\:::",
+             html: "<p data-line=\"1\">:::info</p>\n<ul data-line=\"2\">\n<li data-line=\"2\">a\n:::\n</li>\n</ul>\n"),
         Case(name: "escaped opener in a quote", source: "> \\:::info\n> x\n> :::",
              html: "<blockquote data-line=\"1\">\n<p data-line=\"1\">:::info\nx\n:::</p>\n</blockquote>\n"),
         Case(name: "a title with math is not a marker", source: ":::info $x^2$\nx\n:::",

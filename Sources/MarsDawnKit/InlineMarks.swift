@@ -49,6 +49,15 @@ struct SourceBytes: Sendable {
         return offset <= bytes.count ? offset : nil
     }
 
+    /// The bytes of source line `number` (1-based), without its line ending, or nil.
+    func line(_ number: Int) -> ArraySlice<UInt8>? {
+        guard number >= 1, number <= lineStarts.count else { return nil }
+        let start = lineStarts[number - 1]
+        var end = number < lineStarts.count ? lineStarts[number] : bytes.count
+        while end > start, bytes[end - 1] == 0x0A || bytes[end - 1] == 0x0D { end -= 1 }
+        return bytes[start..<end]
+    }
+
     /// Up to `count` bytes from `location`, or nil when it is not in the source.
     func prefix(at location: SourceLocation, count: Int) -> ArraySlice<UInt8>? {
         guard let start = offset(of: location), start < bytes.count else { return nil }

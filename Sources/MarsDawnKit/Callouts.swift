@@ -330,21 +330,29 @@ enum Callouts {
 
     /// Whether the marker line that begins with `first` was written with an escape for a colon
     /// (`\:::info`, `&#58;&#58;&#58;info`): cmark decodes those to the same `Text` as the plain
-    /// line, but HackMD matches the line as written and shows them as text. Judged from the
-    /// source bytes at the start of the line; where the range is missing or points at anything
-    /// else, the decoded text is believed, as cmark's ranges can be wrong.
+    /// line, but HackMD matches the line as written and shows them as text.
+    ///
+    /// Judged from the source line: past the indent and any `>` of a block quote, a marker is
+    /// three colons. cmark's column is not used first, because a line a list item took lazily
+    /// (`:::` closing a list) is given the item's column, not its own. Behind a list marker the
+    /// column is right, and is read instead. Where nothing says otherwise the decoded text is
+    /// believed.
     private static func isEscaped(_ first: any Markup, in source: Source?) -> Bool {
-        guard let source, let start = first.range?.lowerBound,
-              let bytes = source.bytes.prefix(at: start, count: 3), let head = bytes.first else { return false }
+        guard let source, let start = first.range?.lowerBound else { return false }
         let colon = UInt8(ascii: ":")
-        if head == colon { return !bytes.allSatisfy { $0 == colon } }
-        return head == UInt8(ascii: "\\") || head == UInt8(ascii: "&")
+        func escapes(_ bytes: ArraySlice<UInt8>) -> Bool? {
+            guard let head = bytes.first else { return nil }
+            if head == colon { return !bytes.prefix(3).elementsEqual([colon, colon, colon]) }
+            return head == UInt8(ascii: "\\") || head == UInt8(ascii: "&") ? true : nil
+        }
+        if var line = source.bytes.line(start.line) {
+            while let head = line.first, head == 0x20 || head == 0x09 || head == UInt8(ascii: ">") { line = line.dropFirst() }
+            if let answer = escapes(line) { return answer }
+        }
+        guard let bytes = source.bytes.prefix(at: start, count: 3) else { return false }
+        return escapes(bytes) ?? false
     }
 
-    /// The text of `inlines` when every one is text or raw inline HTML (read as the characters
-    /// written, so a title such as `"><img src=x onerror=…>` is text and reaches the page escaped),
-    /// else nil. cmark splits text at characters it watches for (a colon, for autolinks), so one
-    /// line is often several nodes.
     private static func plainText(of inlines: ArraySlice<any Markup>) -> String? {
         var text = ""
         for inline in inlines {
