@@ -49,7 +49,7 @@ struct DataDocumentPageTests {
         let rows = try await Self.rows(webView)
         #expect(rows == [
             Row(level: 0, key: nil, kind: "object", text: "4 items", expanded: "true"),
-            Row(level: 1, key: "a", kind: "object", text: "1 items", expanded: "true"),
+            Row(level: 1, key: "a", kind: "object", text: "1 item", expanded: "true"),
             Row(level: 2, key: "b", kind: "array", text: "4 items", expanded: "true"),
             Row(level: 3, key: "0", kind: "data-number", text: "1", expanded: nil),
             Row(level: 3, key: "1", kind: "data-string", text: "\"x\"", expanded: nil),
@@ -134,7 +134,7 @@ struct DataDocumentPageTests {
             let webView = try await DataPage.load()
             #expect(await DataDocumentPreview.render(over, in: webView) == .overCap)
             let size = kind == .json ? "16" : "0.5"
-            #expect(try await DataPage.messageText(in: webView) == "This document is larger than \(size) MB, too large to show as a tree.")
+            #expect(try await DataPage.messageText(in: webView) == DataLabels.english.overCap.replacingOccurrences(of: "{size}", with: size))
             #expect(try await DataPage.int("document.querySelectorAll('#data .data-source-button').length", in: webView) == 1)
         }
     }
@@ -225,7 +225,7 @@ struct DataDocumentPageTests {
         let webView = try await DataPage.load()
         #expect(await DataPage.render(#"{"length": 4294967295}"#, kind: .json, in: webView) == .rendered)
         #expect(try await Self.rows(webView) == [
-            Row(level: 0, key: nil, kind: "object", text: "1 items", expanded: "true"),
+            Row(level: 0, key: nil, kind: "object", text: "1 item", expanded: "true"),
             Row(level: 1, key: "length", kind: "data-number", text: "4294967295", expanded: nil),
         ])
     }
@@ -282,7 +282,7 @@ struct DataDocumentPageTests {
         var rows = try await Self.rows(webView)
         #expect(rows[1].key == String(repeating: "k", count: 1_000) + "\u{2026}")
         #expect(rows[1].text == "\"" + String(repeating: "v", count: 10_000) + "\u{2026}")
-        #expect(try await DataPage.string("document.querySelector('#data .data-more').textContent", in: webView) == "Show 15000 more")
+        #expect(try await DataPage.string("document.querySelector('#data .data-more').textContent", in: webView) == "Show 15000 More")
         try await DataPage.click("#data .data-more", in: webView)
         rows = try await Self.rows(webView)
         #expect(rows[1].text == "\"" + String(repeating: "v", count: 20_000) + "\u{2026}")
@@ -311,7 +311,7 @@ struct DataDocumentPageTests {
         let webView = try await DataPage.load(messageHandlers: [DataDocumentPreview.errorMessageName: recorder])
         #expect(await DataPage.render(error.text, kind: error.kind, in: webView) == .parseError)
         let format = error.kind == .json ? "JSON" : "YAML"
-        #expect(try await DataPage.messageText(in: webView) == "Not valid \(format) at line \(error.line), column \(error.column).")
+        #expect(try await DataPage.messageText(in: webView) == DataPage.parseErrorAt(format, error.line, error.column))
         try await Task.sleep(for: .milliseconds(100))
         #expect(recorder.bodies.count == 1)
         let body = try #require(recorder.bodies.first as? [String: Any])
@@ -326,7 +326,7 @@ struct DataDocumentPageTests {
         let recorder = RecordingMessageHandler()
         let webView = try await DataPage.load(messageHandlers: [DataDocumentPreview.errorMessageName: recorder])
         #expect(await DataPage.render(#"{"a": 1,}"#, kind: .json, in: webView) == .parseError)
-        #expect(try await DataPage.messageText(in: webView) == "Not valid JSON.")
+        #expect(try await DataPage.messageText(in: webView) == DataLabels.english.parseError.replacingOccurrences(of: "{format}", with: "JSON"))
         #expect(try await DataPage.rows(in: webView) == 0, "what YAML parsed is never shown")
         try await Task.sleep(for: .milliseconds(100))
         #expect(recorder.bodies.isEmpty)
@@ -338,7 +338,7 @@ struct DataDocumentPageTests {
         let webView = try await DataPage.load(messageHandlers: [DataDocumentPreview.errorMessageName: recorder])
         let text = "[" + String(repeating: "1,", count: DataDocumentPreview.maximumYAMLBytes / 2) + "x]"
         #expect(await DataPage.render(text, kind: .json, in: webView) == .parseError)
-        #expect(try await DataPage.messageText(in: webView) == "Not valid JSON.")
+        #expect(try await DataPage.messageText(in: webView) == DataLabels.english.parseError.replacingOccurrences(of: "{format}", with: "JSON"))
         try await Task.sleep(for: .milliseconds(100))
         #expect(recorder.bodies.isEmpty)
     }
@@ -366,6 +366,28 @@ struct DataDocumentPageTests {
         #expect(recorder.mainFrame.allSatisfy { $0 })
     }
 
+    /// A host without a source view (Quick Look) passes showsSourceButton: false: the guidance
+    /// line stays, the button is not drawn, in every state without a tree.
+    @Test(arguments: ["tooComplex", "overCap", "parseError", "invalidEncoding"])
+    func aHostCanLeaveTheButtonOut(state: String) async throws {
+        let webView = try await DataPage.load()
+        let data: Data
+        let kind: DataDocumentPreview.Kind
+        switch state {
+        case "tooComplex": (data, kind) = (Data(DataPage.nestedSequences(DataDocumentPreview.maximumDepth + 1).utf8), .json)
+        case "overCap": (data, kind) = (Data(count: DataDocumentPreview.maximumYAMLBytes + 1), .yaml)
+        case "invalidEncoding": (data, kind) = (Data([0xFF]), .yaml)
+        default: (data, kind) = (Data("[1,".utf8), .json)
+        }
+        for (sequence, shows) in [(1, false), (2, true), (3, false)] {
+            let update = DataDocumentPreview.update(data: data, kind: kind, sequence: sequence, labels: .english, showsSourceButton: shows)
+            #expect("\(await DataDocumentPreview.render(update, in: webView))" == state)
+            #expect(try await DataPage.string("document.querySelector('#data .data-guidance').textContent", in: webView) == DataLabels.english.showSourceGuidance)
+            #expect(try await DataPage.int("document.querySelectorAll('#data .data-source-button, #data button').length", in: webView) == (shows ? 1 : 0),
+                    "\(state), showsSourceButton \(shows)")
+        }
+    }
+
     @Test func withNoHandlerTheButtonThrowsNothing() async throws {
         let webView = try await DataPage.load(userScript: "window.__errors = 0; window.addEventListener('error', () => { window.__errors++; });")
         #expect(await DataPage.render("[1,", kind: .json, in: webView) == .parseError)
@@ -389,7 +411,7 @@ struct DataDocumentPageTests {
     // MARK: D11 (drawn labels)
 
     static let marked = DataLabels(
-        itemCount: "IC{n}", showMore: "SM{n}", cycle: "CY", expansionStopped: "ES", tooComplex: "TC", overCap: "OC{size}",
+        itemCount: "IC{n}", itemCountOne: "ONE", showMore: "SM{n}", cycle: "CY", expansionStopped: "ES", tooComplex: "TC", overCap: "OC{size}",
         invalidEncoding: "IE", parseErrorAt: "PA{format}|{line}|{column}", parseError: "PE{format}", showSourceGuidance: "SG", showSourceButton: "SB"
     )
 
@@ -403,6 +425,8 @@ struct DataDocumentPageTests {
         var (outcome, text) = try await page("&a [*a, [1, 2, 3]]\n", .yaml, limits: ["maximumRenderedNodes": 4])
         #expect(outcome == .capped)
         #expect(text.contains("IC2") && text.contains("CY") && text.contains("ES") && text.contains("SM"), "\(text)")
+        (outcome, text) = try await page("[[1]]", .json)
+        #expect(outcome == .rendered && text.contains("ONE") && !text.contains("IC1"), "\(text)")
         (outcome, text) = try await page(DataPage.nestedSequences(DataDocumentPreview.maximumDepth + 1), .json)
         #expect(outcome == .tooComplex && text.hasPrefix("TCSGSB"), "\(text)")
         (outcome, text) = try await page("[1, 2", .json)

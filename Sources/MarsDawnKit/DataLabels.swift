@@ -3,12 +3,14 @@ import Foundation
 /// The words the JSON and YAML tree page (kit #128) draws: one per state it can be in.
 ///
 /// Placeholders in braces are filled by the page with numbers or fixed words, by plain text
-/// replacement: `{n}` (a count), `{size}` (megabytes), `{format}` (`JSON` or `YAML`), `{line}` and
+/// replacement: `{n}` (a count; a count of one uses `itemCountOne`), `{size}` (megabytes), `{format}` (`JSON` or `YAML`), `{line}` and
 /// `{column}`. The English wording is also the key of each string in the kit's string tables, as
 /// with `CalloutTitles`, and the tables are read the same way, whatever the process's language.
 public struct DataLabels: Sendable, Equatable {
     /// A container's size, e.g. "{n} items".
     public var itemCount: String
+    /// A container holding exactly one item, e.g. "1 item".
+    public var itemCountOne: String
     /// The button under a list or a long string that shows the next part, e.g. "Show {n} more".
     public var showMore: String
     /// Drawn in place of a value that contains itself (a YAML alias back to an ancestor).
@@ -31,11 +33,12 @@ public struct DataLabels: Sendable, Equatable {
     public var showSourceButton: String
 
     public init(
-        itemCount: String, showMore: String, cycle: String, expansionStopped: String,
+        itemCount: String, itemCountOne: String, showMore: String, cycle: String, expansionStopped: String,
         tooComplex: String, overCap: String, invalidEncoding: String, parseErrorAt: String,
         parseError: String, showSourceGuidance: String, showSourceButton: String
     ) {
         self.itemCount = itemCount
+        self.itemCountOne = itemCountOne
         self.showMore = showMore
         self.cycle = cycle
         self.expansionStopped = expansionStopped
@@ -48,23 +51,20 @@ public struct DataLabels: Sendable, Equatable {
         self.showSourceButton = showSourceButton
     }
 
-    /// The English wording, which is also each string's key in the kit's tables.
-    ///
-    /// Working wording for kit #128 (needs-copy): the approved copy replaces it, and every other
-    /// language's table holds a marked placeholder until then (KitLocalizationCoverageTests fails
-    /// while one is left).
+    /// The English wording (approved, kit #128), which is also each string's key in the kit's tables.
     public static let english = DataLabels(
         itemCount: "{n} items",
-        showMore: "Show {n} more",
-        cycle: "Cycle",
-        expansionStopped: "Showing part of this document. The rest is collapsed: click a row to open it.",
-        tooComplex: "This document is too complex to show as a tree.",
-        overCap: "This document is larger than {size} MB, too large to show as a tree.",
-        invalidEncoding: "This document is not valid UTF-8 text.",
-        parseErrorAt: "Not valid {format} at line {line}, column {column}.",
-        parseError: "Not valid {format}.",
-        showSourceGuidance: "Open the source view to read the document as text.",
-        showSourceButton: "Show Source"
+        itemCountOne: "1 item",
+        showMore: "Show {n} More",
+        cycle: "Circular reference",
+        expansionStopped: "Part of this file is collapsed to keep the preview responsive. Click a row to expand it.",
+        tooComplex: "This file is too deeply nested or too large to show as a tree.",
+        overCap: "This file is larger than {size} MB, so it can't be shown as a tree.",
+        invalidEncoding: "This file isn't UTF-8 text, so it can't be shown as a tree.",
+        parseErrorAt: "This file isn't valid {format} (line {line}, column {column}).",
+        parseError: "This file isn't valid {format}.",
+        showSourceGuidance: "To read it as text, choose View ▸ Source Only in MarsDawn.",
+        showSourceButton: "Show Source Only"
     )
 
     /// The labels in `localization` (`"zh-Hant"`, `"ja"`, any case), or `english` when the kit does
@@ -88,7 +88,7 @@ public struct DataLabels: Sendable, Equatable {
         let english = DataLabels.english
         func label(_ key: String) -> String { table[key] ?? key }
         return DataLabels(
-            itemCount: label(english.itemCount), showMore: label(english.showMore), cycle: label(english.cycle),
+            itemCount: label(english.itemCount), itemCountOne: label(english.itemCountOne), showMore: label(english.showMore), cycle: label(english.cycle),
             expansionStopped: label(english.expansionStopped), tooComplex: label(english.tooComplex),
             overCap: label(english.overCap), invalidEncoding: label(english.invalidEncoding),
             parseErrorAt: label(english.parseErrorAt), parseError: label(english.parseError),
@@ -99,7 +99,7 @@ public struct DataLabels: Sendable, Equatable {
     /// The page's `labels` argument: each label by the name data.js reads it under.
     var dictionary: [String: String] {
         [
-            "itemCount": itemCount, "showMore": showMore, "cycle": cycle,
+            "itemCount": itemCount, "itemCountOne": itemCountOne, "showMore": showMore, "cycle": cycle,
             "expansionStopped": expansionStopped, "tooComplex": tooComplex, "overCap": overCap,
             "invalidEncoding": invalidEncoding, "parseErrorAt": parseErrorAt, "parseError": parseError,
             "showSourceGuidance": showSourceGuidance, "showSourceButton": showSourceButton,

@@ -3,9 +3,9 @@ import Testing
 @testable import MarsDawnKit
 
 /// D11 (kit #128), the Swift side: `DataLabels` reads the kit's own tables, whatever the
-/// process's language. The approved copy is not in yet (needs-copy): every table holds marked
-/// placeholders, which `KitLocalizationCoverageTests.noPlaceholderCopyIsLeft` keeps failing until
-/// they are replaced; then the en/zh-Hant/ja expectations below gain the approved strings.
+/// process's language, and en / zh-Hant / ja are the owner-approved copy (kit #128
+/// issuecomment-6261371894; `DataLabelsApprovedCopy` is generated from it). de, es, fr, ko and
+/// zh-Hans are pending (KitLocalizationCoverageTests) and show English until they land.
 struct DataLabelsTests {
     static let tables = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
@@ -16,18 +16,35 @@ struct DataLabelsTests {
     }
 
     static func values(_ labels: DataLabels) -> [String] {
-        [labels.itemCount, labels.showMore, labels.cycle, labels.expansionStopped, labels.tooComplex, labels.overCap,
+        [labels.itemCount, labels.itemCountOne, labels.showMore, labels.cycle, labels.expansionStopped, labels.tooComplex, labels.overCap,
          labels.invalidEncoding, labels.parseErrorAt, labels.parseError, labels.showSourceGuidance, labels.showSourceButton]
     }
 
     @Test func everyLabelHasADistinctNameAndEnglishKey() {
         let dictionary = DataLabels.english.dictionary
-        #expect(dictionary.count == 11)
+        #expect(dictionary.count == 12)
         #expect(Set(dictionary.values) == Set(Self.values(.english)))
-        #expect(Set(Self.values(.english)).count == 11)
+        #expect(Set(Self.values(.english)).count == 12)
+        #expect(dictionary.keys.sorted() == DataLabelsApprovedCopy.names.sorted())
     }
 
-    @Test(arguments: CalloutTitles.shipped)
+    @Test(arguments: ["en", "zh-Hant", "ja"])
+    func theApprovedCopyIsWhatShips(localization: String) {
+        let labels = localization == "en" ? DataLabels.english : DataLabels.localized(localization)
+        let approved = localization == "en" ? DataLabelsApprovedCopy.english
+            : localization == "ja" ? DataLabelsApprovedCopy.ja : DataLabelsApprovedCopy.zhHant
+        #expect(approved.count == 12)
+        for name in DataLabelsApprovedCopy.names {
+            #expect(labels.dictionary[name] == approved[name], "\(localization).\(name): \(String(describing: labels.dictionary[name])) is not the approved \(String(describing: approved[name]))")
+        }
+    }
+
+    @Test(arguments: ["de", "es", "fr", "ko", "zh-Hans"])
+    func thePendingLanguagesShowEnglish(localization: String) {
+        #expect(DataLabels.localized(localization) == .english)
+    }
+
+    @Test(arguments: ["zh-Hant", "ja"])
     func localizedReadsEachLabelFromThatTable(localization: String) throws {
         let table = try Self.table(localization)
         let labels = DataLabels.localized(localization)

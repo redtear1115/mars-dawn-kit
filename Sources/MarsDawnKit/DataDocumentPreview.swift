@@ -124,7 +124,8 @@ public enum DataDocumentPreview {
     /// The fixed page function: it hands the arguments to the page and returns its answer.
     static let functionBody = """
     return window.MarsDawnData ? MarsDawnData.render({ text: typeof text === "string" ? text : null, \
-    state: state, kind: kind, sequence: sequence, labels: labels, limits: limits }) : "failed";
+    state: state, kind: kind, sequence: sequence, labels: labels, limits: limits, \
+    showsSourceButton: typeof showsSourceButton === "boolean" ? showsSourceButton : true }) : "failed";
     """
 
     /// The update that shows `data` as `kind`. Over the size limit for `kind`, the arguments hold
@@ -133,17 +134,23 @@ public enum DataDocumentPreview {
     ///
     /// `sequence` orders updates to one page: the page never replaces a newer update with an
     /// older one, and answers an older one with what it shows.
-    public static func update(data: Data, kind: Kind, sequence: Int, labels: DataLabels = .preferred()) -> DataUpdate {
-        update(data: data, kind: kind, sequence: sequence, labels: labels) { String(data: $0, encoding: .utf8) }
+    ///
+    /// `showsSourceButton` false leaves the button out of every state without a tree (the guidance
+    /// line stays), for a host with no source view to switch to, such as Quick Look.
+    public static func update(data: Data, kind: Kind, sequence: Int, labels: DataLabels = .preferred(),
+                              showsSourceButton: Bool = true) -> DataUpdate {
+        update(data: data, kind: kind, sequence: sequence, labels: labels, showsSourceButton: showsSourceButton) { String(data: $0, encoding: .utf8) }
     }
 
-    /// `update(data:kind:sequence:labels:)` with the decoder given, so a test can count decodes.
-    static func update(data: Data, kind: Kind, sequence: Int, labels: DataLabels, decode: (Data) -> String?) -> DataUpdate {
+    /// `update(data:kind:sequence:labels:showsSourceButton:)` with the decoder given, so a test can count decodes.
+    static func update(data: Data, kind: Kind, sequence: Int, labels: DataLabels, showsSourceButton: Bool = true,
+                       decode: (Data) -> String?) -> DataUpdate {
         var arguments: [String: any Sendable] = [
             "kind": kind.literal,
             "sequence": sequence,
             "labels": labels.dictionary,
             "limits": limits,
+            "showsSourceButton": showsSourceButton,
         ]
         let cap = kind == .json ? maximumJSONBytes : maximumYAMLBytes
         if data.count > cap {

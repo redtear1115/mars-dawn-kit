@@ -97,6 +97,12 @@ enum DataPage {
         _ = try await value("(() => { const b = document.querySelector(\(PreviewWebView.jsonStringLiteral(selector))); if (!b) return false; b.click(); return true; })()", in: webView)
     }
 
+    /// The English parse-error message with a position.
+    static func parseErrorAt(_ format: String, _ line: Int, _ column: Int) -> String {
+        DataLabels.english.parseErrorAt.replacingOccurrences(of: "{format}", with: format)
+            .replacingOccurrences(of: "{line}", with: String(line)).replacingOccurrences(of: "{column}", with: String(column))
+    }
+
     /// `n` nested sequences, the innermost empty: `[[[]]]` for 3.
     static func nestedSequences(_ n: Int) -> String {
         String(repeating: "[", count: n) + String(repeating: "]", count: n)

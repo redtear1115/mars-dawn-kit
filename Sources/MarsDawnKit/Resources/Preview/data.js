@@ -82,7 +82,7 @@
   }
 
   const labelNames = [
-    "itemCount", "showMore", "cycle", "expansionStopped", "tooComplex", "overCap",
+    "itemCount", "itemCountOne", "showMore", "cycle", "expansionStopped", "tooComplex", "overCap",
     "invalidEncoding", "parseErrorAt", "parseError", "showSourceGuidance", "showSourceButton",
   ];
 
@@ -144,6 +144,10 @@
     const box = element("div", "data-message");
     box.append(element("p", className, text));
     box.append(element("p", "data-guidance", labels.showSourceGuidance));
+    if (!showsSourceButton) {
+      view.append(box);
+      return;
+    }
     const show = button("data-source-button", labels.showSourceButton);
     sourceButtons.add(show);
     box.append(show);
@@ -440,7 +444,8 @@
     appendKey(toggle, key, limits);
     const items = childCount(value);
     toggle.append(element("span", "data-punct", list ? "[" : "{"));
-    toggle.append(element("span", "data-count", fill(labels.itemCount, [["{n}", count(items)]])));
+    const size = items === 1 ? labels.itemCountOne : labels.itemCount;
+    toggle.append(element("span", "data-count", fill(size, [["{n}", count(items)]])));
     toggle.append(element("span", "data-punct", list ? "]" : "}"));
     const group = element("div", "data-children");
     group.setAttribute("role", "group");
@@ -495,6 +500,8 @@
   }
 
   let currentLimits = null;
+  // Whether states without a tree offer the source-view button (a host without one says no).
+  let showsSourceButton = true;
 
   // On the document: this script runs in <head>, before #data exists.
   document.addEventListener("click", (event) => {
@@ -581,6 +588,7 @@
       if (limits === null || kind === null) return "failed";
       latestSequence = sequence;
       labels = readLabels(input.labels);
+      showsSourceButton = input.showsSourceButton !== false;
       currentLimits = limits;
       let outcome;
       try {

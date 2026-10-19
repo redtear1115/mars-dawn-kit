@@ -136,7 +136,7 @@ struct DataDocumentBombTests {
         let page = try await DataPage.load(messageHandlers: [DataDocumentPreview.errorMessageName: recorder])
         let (outcome, _) = try await timed(text, .yaml, in: page)
         #expect(outcome == .parseError)
-        #expect(try await DataPage.messageText(in: page) == "Not valid YAML at line 2, column 4.")
+        #expect(try await DataPage.messageText(in: page) == DataPage.parseErrorAt("YAML", 2, 4))
     }
 
     /// The flow-collection shape of the advisory fixed in 5.x: bounded at 1 s.

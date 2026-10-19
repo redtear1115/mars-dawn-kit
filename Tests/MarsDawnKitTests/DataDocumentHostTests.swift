@@ -14,7 +14,11 @@ struct DataDocumentHostTests {
 
     @Test func theUpdateCarriesFixedLiteralsAndTheLimits() throws {
         let update = DataDocumentPreview.update(data: Data("{\"a\": 1}".utf8), kind: .yaml, sequence: 42, labels: .english)
-        #expect(Set(update.arguments.keys) == ["text", "state", "kind", "sequence", "labels", "limits"])
+        #expect(Set(update.arguments.keys) == ["text", "state", "kind", "sequence", "labels", "limits", "showsSourceButton"])
+        #expect(update.arguments["showsSourceButton"] as? Bool == true)
+        #expect(DataDocumentPreview.update(data: Data("1".utf8), kind: .json, sequence: 1, labels: .english, showsSourceButton: false)
+            .arguments["showsSourceButton"] as? Bool == false)
+        #expect(DataDocumentPreview.functionBody.contains("showsSourceButton"))
         #expect(update.arguments["kind"] as? String == "yaml")
         #expect(update.arguments["state"] as? String == "ok")
         #expect(update.arguments["sequence"] as? Int == 42)
