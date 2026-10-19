@@ -62,10 +62,25 @@ public struct TextStatistics: Sendable, Equatable {
     private static func readableText(_ markdown: String) -> String? {
         MarkdownParsing.withDocument(markdown) { outcome -> String? in
             guard case .document(let document) = outcome else { return nil }
-            var visitor = ReadableTextVisitor(containers: Callouts.mayContainContainers(markdown))
+            let containers = Callouts.mayContainContainers(markdown)
+            var visitor = ReadableTextVisitor(containers: containers ? Callouts.Source(markdown, mathLines: mathMarkerLines(in: markdown)) : nil)
             visitor.visit(document)
             return visitor.output
         }
+    }
+
+    /// The lines of `markdown` where a `:::` marker line holds math. The page leaves such a line
+    /// as text (the renderer reads its marker lines with the math already taken out, and a title
+    /// with math in it is not one), so the counter must not read it as a marker either. Looked
+    /// for only when a line has both a `:::` and a `$`, as the extraction costs several parses.
+    private static func mathMarkerLines(in markdown: String) -> Set<Int> {
+        let candidates = markdown.split(omittingEmptySubsequences: false, whereSeparator: { $0 == "\n" || $0 == "\r\n" || $0 == "\r" })
+            .enumerated().filter { $0.element.contains(":::") && $0.element.contains("$") }
+        guard !candidates.isEmpty else { return [] }
+        let lines = MathExtractor.extract(from: markdown).markdown
+            .split(omittingEmptySubsequences: false, whereSeparator: { $0 == "\n" || $0 == "\r\n" || $0 == "\r" })
+        let placeholder = Character(MathExtractor.placeholderStart)
+        return Set(candidates.map(\.offset).filter { $0 < lines.count && lines[$0].contains(placeholder) }.map { $0 + 1 })
     }
 
     private init(readableText: String, sourceLines: String) {
@@ -172,12 +187,12 @@ private struct ReadableTextVisitor: MarkupWalker {
     /// document is inside a `script`, `style` or `template` from one piece of HTML to the next,
     /// so the text nodes between an inline `<script>` and its `</script>` aren't counted either.
     private var html = VisibleHTMLText()
-    /// Whether the Markdown has `:::` in it anywhere: only then are containers looked for (#135).
-    private let containers: Bool
+    /// The source, when the Markdown has `:::` in it anywhere: only then are containers looked for (#135).
+    private let containers: Callouts.Source?
     /// Paragraphs that end in a `:::` closer a list absorbed: how many inline children to keep.
     private var trims: [Callouts.Position: Int] = [:]
 
-    init(containers: Bool) {
+    init(containers: Callouts.Source?) {
         self.containers = containers
     }
 
@@ -243,7 +258,7 @@ private struct ReadableTextVisitor: MarkupWalker {
         if let alert = Callouts.alert(in: blockQuote) {
             walkBlocks(alert.blocks)
         } else {
-            descendInto(blockQuote)
+            walkChildren(of: blockQuote)
         }
         output += " "
     }
@@ -254,7 +269,7 @@ private struct ReadableTextVisitor: MarkupWalker {
     }
 
     private mutating func walkChildren(of container: any Markup) {
-        guard containers else {
+        guard containers != nil else {
             descendInto(container)
             return
         }
@@ -263,7 +278,7 @@ private struct ReadableTextVisitor: MarkupWalker {
 
     /// The text of a container's blocks, with the markers of `:::` containers applied.
     private mutating func walkBlocks(_ blocks: [Callouts.Block]) {
-        guard let events = Callouts.events(for: blocks) else {
+        guard let events = Callouts.events(for: blocks, source: containers) else {
             for block in blocks { walk(block, trim: nil) }
             return
         }

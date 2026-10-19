@@ -316,6 +316,8 @@ private struct HTMLVisitor: MarkupVisitor {
     private var tightListStack: [Bool] = []
     /// Whether the parsed Markdown has `:::` in it anywhere: only then are containers looked for.
     private let containers: Bool
+    /// The source, for telling a marker from an escaped one; nil without `:::` in the document.
+    private let calloutSource: Callouts.Source?
     /// Paragraphs that end in a `:::` closer a list absorbed: how many inline children to keep (#135).
     private var trims: [Callouts.Position: Int] = [:]
 
@@ -324,6 +326,7 @@ private struct HTMLVisitor: MarkupVisitor {
         self.options = options
         self.source = SourceBytes(source)
         containers = Callouts.mayContainContainers(source)
+        calloutSource = containers ? Callouts.Source(source) : nil
         self.escapes = escapes
         self.lineOffset = lineOffset
         self.math = math
@@ -462,7 +465,7 @@ private struct HTMLVisitor: MarkupVisitor {
     /// never rendered recursively.
     private mutating func visitBlockChildren(_ markup: any Markup) -> String {
         let children = Array(markup.children)
-        if containers, let events = Callouts.events(for: children.map { Callouts.Block($0) }) {
+        if containers, let events = Callouts.events(for: children.map { Callouts.Block($0) }, source: calloutSource) {
             return renderEvents(events)
         }
         guard children.contains(where: { $0 is HTMLBlock }) else {
@@ -745,7 +748,7 @@ private struct HTMLVisitor: MarkupVisitor {
 
     mutating func visitBlockQuote(_ blockQuote: BlockQuote) -> String {
         if let alert = Callouts.alert(in: blockQuote) {
-            let events = (containers ? Callouts.events(for: alert.blocks) : nil) ?? alert.blocks.map { .content($0, trim: nil) }
+            let events = (containers ? Callouts.events(for: alert.blocks, source: calloutSource) : nil) ?? alert.blocks.map { .content($0, trim: nil) }
             return calloutOpening(.callout(alert.style, title: nil, line: blockQuote.range?.lowerBound.line))
                 + renderEvents(events) + "</div>\n"
         }

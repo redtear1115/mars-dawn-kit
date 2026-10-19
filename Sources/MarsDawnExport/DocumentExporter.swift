@@ -52,9 +52,9 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
             case .printFailed:
                 String(localized: "The document couldn’t be exported.")
             case .manualLayoutNeedsSave:
-                String(localized: "The manual layout can only be exported as a PDF file, not printed directly.")
+                String(localized: "The Handbook layout can only be exported as a PDF file, not printed directly.")
             case .manualLayoutPaginationChanged:
-                String(localized: "The manual layout’s page numbers couldn’t be worked out for this document.")
+                String(localized: "The Handbook layout’s page numbers couldn’t be worked out for this document, so nothing was saved. Try again with the Document layout.")
             case .inputTooLarge(let limit):
                 String(localized: "The document is too large to export: the limit is \(limit.formatted(.byteCount(style: .memory))).")
             }
