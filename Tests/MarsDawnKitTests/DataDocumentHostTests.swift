@@ -143,14 +143,21 @@ struct DataDocumentHostTests {
     /// A page busy for 7 s: what a parse that doesn't return looks like.
     static let busy = "const t = performance.now(); while (performance.now() - t < 7000) {} return \"rendered\";"
 
-    /// The task's value if it finishes before `deadline`, else nil (the task keeps running).
+    /// The task's value if it finishes before `deadline`, else nil; returns at the deadline even
+    /// when the task never finishes (the task keeps running).
     static func peek(_ task: Task<DataDocumentPreview.RenderOutcome, Never>, until deadline: ContinuousClock.Instant) async -> DataDocumentPreview.RenderOutcome? {
-        await withTaskGroup(of: DataDocumentPreview.RenderOutcome?.self) { group in
-            group.addTask { await task.value }
-            group.addTask { try? await Task.sleep(until: deadline); return nil }
-            let first = await group.next() ?? nil
-            group.cancelAll()
-            return first
+        final class Once {
+            var continuation: CheckedContinuation<DataDocumentPreview.RenderOutcome?, Never>?
+            func resume(_ value: DataDocumentPreview.RenderOutcome?) {
+                continuation?.resume(returning: value)
+                continuation = nil
+            }
+        }
+        let once = Once()
+        return await withCheckedContinuation { continuation in
+            once.continuation = continuation
+            Task { @MainActor in once.resume(await task.value) }
+            Task { @MainActor in try? await Task.sleep(until: deadline); once.resume(nil) }
         }
     }
 
@@ -195,6 +202,8 @@ struct DataDocumentHostTests {
         let start = ContinuousClock.now
         // This page's own WebContent process, which this test started; nothing else.
         kill(pid, SIGKILL)
+        // WebKit ends the call with an error when the process dies, and the host's delegate calls
+        // webContentTerminated: either way the render ends as failed, promptly.
         let result = await Self.peek(task, until: start + .seconds(3))
         #expect(result == .failed, "\(String(describing: result))")
         if result == nil { DataDocumentPreview.webContentTerminated(webView); _ = await task.value }
