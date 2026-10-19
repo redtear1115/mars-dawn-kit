@@ -302,9 +302,12 @@ struct PDFCorpus {
             #expect(extent.maxX <= paper.width - margins.right + 0.5, "\(fixture.name): page \(page) text ends at x \(extent.maxX), margin edge \(paper.width - margins.right)")
             // The top edge is measured on ink, not on the line boxes: a line's selection box spans
             // the font's ascent and line gap, and Hiragino's stands about 4 pt above its glyphs
-            // (kit #164: boxes to y 789.1, ink to 781.5, against an edge at 785.3).
+            // (kit #164: boxes to y 789.1, ink to 781.5, against an edge at 785.3). Printing clips
+            // at that edge, so ink can never cross it: content pushed past it is cut there, and its
+            // ink then reaches the edge (784.75 in the planted control). So the ink must stay a
+            // point clear of the edge; the corpus's highest ink is 781.75.
             if let inkTop = outcome.pageInkTops[index] {
-                #expect(inkTop <= paper.height - margins.top + 0.5, "\(fixture.name): page \(page) ink reaches y \(inkTop), top margin edge \(paper.height - margins.top)")
+                #expect(inkTop <= paper.height - margins.top - 1, "\(fixture.name): page \(page) ink reaches y \(inkTop), top margin edge \(paper.height - margins.top) (cut there?)")
             }
             #expect(extent.minY >= margins.bottom - 0.5, "\(fixture.name): page \(page) text reaches y \(extent.minY), bottom margin edge \(margins.bottom)")
             minX = min(minX, extent.minX)
