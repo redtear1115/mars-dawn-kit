@@ -39,6 +39,18 @@ struct KitLocalizationCoverageTests {
         #expect(reference["Dawn"] == "黎明")
     }
 
+    /// The JSON and YAML page's labels (kit #128) were written into every table as marked
+    /// placeholders while their copy waits for approval (needs-copy). This fails, naming each one,
+    /// until every placeholder is replaced by the approved translation.
+    nonisolated static let placeholderMarker = "NEEDS-COPY"
+
+    @Test(arguments: [reference] + others)
+    func noPlaceholderCopyIsLeft(in localization: String) throws {
+        let table = try Self.keys(localization)
+        let placeholders = table.filter { $0.value.contains(Self.placeholderMarker) }.keys.sorted()
+        #expect(placeholders.isEmpty, "\(localization): \(placeholders.count) placeholder(s) awaiting copy (kit #128): \(placeholders)")
+    }
+
     @Test(arguments: others)
     func everyKeyIsTranslated(into localization: String) throws {
         let reference = try Self.keys(Self.reference)

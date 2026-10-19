@@ -104,16 +104,19 @@ public final class PreviewSchemeHandler: NSObject, WKURLSchemeHandler {
 
     /// The stylesheet links `index.html` carries, each rewritten to name `token`'s snapshot.
     nonisolated static let pinnedStylesheets = [themesStylesheetName, "preview.css"]
+    /// The one generated stylesheet the JSON and YAML page (`data.html`, kit #128) links; its own
+    /// `data.css` takes no generated rules, so it needs no snapshot.
+    nonisolated static let dataPagePinnedStylesheets = [themesStylesheetName]
 
-    /// `index.html` with its two stylesheet links naming the snapshot `token`. If the page doesn't
-    /// have exactly one of each link (a changed template), it is served unchanged, and its
-    /// stylesheets, naming no snapshot, get the built-ins alone.
-    nonisolated static func pinningStylesheets(_ html: Data, token: UInt64) -> Data {
+    /// `index.html` (or the page `page` names) with its stylesheet links in `names` naming the
+    /// snapshot `token`. If the page doesn't have exactly one of each link (a changed template),
+    /// it is served unchanged, and its stylesheets, naming no snapshot, get the built-ins alone.
+    nonisolated static func pinningStylesheets(_ html: Data, token: UInt64, names: [String] = pinnedStylesheets, page: String = "index.html") -> Data {
         var text = String(decoding: html, as: UTF8.self)
-        for name in pinnedStylesheets {
+        for name in names {
             let link = "href=\"\(name)\""
             guard text.components(separatedBy: link).count == 2 else {
-                log.fault("PREVIEW-SNAPSHOT-UNPINNED: index.html doesn't link \(name, privacy: .public) exactly once")
+                log.fault("PREVIEW-SNAPSHOT-UNPINNED: \(page, privacy: .public) doesn't link \(name, privacy: .public) exactly once")
                 return html
             }
             text = text.replacingOccurrences(of: link, with: "href=\"\(name)?\(snapshotQueryItem)=\(token)\"")
@@ -166,6 +169,16 @@ public final class PreviewSchemeHandler: NSObject, WKURLSchemeHandler {
                     data = page
                 } else {
                     data = Self.pinningStylesheets(page, token: pin(snapshot).token)
+                }
+            } else if fileURL.lastPathComponent == DataDocumentPreview.pageName {
+                // The JSON and YAML page: its themes.css pinned like index.html's, and nothing
+                // else filled in (it has no remote-image token and no generated rules).
+                let snapshot = registry.snapshot
+                if snapshot === ThemeRegistry.builtIns {
+                    data = contents
+                } else {
+                    data = Self.pinningStylesheets(contents, token: pin(snapshot).token,
+                                                   names: Self.dataPagePinnedStylesheets, page: DataDocumentPreview.pageName)
                 }
             } else if fileURL.lastPathComponent == "preview.css" {
                 data = Self.splicedPreviewCSS(contents, snapshot: snapshot(for: requestURL))

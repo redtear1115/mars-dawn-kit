@@ -23,3 +23,18 @@
 "Important" = "重要";
 "Warning" = "警告";
 "Caution" = "小心";
+
+/* JSON and YAML tree page labels (DataLabels, kit #128). PLACEHOLDERS awaiting approved copy
+   (kit #128 needs-copy): every value below is marked NEEDS-COPY and must be replaced;
+   KitLocalizationCoverageTests fails while one is left. */
+"{n} items" = "[NEEDS-COPY kit#128] {n} items";
+"Show {n} more" = "[NEEDS-COPY kit#128] Show {n} more";
+"Cycle" = "[NEEDS-COPY kit#128] Cycle";
+"Showing part of this document. The rest is collapsed: click a row to open it." = "[NEEDS-COPY kit#128] Showing part of this document. The rest is collapsed: click a row to open it.";
+"This document is too complex to show as a tree." = "[NEEDS-COPY kit#128] This document is too complex to show as a tree.";
+"This document is larger than {size} MB, too large to show as a tree." = "[NEEDS-COPY kit#128] This document is larger than {size} MB, too large to show as a tree.";
+"This document is not valid UTF-8 text." = "[NEEDS-COPY kit#128] This document is not valid UTF-8 text.";
+"Not valid {format} at line {line}, column {column}." = "[NEEDS-COPY kit#128] Not valid {format} at line {line}, column {column}.";
+"Not valid {format}." = "[NEEDS-COPY kit#128] Not valid {format}.";
+"Open the source view to read the document as text." = "[NEEDS-COPY kit#128] Open the source view to read the document as text.";
+"Show Source" = "[NEEDS-COPY kit#128] Show Source";
