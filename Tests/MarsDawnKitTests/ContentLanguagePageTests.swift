@@ -6,7 +6,7 @@ import WebKit
 @testable import MarsDawnKit
 
 /// kit #164 G2, G5b: the page takes the renderer's marker out, sets `#content.lang` from it and
-/// from nothing else, and loads nothing for the Japanese faces.
+/// from nothing else, and a Japanese render loads nothing and violates no CSP directive.
 @MainActor
 @Suite(.serialized, .timeLimit(.minutes(5)))
 struct ContentLanguagePageTests {
@@ -188,11 +188,9 @@ struct ContentLanguagePageTests {
             try await push(Self.japanese, to: webView)
             _ = try await js(webView, "await document.fonts.ready; await new Promise((r) => setTimeout(r, 200)); return true;")
             #expect(try await lang(webView) == "ja")
-            let faces = try await js(webView, """
-                return [...document.fonts].filter((f) => f.family.includes('MD JA')).map((f) => f.family + ' ' + f.weight + ' ' + f.status);
-                """) as? [String] ?? []
-            print("G5b \(theme.id) faces: \(faces)")
-            #expect(faces.contains { $0.hasSuffix("loaded") }, "\(theme.id): positive fixture: a Japanese face was used")
+            // The text was laid out with its fonts (system fallback included) before this point.
+            let rendered = try await js(webView, "return document.fonts.status;") as? String
+            #expect(rendered == "loaded", "\(theme.id): fonts settled: \(String(describing: rendered))")
             let violations = try await js(webView, "return window.__violations;") as? [String]
             #expect(violations == [], "\(theme.id): \(String(describing: violations))")
             let added = Array(pageRequests.requests.dropFirst(requestsBefore))
@@ -217,42 +215,6 @@ struct ContentLanguagePageTests {
             #expect(probeViolations.contains { $0.contains("font-src") }, "instrument: \(probeViolations)")
             #expect(pageRequests.requests.count > requestsBefore, "instrument: a request is recorded")
         }
-    }
-
-    // MARK: Font design
-
-    @Test func theFontDesignFollowsTheTheme() async throws {
-        for (theme, design) in [(PreviewTheme.dawn, "sans"), (.modern, "sans"), (.classic, "serif"), (.vivid, "rounded")] {
-            let webView = try await loadedPreview(theme: theme)
-            let value = try await js(webView, "return document.documentElement.dataset.fontDesign;") as? String
-            #expect(value == design, "\(theme.id)")
-        }
-        let webView = try await loadedPreview(theme: .dawn)
-        _ = try await webView.evaluateJavaScript(PreviewWebView.themeScript(.classic))
-        #expect(try await js(webView, "return document.documentElement.dataset.fontDesign;") as? String == "serif")
-    }
-
-    /// The Japanese family goes in front of the theme's stack, on `#content` and its headings, and
-    /// nowhere else: code keeps the mono stack, the root keeps the theme's (Mermaid reads it).
-    @Test func theStacks() async throws {
-        let webView = try await loadedPreview(theme: .classic)
-        try await push(Self.japanese + "\n```\ncode\n```\n", to: webView)
-        let fonts = try await js(webView, """
-            const f = (s) => getComputedStyle(document.querySelector(s)).fontFamily;
-            return [f('#content'), f('#content h1'), f('#content td'), f('#content pre code'),
-                    getComputedStyle(document.documentElement).getPropertyValue('--font-body').trim()];
-            """) as? [String] ?? []
-        print("stacks: \(fonts)")
-        #expect(fonts.count == 5)
-        guard fonts.count == 5 else { return }
-        #expect(fonts[0].hasPrefix("\"MD JA Serif\", ui-serif"), "\(fonts[0])")
-        #expect(fonts[1].hasPrefix("\"MD JA Serif\", ui-serif"), "\(fonts[1])")
-        #expect(fonts[2].hasPrefix("\"MD JA Serif\", ui-serif"), "\(fonts[2])")
-        #expect(!fonts[3].contains("MD JA"), "\(fonts[3])")
-        #expect(!fonts[4].contains("MD JA"), "\(fonts[4])")
-        try await push(Self.english, to: webView)
-        let english = try await js(webView, "return getComputedStyle(document.querySelector('#content h1')).fontFamily;") as? String ?? ""
-        #expect(!english.contains("MD JA"), "\(english)")
     }
 }
 #endif

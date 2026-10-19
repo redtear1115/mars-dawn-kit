@@ -799,16 +799,6 @@
     return tag.length <= 35 && languageTagPattern.test(tag) && /^ja(-|$)/i.test(tag) ? tag : null;
   }
 
-  // Which of the three font designs the current theme's body stack is (kit #164), for the
-  // Japanese faces in preview.css. The stacks are the three ThemeCSSGenerator writes, told apart
-  // by their first family.
-  function refreshFontDesign() {
-    const stack = getComputedStyle(document.documentElement).getPropertyValue("--font-body").trim();
-    const first = stack.split(",")[0].trim();
-    document.documentElement.dataset.fontDesign =
-      first === "ui-serif" ? "serif" : first === "ui-rounded" ? "rounded" : "sans";
-  }
-
   function update(html, lines) {
     if (lines) lineCount = lines;
     invalidateAnchors();
@@ -904,7 +894,6 @@
   }
 
   function refreshTheme() {
-    refreshFontDesign();
     invalidateAnchors();
     if (configureMermaid()) rerenderDiagrams();
   }
@@ -929,7 +918,6 @@
   });
 
   document.addEventListener("DOMContentLoaded", () => {
-    refreshFontDesign();
     configureMermaid();
   });
 

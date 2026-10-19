@@ -1,27 +1,25 @@
 #if os(macOS)
 import AppKit
-import CoreText
 import Foundation
 import PDFKit
 import Testing
 @testable import MarsDawnExport
 @testable import MarsDawnKit
 
-/// kit #164 G3: in an exported Japanese document, every kanji and kana is drawn by a Hiragino face
-/// of the theme's design, and every other character by exactly the font it had before.
+/// kit #164 G3: in an exported Japanese document no kanji or kana is drawn by a Chinese face
+/// (PingFang, Songti), and every other character is drawn by exactly the font it had before.
 ///
-/// "Before" is the same export with `#content`'s `lang` taken away just before printing, so the
-/// Japanese rules don't apply; nothing else differs. Three instruments, because no one of them
-/// sees every font: PDFKit's text runs name the Hiragino faces per character (they are CID fonts
-/// without a ToUnicode CMap), the ToUnicode CMaps name the PingFang and Songti faces per character
-/// (PDFKit can't name those hidden system faces), and the content-stream scan names the Latin,
-/// mono and KaTeX faces per character.
+/// The fix is `#content.lang = "ja"` alone (owner decision 2026-10-19): WebKit's fallback for a
+/// `lang="ja"` element picks a Hiragino face (any one is fine). "Before" is the same export with
+/// `#content`'s `lang` taken away just before printing; nothing else differs. Three instruments,
+/// because no one of them sees every font: the ToUnicode CMaps name PingFang and Songti per
+/// character, PDFKit's text runs name the Hiragino faces that have no CMap, and the content-stream
+/// scan names the Latin, mono and KaTeX faces per character.
 ///
-/// The control (the `#content:lang(ja)` rules taken out of preview.css) goes red where the
-/// process language is Chinese, as on the owner's Mac (zh-Hant): there 直骨次 fall back to PingFang
-/// or Songti. Where the process language is English (CI), WebKit's own fallback may already pick
-/// Hiragino for a `lang="ja"` element, and the control may stay green; the test prints both
-/// languages so a run says which case it was.
+/// Where the process language is Chinese (the owner's Mac, zh-Hant), the export without `lang`
+/// draws the kanji in PingFang or Songti, so the planted control (the page never sets `lang`)
+/// goes red there. Where it is English (CI) the system fallback may pick Hiragino anyway, and the
+/// control may stay green; the test prints both languages so a run says which case it was.
 @MainActor
 @Suite(.serialized, .timeLimit(.minutes(5)))
 struct JapaneseFontExportTests {
@@ -113,58 +111,40 @@ struct JapaneseFontExportTests {
             + "\n  fonts: \(export.scan.fonts)"
     }
 
-    /// The Hiragino faces each design may use.
-    static func expectedFaces(_ theme: PreviewTheme) -> Set<String> {
-        switch theme.fontDesign {
-        case .serif: ["HiraMinProN-W3", "HiraMinProN-W6"]
-        case .rounded: ["HiraMaruProN-W4", "HiraginoSans-W6"]
-        case .sans: ["HiraginoSans-W3", "HiraginoSans-W6"]
-        }
-    }
+    static func isChineseFace(_ name: String) -> Bool { name.contains("PingFang") || name.contains("Songti") }
 
     @Test(arguments: ["dawn", "classic", "modern", "vivid"])
-    func kanjiAndKanaTakeHiraginoAndNothingElseMoves(_ id: String) async throws {
+    func noKanjiOrKanaTakesAChineseFaceAndNothingElseMoves(_ id: String) async throws {
         let theme = try #require([PreviewTheme.dawn, .classic, .modern, .vivid].first { $0.id == id })
         let head = try await Self.export(theme: theme, removingLang: false)
         let base = try await Self.export(theme: theme, removingLang: true)
         print("G3 \(id) Locale.preferredLanguages=\(Locale.preferredLanguages) navigator.languages=\(head.navigatorLanguages)")
-        print("G3 \(id) with the fix:\n  \(Self.describe(head))")
-        print("G3 \(id) without (lang removed):\n  \(Self.describe(base))")
+        print("G3 \(id) with lang=ja:\n  \(Self.describe(head))")
+        print("G3 \(id) without lang:\n  \(Self.describe(base))")
 
-        let faces = Self.expectedFaces(theme)
         for character in Self.targets {
+            let cmaps = head.cmapFonts[character] ?? []
             let runs = head.runFonts[character] ?? []
-            #expect(!runs.isEmpty && runs.isSubset(of: faces), "\(id): \(character) drawn by \(runs.sorted()), expected \(faces.sorted())")
-            // A face with a ToUnicode CMap (PingFang, Songti) drew none of them.
-            #expect(head.cmapFonts[character] == nil, "\(id): \(character) also in \(head.cmapFonts[character]?.sorted() ?? [])")
+            #expect(!runs.isEmpty, "\(id): positive fixture: \(character) is in the text layer")
+            #expect(!cmaps.contains(where: Self.isChineseFace) && !runs.contains(where: Self.isChineseFace),
+                    "\(id): \(character) drawn by \((cmaps.union(runs)).sorted())")
         }
-        // Every other character: the same fonts as without the Japanese rules. Latin words, code
-        // (the mono face) and math (KaTeX's faces) alike.
+        #expect(!head.scan.fonts.contains(where: Self.isChineseFace), "\(id): \(head.scan.fonts)")
+        #expect(head.scan.fonts.contains { $0.contains("Hira") }, "\(id): a Hiragino face drew the Japanese: \(head.scan.fonts)")
+        // Every other character: the same fonts as without `lang`. Latin words, code (the mono face)
+        // and math (KaTeX's faces) alike.
         let headOther = head.scan.characters.filter { !Self.isCJK($0.key) }
         let baseOther = base.scan.characters.filter { !Self.isCJK($0.key) }
         #expect(!baseOther.isEmpty && ["H", "1", "l", "x"].allSatisfy { baseOther[$0] != nil }, "positive fixture: Latin, code and math were read")
         #expect(headOther == baseOther, "\(id): non-CJK characters moved")
         let nonCJKFonts = { (e: Export) -> Set<String> in
-            Set(e.scan.fonts.filter { !$0.contains("Hira") && !$0.contains("PingFang") && !$0.contains("Songti") })
+            Set(e.scan.fonts.filter { !$0.contains("Hira") && !Self.isChineseFace($0) })
         }
         #expect(nonCJKFonts(head) == nonCJKFonts(base), "\(id): \(nonCJKFonts(head).sorted()) vs \(nonCJKFonts(base).sorted())")
         #expect(nonCJKFonts(head).contains { $0.hasPrefix("KaTeX") }, "positive fixture: math drawn by KaTeX")
         // A heading's text is in the text layer once: no synthesized bold drawn over itself.
         #expect(head.text.components(separatedBy: "直骨次の見出し").count == 2, "\(id): \(head.text)")
         #expect(head.text == base.text, "\(id): the text layer reads the same")
-    }
-
-    /// The faces `preview.css` names exist on this system (macOS 15 and 26 on CI).
-    @Test func theNamedFacesAreInstalled() throws {
-        let url = URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-            .appendingPathComponent("Sources/MarsDawnKit/Resources/Preview/preview.css")
-        let css = try String(contentsOf: url, encoding: .utf8)
-        let names = Set(css.matches(of: /local\("([^"]+)"\)/).map { String($0.output.1) })
-        #expect(names == ["HiraginoSans-W3", "HiraginoSans-W6", "HiraMinProN-W3", "HiraMinProN-W6", "HiraMaruProN-W4"])
-        let installed = Set(CTFontManagerCopyAvailablePostScriptNames() as? [String] ?? [])
-        print("G3 OS \(ProcessInfo.processInfo.operatingSystemVersionString): \(names.sorted().map { "\($0)=\(installed.contains($0))" })")
-        for name in names { #expect(installed.contains(name), "\(name) is not installed") }
     }
 }
 #endif
