@@ -1,0 +1,31 @@
+OS build: Version 26.6.2 (Build 25G83) | WebKit: 21624.5.1.11.3 | Paper: a4
+Page count: 2
+
+--- Page 1 ---
+CALLHEAD01
+Intro CALLINTRO02 paragraph before the callouts.
+Note
+NOTEBODY03 with bold text.
+Tip
+TIPBODY04 in a tip.
+Important
+IMPBODY05 that matters.
+Warning
+WARNBODY06 to heed.
+Caution
+CAUTBODY07 with care.
+Note
+INFOBODY08 in a HackMD container.
+Done well
+SUCCBODY09 with an author title.
+Warning
+WARNITEM10 first
+WARNITEM11 second
+
+--- Page 2 ---
+Careful now
+DANGBODY12 before the code.
+const callout = 1; // CODEIN13
+▼ Open me
+SPOILBODY14 inside a spoiler.
+CALLENDMARK99
