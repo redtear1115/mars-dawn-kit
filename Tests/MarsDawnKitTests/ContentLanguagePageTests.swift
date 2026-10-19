@@ -186,12 +186,21 @@ struct ContentLanguagePageTests {
                 """)
             let requestsBefore = pageRequests.requests.count
             try await push(Self.japanese, to: webView)
-            _ = try await js(webView, "await document.fonts.ready; await new Promise((r) => setTimeout(r, 200)); return true;")
+            // Paint (a snapshot draws the page, which is when WebKit asks for the fonts the text
+            // uses), let every font load start and settle, and give a violation report time to arrive.
+            _ = try await webView.takeSnapshot(configuration: nil)
+            _ = try await js(webView, """
+                document.body.getBoundingClientRect();
+                await document.fonts.ready; await new Promise((r) => setTimeout(r, 600)); await document.fonts.ready;
+                await new Promise((r) => setTimeout(r, 300)); return true;
+                """)
             #expect(try await lang(webView) == "ja")
             // The text was laid out with its fonts (system fallback included) before this point.
             let rendered = try await js(webView, "return document.fonts.status;") as? String
             #expect(rendered == "loaded", "\(theme.id): fonts settled: \(String(describing: rendered))")
             let violations = try await js(webView, "return window.__violations;") as? [String]
+            let family = try await js(webView, "return getComputedStyle(document.querySelector('#content p')).fontFamily;") as? String
+            print("G5b \(theme.id): violations \(String(describing: violations)), requests \(pageRequests.requests.dropFirst(requestsBefore)), font-family \(family ?? "?")")
             #expect(violations == [], "\(theme.id): \(String(describing: violations))")
             let added = Array(pageRequests.requests.dropFirst(requestsBefore))
             #expect(added == [], "\(theme.id): \(added)")
