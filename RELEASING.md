@@ -126,3 +126,14 @@ gh workflow run install-check.yml --repo redtear1115/homebrew-tap     # runs it 
 - Update the website's `/cli/` install section and `llms.txt`, in en and zh-Hant, if anything
   about installing changed.
 - If the release changes what the tool does, update the tap README's description of the commands.
+
+## Bumping swift-cmark
+
+The node-budget pre-scan (`CMarkDepthScan` in `Sources/MarsDawnKit/MarkdownParsing.swift`) reads
+one cmark-gfm internal, `cmark_parser.root`, and stops a document early on a lower bound whose
+proof was made by reading swift-cmark 0.8.0's `blocks.c` and `extensions/table.c` (kit #150). A
+different swift-cmark is a different proof: `CMarkVersionPinTests` fails when `Package.resolved`
+moves off 0.8.0, and at run time `CMarkInternals.isAudited` turns the early stop off for a
+cmark-gfm whose version string, `cmark_parser` layout or probe counts differ. Bumping the pin
+(Dependabot opens such PRs) means redoing that audit against the new sources, then updating the
+pin test and `CMarkInternals.Fingerprint.audited` in the same change.

@@ -17,7 +17,7 @@ struct MarsDawnCommand: AsyncParsableCommand {
         Pass --json for machine-readable results. Exit codes: 0 success, 1 invalid theme (theme commands only), \
         \(CLIFailure.Code.inputNotFound.rawValue) input not found, \
         \(CLIFailure.Code.appNotInstalled.rawValue) MarsDawn not installed (open only), \(CLIFailure.Code.outputExists.rawValue) output exists \
-        (use --force), \(CLIFailure.Code.exportFailed.rawValue) export failed, \(CLIFailure.Code.appCannotOpenFolders.rawValue) this MarsDawn \
+        (use --force), \(CLIFailure.Code.exportFailed.rawValue) export failed or input too large, \(CLIFailure.Code.appCannotOpenFolders.rawValue) this MarsDawn \
         can't show a folder (open only), \(CLIFailure.Code.skillInstallFailed.rawValue) skill --install couldn't write the file, 64 usage error (including theme preview's refused -o).
         """,
         version: MarsDawnCLI.version,
@@ -51,8 +51,17 @@ func printJSON(_ object: [String: Any]) {
     print(jsonString(object))
 }
 
+/// What `--json` prints for a `CLIFailure`.
+func failureJSONObject(_ failure: CLIFailure) -> [String: Any] {
+    ["ok": false, "error": failure.kind, "message": failure.message]
+}
+
 /// A failure with a stable exit code and a machine-readable kind.
+///
+/// The kind is its own value, not derived from the code alone: two kinds can share an exit code
+/// (`export_failed` and `input_too_large` both exit 5).
 struct CLIFailure: Error, CustomStringConvertible {
+    /// The exit code, and the kind each code reports unless a failure names another.
     enum Code: Int32 {
         case inputNotFound = 2
         case appNotInstalled = 3
@@ -73,9 +82,45 @@ struct CLIFailure: Error, CustomStringConvertible {
         }
     }
 
+    /// Kinds that share another kind's exit code.
+    enum SharedKind: String, CaseIterable {
+        /// The input is over the renderer's byte cap (`ParseLimits.defaultMaxBytes`); nothing was
+        /// rendered or written. Exits 5, like `export_failed`.
+        case inputTooLarge = "input_too_large"
+
+        var code: Code {
+            switch self {
+            case .inputTooLarge: .exportFailed
+            }
+        }
+    }
+
     let code: Code
+    /// The machine-readable kind `--json` prints as `error`.
+    let kind: String
     let message: String
     var description: String { message }
+
+    init(code: Code, message: String) {
+        self.code = code
+        self.kind = code.kind
+        self.message = message
+    }
+
+    init(_ shared: SharedKind, message: String) {
+        self.code = shared.code
+        self.kind = shared.rawValue
+        self.message = message
+    }
+
+    /// `export` refused an input over the byte cap.
+    static func inputTooLarge(_ input: URL, limit: Int) -> CLIFailure {
+        CLIFailure(
+            .inputTooLarge,
+            message: "\(input.path) is larger than \(limit.formatted(.number.grouping(.never))) bytes "
+                + "(\(limit.formatted(.byteCount(style: .memory)))), the most marsdawn renders. Nothing was written."
+        )
+    }
 
     /// Wording approved by the owner (#165).
     static func appCannotOpenFolders(app: URL) -> CLIFailure {
@@ -687,6 +732,8 @@ extension MarsDawnCommand {
                 } else {
                     try FileManager.default.moveItem(at: temporary, to: destination)
                 }
+            } catch DocumentExporter.ExportError.inputTooLarge(let limit) {
+                throw CLIFailure.inputTooLarge(input, limit: limit)
             } catch {
                 throw CLIFailure(code: .exportFailed, message: "Export failed: \(error.localizedDescription)")
             }

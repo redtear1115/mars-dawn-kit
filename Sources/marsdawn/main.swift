@@ -13,7 +13,7 @@ func finish(_ error: Error?) -> Never {
     guard let error else { exit(0) }
     if let failure = error as? CLIFailure {
         if wantsJSON {
-            printJSON(["ok": false, "error": failure.code.kind, "message": failure.message])
+            printJSON(failureJSONObject(failure))
         } else {
             FileHandle.standardError.write(Data("marsdawn: \(failure.message)\n".utf8))
         }

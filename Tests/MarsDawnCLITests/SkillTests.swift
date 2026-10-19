@@ -108,16 +108,18 @@ struct SkillTests {
     }
 
     /// The exit-code table agrees with the codes and kinds the CLI returns, and lists every one:
-    /// a hard-coded row count let 0.5.2's exit 6 go missing from the skill.
+    /// a hard-coded row count let 0.5.2's exit 6 go missing from the skill. One row per kind, not
+    /// per code: `export_failed` and `input_too_large` both exit 5 (#150).
     @Test func theExitCodeTableMatchesTheCLI() {
         let rows = MarsDawnSkill.text.matches(of: /\| (\d+) \| `([a-z_]+)` \|/)
-        let cliCodes = (Int32(1)...Int32(63)).compactMap(CLIFailure.Code.init(rawValue:)).map(\.rawValue)
+        let cliCodes = (Int32(1)...Int32(63)).compactMap(CLIFailure.Code.init(rawValue:))
         #expect(cliCodes.count >= 5, "positive fixture: the CLI's failure codes")
-        #expect(rows.map { Int32($0.output.1)! } == cliCodes, "one row per failure code, in order")
-        for row in rows {
-            let code = CLIFailure.Code(rawValue: Int32(row.output.1)!)
-            #expect(code?.kind == String(row.output.2), "row \(row.output.1)")
+        let kinds = cliCodes.flatMap { code in
+            ["\(code.rawValue) \(code.kind)"]
+                + CLIFailure.SharedKind.allCases.filter { $0.code == code }.map { "\(code.rawValue) \($0.rawValue)" }
         }
+        #expect(kinds.contains("5 input_too_large"), "positive fixture: a kind that shares its code")
+        #expect(rows.map { "\($0.output.1) \($0.output.2)" } == kinds, "one row per failure kind, in code order")
     }
 
     /// One source: the repository's `skill/SKILL.md` is what `marsdawn skill` prints, byte for
