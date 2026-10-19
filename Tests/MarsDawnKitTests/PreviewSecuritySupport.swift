@@ -21,15 +21,6 @@ let previewSourceFolderURL: URL = URL(fileURLWithPath: #filePath)
     .deletingLastPathComponent()      // repo root
     .appendingPathComponent("Sources/MarsDawnKit/Resources/Preview", isDirectory: true)
 
-
-/// TEMP diagnostics (#157 hang hunt): appends a line to $MD157_TRACE, unbuffered.
-func md157Trace(_ line: String) {
-    guard let path = ProcessInfo.processInfo.environment["MD157_TRACE"] else { return }
-    let data = Data("\(Date().timeIntervalSince1970) \(line)\n".utf8)
-    if let h = FileHandle(forWritingAtPath: path) { h.seekToEndOfFile(); h.write(data); try? h.close() }
-    else { FileManager.default.createFile(atPath: path, contents: data) }
-}
-
 /// A throwaway, patchable copy of the bundled `Preview/` folder.
 @MainActor
 final class PreviewPageCopy {
@@ -68,28 +59,11 @@ final class PreviewPageCopy {
         }
     }
 
-    /// Adds `'unsafe-inline'` to the page CSP's `script-src` (so inline handlers and `javascript:`
-    /// URLs run) and opens `form-action`/`base-uri` (so a form or `<base>` is not refused outright).
-    @discardableResult func relaxScriptCSP() throws -> PreviewPageCopy {
-        try patch(indexURL, "script-src marsdawn-app:;", "script-src marsdawn-app: 'unsafe-inline';")
-        try patch(indexURL, "base-uri 'none'; form-action 'none'", "base-uri marsdawn-app:; form-action marsdawn-app: javascript:")
-        return self
-    }
-
     /// Restores the base element filter (removes `script`/`noscript` from `blockedElements`).
     @discardableResult func revertScriptNoscriptFilter() throws -> PreviewPageCopy {
         try patch(previewJSURL,
                   #"object, embed, portal, fencedframe, script, noscript";"#,
                   #"object, embed, portal, fencedframe";"#)
-        return self
-    }
-
-    /// Switches `update()`'s fragment parse from an inert `<template>` to `createContextualFragment`,
-    /// whose scripts are not "already started" and so execute when inserted.
-    @discardableResult func useContextualFragment() throws -> PreviewPageCopy {
-        try patch(previewJSURL,
-                  "const template = document.createElement(\"template\");\n    template.innerHTML = html;",
-                  "const template = { content: document.createRange().createContextualFragment(html) };")
         return self
     }
 
@@ -116,13 +90,6 @@ final class PreviewPageCopy {
         return self
     }
 
-    /// Writes a test-only `sentinel.js` into the copy that, if it ever executes, sets the sentinel.
-    @discardableResult func addSentinelScript() throws -> PreviewPageCopy {
-        try "window.__md157 = (window.__md157 | 0) + 1;\n"
-            .write(to: rootURL.appendingPathComponent("sentinel.js"), atomically: true, encoding: .utf8)
-        return self
-    }
-
     // MARK: Loading
 
     /// Builds a configuration that serves this copy (not the bundled Preview folder).
@@ -143,10 +110,8 @@ func loadSecurityPreview(configuration: WKWebViewConfiguration, theme: PreviewTh
     let webView = PreviewWKWebView(frame: NSRect(x: 0, y: 0, width: 600, height: 600), configuration: configuration)
     webView.applyContentRuleList(try await PreviewContentRules.ruleList(allowRemoteImages: false))
     guard webView.load(URLRequest(url: PreviewSchemeHandler.pageURL(theme: theme))) != nil else { throw URLError(.cancelled) }
-    md157Trace("load: started")
     let deadline = ContinuousClock.now + .seconds(20)
     while webView.isLoading, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(20)) }
-    md157Trace("load: isLoading=\(webView.isLoading)")
     // Sentinel plus the instruments the security review asked for (F7): CSP violations and the
     // identity of the page's own globals, so a page-script re-run is caught even if it is silent.
     _ = try await webView.callAsyncJavaScript(
@@ -158,18 +123,14 @@ func loadSecurityPreview(configuration: WKWebViewConfiguration, theme: PreviewTh
         window.__md157katexRef = window.katex;
         return true;
         """, contentWorld: .page)
-    md157Trace("load: bootstrap done")
     return webView
 }
 
 /// Feeds `html` through the page's own `update()` and waits for its diagrams to settle.
 @MainActor
 func previewUpdate(_ html: String, lineCount: Int = 40, in webView: PreviewWKWebView) async throws {
-    md157Trace("update: eval")
     _ = try await webView.evaluateJavaScript(PreviewWebView.updateScript(html: html, lineCount: lineCount))
-    md157Trace("update: idle")
     _ = try? await webView.callAsyncJavaScript("return await MarsDawn.idle();", contentWorld: .page)
-    md157Trace("update: idle done")
 }
 
 /// Reads an integer out of the page world.
@@ -197,8 +158,6 @@ func sentinel(_ webView: WKWebView) async throws -> Int {
 /// finished its single invalid diagram before the test reads the DOM.
 @MainActor
 func settleRender(_ webView: WKWebView) async throws {
-    md157Trace("settle: start")
-    defer { md157Trace("settle: done") }
     _ = try? await webView.callAsyncJavaScript(
         """
         // No requestAnimationFrame: a web view outside a window never runs frames, so a promise
