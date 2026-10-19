@@ -269,6 +269,9 @@
   // Whether any path from a root nests deeper than `maximum` nodes (a scalar counts as a level,
   // as in js-yaml's maxDepth). Each distinct container is walked once and its height kept, so
   // aliases to one container cost one walk; an alias back to an ancestor (a cycle) ends the path.
+  // This is a linear-time screen, not a proof: a height kept from a walk that a cycle cut short
+  // can be too small when the container is reached again from elsewhere (the longest simple path
+  // in a graph with cycles has no linear algorithm), so drawRow bounds the drawn depth itself.
   function nestsDeeperThan(roots, maximum) {
     const heights = new Map();
     const onPath = new Set();
@@ -421,6 +424,12 @@
   // is spent. Returns the new container's record when it is one that may be opened.
   function drawRow(parent, key, value, limits, budget, documentRow) {
     if (!spend(budget)) return undefined;
+    // The depth limit holds for what is drawn, whatever nestsDeeperThan let through: a container
+    // below it stops the pass like an exhausted budget does.
+    if (isContainer(value) && !documentRow && parent.depth + 1 > limits.maximumTreeDepth) {
+      budget.stopped = true;
+      return undefined;
+    }
     const row = element("div", documentRow ? "data-node data-document" : "data-node");
     if (isContainer(value) && isAncestor(parent, value)) {
       row.classList.add("data-leaf");
@@ -484,6 +493,13 @@
     }
   }
 
+  // A click's pass that stopped early gets the same notice as the automatic pass.
+  function noteStopped(budget) {
+    if (!budget.stopped || document.querySelector("#data .data-notice") !== null) return;
+    const panel = document.querySelector("#data .data-panel");
+    if (panel !== null) panel.parentNode.insertBefore(element("p", "data-notice", labels.expansionStopped), panel);
+  }
+
   // The automatic pass: levels 1 to autoExpandDepth open, breadth first, until the budget is out.
   function drawTree(view, roots, limits) {
     const panel = element("div", "data-panel");
@@ -519,14 +535,18 @@
       }
       const rest = moreChildren.get(target);
       if (rest !== undefined) {
-        openChildren(rest, currentLimits, makeBudget(currentLimits), null);
+        const budget = makeBudget(currentLimits);
+        openChildren(rest, currentLimits, budget, null);
+        noteStopped(budget);
         return;
       }
       const record = toggles.get(target);
       if (record === undefined) return;
       if (!record.opened) {
         // One level per click, under the same budget as the automatic pass.
-        openChildren(record, currentLimits, makeBudget(currentLimits), null);
+        const budget = makeBudget(currentLimits);
+        openChildren(record, currentLimits, budget, null);
+        noteStopped(budget);
       } else {
         const open = record.group.hidden;
         record.group.hidden = !open;
