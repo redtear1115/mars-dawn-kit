@@ -37,10 +37,12 @@ struct CLITests {
         #expect(try MarsDawnCommand.Export.parse(["plan.md"]).layout == .document)
         #expect(try MarsDawnCommand.Export.parse(["plan.md", "--layout", "document"]).layout == .document)
         #expect(try MarsDawnCommand.Export.parse(["plan.md", "--layout", "manual"]).layout == .manual)
+        #expect(try MarsDawnCommand.Export.parse(["plan.md", "--layout", "handbook"]).layout == .manual)
+        #expect(throws: (any Error).self) { try MarsDawnCommand.Export.parse(["plan.md", "--layout", "bogus"]) }
         #expect(throws: (any Error).self) { try MarsDawnCommand.Export.parse(["plan.md", "--layout", "handout"]) }
         #expect(throws: (any Error).self) { try MarsDawnCommand.Export.parse(["plan.md", "--layout"]) }
         let help = MarsDawnCommand.Export.helpMessage()
-        #expect(help.contains("--layout") && help.contains("manual") && help.contains("<!--BREAK-->"))
+        #expect(help.contains("--layout") && help.contains("manual") && help.contains("Handbook") && help.contains("<!--BREAK-->"))
     }
 
     /// `--toc-title` (mars-dawn#432 S2): "Contents" unless given.
