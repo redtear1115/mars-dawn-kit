@@ -415,6 +415,29 @@ struct SkillHintCallSiteTests {
         #expect(HintTesting.marsDawnProcesses() == before, "no MarsDawn process may appear")
     }
 
+    /// One task clearing its override (so the production runner runs there) must not change what a
+    /// concurrently running export in another task sees: the override is per task.
+    @Test func clearingTheOverrideInOneTaskDoesNotReachAnother() async throws {
+        let sandbox = try HintSandbox()
+        let (input, output) = try makeInput(in: sandbox)
+        let stray = HintSink()
+        async let clearing: Void = HintTesting.$expectedViolations.withValue(stray) {
+            await SkillHint.$override.withValue(nil) {
+                for _ in 0..<50 {
+                    SkillHint.emitAfterSuccess(json: false)
+                    await Task.yield()
+                }
+            }
+        }
+        try await sandbox.run {
+            try await MarsDawnCommand.Export.parse([input.path, "-o", output.path]).run()
+        }
+        await clearing
+        #expect(sandbox.sink.lines == [SkillHint.missingMessage + "\n"], "the export saw its own override throughout")
+        #expect(stray.lines.count == 50, "only the clearing task reached the production runner")
+        #expect(FileManager.default.fileExists(atPath: sandbox.cacheFile.path))
+    }
+
     @Test func aFailedOpenPrintsNoTip() async throws {
         let sandbox = try HintSandbox()
         let (input, _) = try makeInput(in: sandbox)

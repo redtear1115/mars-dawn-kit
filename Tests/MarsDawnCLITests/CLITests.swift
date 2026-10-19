@@ -126,6 +126,9 @@ struct CLITests {
 @MainActor
 @Suite(.timeLimit(.minutes(1)))
 struct StandaloneToolTests {
+    /// Any success path in this suite that forgot its hint stub fails loudly (H5b).
+    init() { HintTesting.installViolationHandler() }
+
     /// `export` must not need MarsDawn.app: it is the same rendering the app does, it ships in
     /// this package, and Homebrew builds and tests the tool on machines that have no app at all.
     /// Before C0 this threw `app_not_installed` and wrote nothing.

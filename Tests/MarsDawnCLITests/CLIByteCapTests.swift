@@ -9,6 +9,8 @@ import Testing
 @MainActor
 @Suite(.timeLimit(.minutes(2)))
 struct CLIByteCapTests {
+    init() { HintTesting.installViolationHandler() }
+
     @Test func exportRefusesAnInputOverTheCap() async throws {
         let original = MarsDawnApp.locate
         defer { MarsDawnApp.locate = original }
