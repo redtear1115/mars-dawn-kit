@@ -133,7 +133,7 @@ struct DataDocumentPageTests {
             #expect(at.arguments["state"] as? String == "ok")
             let webView = try await DataPage.load()
             #expect(await DataDocumentPreview.render(over, in: webView) == .overCap)
-            let size = kind == .json ? "16" : "0.5"
+            let size = kind == .json ? "16" : "0.37"
             #expect(try await DataPage.messageText(in: webView) == DataLabels.english.overCap.replacingOccurrences(of: "{size}", with: size))
             #expect(try await DataPage.int("document.querySelectorAll('#data .data-source-button').length", in: webView) == 1)
         }

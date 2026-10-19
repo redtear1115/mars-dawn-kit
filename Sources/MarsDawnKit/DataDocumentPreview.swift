@@ -38,7 +38,7 @@ public enum DataDocumentPreview {
     /// can't be interrupted, so this is the bound on its time and memory, chosen from the
     /// kit-harness measurement on worst-case fixtures (kit #128). Within it no YAML text can
     /// produce more parser events than the tree can take, so there is no separate event limit.
-    public static let maximumYAMLBytes = 512 * 1024
+    public static let maximumYAMLBytes = 384 * 1024
     /// The most alias occurrences in one YAML document.
     public static let maximumAliases = 100_000
     /// The deepest nesting shown, in nodes (a scalar counts as a level, as in js-yaml's

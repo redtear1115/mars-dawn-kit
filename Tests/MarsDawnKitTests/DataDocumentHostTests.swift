@@ -35,7 +35,7 @@ struct DataDocumentHostTests {
     @Test func theLimitsAreTheSwiftConstants() {
         let limits = DataDocumentPreview.limits
         #expect(limits["maximumJSONBytes"] == 16 * 1024 * 1024)
-        #expect(limits["maximumYAMLBytes"] == 512 * 1024)
+        #expect(limits["maximumYAMLBytes"] == 384 * 1024)
         #expect(limits["maximumDepth"] == DataDocumentPreview.maximumDepth)
         #expect(limits["maximumTreeDepth"] == DataDocumentPreview.maximumDepth)
         #expect(limits["autoExpandDepth"] == 8)

@@ -546,7 +546,9 @@
     const format = kind === "json" ? "JSON" : "YAML";
     if (state === "overCap") {
       const cap = kind === "json" ? limits.maximumJSONBytes : limits.maximumYAMLBytes;
-      const size = count(Math.round(cap / 104857.6) / 10);
+      // In MB (MiB) rounded down to two decimals, so "larger than {size} MB" stays true:
+      // 16 MiB is 16, 384 KiB is 0.37.
+      const size = count(Math.floor(cap / 10485.76) / 100);
       message(view, fill(labels.overCap, [["{size}", size]]), "data-message-text");
       return "overCap";
     }

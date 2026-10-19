@@ -71,7 +71,7 @@ struct DataDocumentBombTests {
     }
 
     // Events. Within maximumYAMLBytes no YAML produces more than about one event per byte (the
-    // densest form found, `?\n`, gives 524,292 at 512 KiB), so an event limit could never be
+    // densest form found, `?\n`, gives 393,220 at 384 KiB), so an event limit could never be
     // reached and there is none. This pins the measured density, so a parser change that made a
     // denser form possible would be seen.
     @Test func noFormReachesAMillionEventsWithinTheCap() async throws {
@@ -87,7 +87,7 @@ struct DataDocumentBombTests {
           return most;
         })()
         """, in: webView) as? Int ?? -1
-        #expect(densest > 400_000, "positive: the probe parses dense forms (\(densest))")
+        #expect(densest > DataDocumentPreview.maximumYAMLBytes * 3 / 4, "positive: the probe parses dense forms (\(densest))")
         #expect(densest <= DataDocumentPreview.maximumYAMLBytes + 8, "\(densest) events within the cap")
     }
 
