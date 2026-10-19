@@ -26,6 +26,8 @@ struct ExportByteCapTests {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
         let output = root.appendingPathComponent("out.pdf")
+        // The refusal comes from the renderer's default cap; without it this would export 16 MiB.
+        try #require(MarkdownRenderer.Options.preview(baseDirectory: nil).maxBytes == Self.cap)
 
         var thrown: Error?
         do {

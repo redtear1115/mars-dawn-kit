@@ -23,6 +23,8 @@ struct CLIByteCapTests {
         try Data(("# Big\n\n" + String(repeating: "a", count: cap + 1 - 7)).utf8).write(to: input)
         #expect(try FileManager.default.attributesOfItem(atPath: input.path)[.size] as? Int == cap + 1)
         let output = root.appendingPathComponent("big.pdf")
+        // The refusal comes from the renderer's default cap; without it this would export 16 MiB.
+        try #require(MarkdownRenderer.Options.preview(baseDirectory: nil).maxBytes == cap)
 
         var thrown: Error?
         do {
