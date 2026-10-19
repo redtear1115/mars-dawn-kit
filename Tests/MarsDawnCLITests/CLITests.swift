@@ -142,7 +142,9 @@ struct StandaloneToolTests {
         try Data("# Title\n\nA paragraph.\n".utf8).write(to: input)
         let output = root.appendingPathComponent("out.pdf")
 
-        try await MarsDawnCommand.Export.parse([input.path, "-o", output.path]).run()
+        try await HintTesting.withQuietHint {
+            try await MarsDawnCommand.Export.parse([input.path, "-o", output.path]).run()
+        }
 
         let pdf = try Data(contentsOf: output)
         #expect(pdf.prefix(5) == Data("%PDF-".utf8))

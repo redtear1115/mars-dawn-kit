@@ -121,6 +121,11 @@ swift run marsdawn export notes.md -o notes.pdf --theme classic --paper a4
     another agent's skill folder. Only applies with `--install`.
   - `--json` (only with `--install`) prints `ok`, `path` and `action`
     (`"installed"`, `"unchanged"` or `"replaced"`).
+- After a successful `export` or `open` (not with `--json`), when stderr is a terminal and
+  `~/.claude/skills/marsdawn/SKILL.md` is missing or differs from this version's skill, `marsdawn`
+  prints one `Tip:` line on **stderr** pointing at `marsdawn skill --install`. It shows once per
+  `marsdawn` version and state, remembered in `~/Library/Caches/marsdawn/skill-hint`; stdout and
+  `--json` output never change. Set `MARSDAWN_NO_SKILL_HINT=1` to turn it off.
 - `--version` prints the release number and nothing else, so a package manager can compare it against its own. Bumping it is part of cutting a release; see [RELEASING.md](RELEASING.md).
 - `--generate-completion-script bash|zsh|fish` writes a shell completion script to stdout.
 - Exit codes: 1 invalid theme (`theme` commands only), 2 input not found, 3 MarsDawn not installed (`open` only), 4 output exists, 5 export failed, 6 this MarsDawn can't take a folder (`open` only), 7 `skill --install` couldn't write the skill (`skill_install_failed`), 64 usage error (including `skill --install`'s `skill_differs` and `skill_unsafe_symlink`, `skill_target_not_a_file` (refused even with `--force`) and `skill_unreadable` (refused without `--force`), `open --wait`'s `wait_out_of_range`, and `theme preview`'s `output_folder_missing`, `output_symlink` and `output_not_a_file`).

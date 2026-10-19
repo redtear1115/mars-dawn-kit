@@ -265,8 +265,12 @@ enum MarsDawnApp {
         }
     }
 
+    /// Like `locate`, but per task: a test that sets it never changes what another running test
+    /// sees. Nil outside tests.
+    @TaskLocal static var locateOverride: (@Sendable () throws -> URL?)?
+
     static func require() throws -> URL {
-        guard let url = try locate() else { throw CLIFailure.appNotInstalled() }
+        guard let url = try (locateOverride ?? locate)() else { throw CLIFailure.appNotInstalled() }
         return url
     }
 
@@ -568,7 +572,11 @@ extension MarsDawnCommand {
             for group in RevealEvent.groups(for: targets) {
                 let configuration = openConfiguration()
                 configuration.appleEvent = RevealEvent.openDocuments(urls: group.urls, line: group.line)
-                _ = try await NSWorkspace.shared.open(group.urls, withApplicationAt: app, configuration: configuration)
+                if let opener = Self.opener {
+                    try await opener(group.urls, app, configuration)
+                } else {
+                    _ = try await NSWorkspace.shared.open(group.urls, withApplicationAt: app, configuration: configuration)
+                }
             }
             // Folders travel on their own, with no reveal line: a folder has no line to land on.
             // PLAN #69 slice B: with an app that reports back and --wait > 0, a one-time token
@@ -606,7 +614,12 @@ extension MarsDawnCommand {
                 lines.append(Open.folderLine(path: folder.path, result: folderStatus))
             }
             output.report(fields, text: lines.joined(separator: "\n"))
+            SkillHint.emitAfterSuccess(json: output.json)
         }
+
+        /// Hands document URLs to the app. Tests set it, per task, so they never reach an
+        /// installed MarsDawn; nil sends them through `NSWorkspace`.
+        @TaskLocal static var opener: (@MainActor @Sendable ([URL], URL, NSWorkspace.OpenConfiguration) async throws -> Void)?
 
         /// The `"folder"` object in `--json`: always `path` and `requested: true`; `status` (and,
         /// for `needsUser`, `waitingFor`) only when `result` carries one. Shared by `run()` and by
@@ -750,6 +763,7 @@ extension MarsDawnCommand {
                 ),
                 text: text
             )
+            SkillHint.emitAfterSuccess(json: options.json)
         }
 
         /// The `--json` result's fields (`report` adds `ok`). This is the published export.v1
