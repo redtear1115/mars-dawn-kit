@@ -53,4 +53,22 @@ struct MathPlaceholderLeakTests {
         let html = MarkdownRenderer.render("a \u{E000} b $x$")
         #expect(html.contains("math-inline"))
     }
+
+    @Test func frontMatterScalarsDoNotCostTheDocumentItsMath() {
+        let html = MarkdownRenderer.render("---\nicon: \u{E000}\u{E001}\n---\n\n$$E=mc^2$$")
+        #expect(html.contains("math-display"), Comment(rawValue: html.unicodeScalars.map { $0.escaped(asASCII: true) }.joined()))
+    }
+
+    /// An author scalar the output drops (here inside the removed attribute-definition line)
+    /// must not hide a leak by tying the scalar counts.
+    @Test func droppedAuthorScalarDoesNotHideALeak() {
+        for scalars in ["\u{E000}", "\u{E001}", "\u{E000}\u{E001}"] {
+            let source = "1. ^[a]:=\(scalars)\n--$x$\n|[^1]\n[^1]:"
+            let first = MarkdownRenderer.render(source)
+            let stray = first.unicodeScalars.filter { $0 == "\u{E000}" || $0 == "\u{E001}" }.count
+            #expect(stray <= scalars.unicodeScalars.count, "\(first.debugDescription)")
+            #expect(first.contains("$x$"), "\(first.debugDescription)")
+            #expect(MarkdownRenderer.render(source) == first)
+        }
+    }
 }

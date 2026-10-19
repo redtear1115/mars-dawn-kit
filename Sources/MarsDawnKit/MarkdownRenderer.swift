@@ -113,8 +113,13 @@ public enum MarkdownRenderer {
         // pieces would reach the page, different on every render (the nonce is random). When this
         // extraction made placeholders and more placeholder scalars came out than went in, render
         // again with the math left as source text. Costs nothing for a document without math.
+        // A leak is a piece of this extraction's random nonce in the output (a placeholder cut
+        // short keeps most of it; 8 hex digits cannot occur by chance), or more scalars than the
+        // whole source holds (front matter included, as `result.html` renders it).
+        let nonce = split.math.nonce
         guard split.math.expressionCount > 0,
-              placeholderScalarCount(result.html) > placeholderScalarCount(split.body) else { return result }
+              result.html.contains(nonce.prefix(8)) || result.html.contains(nonce.suffix(8))
+                || placeholderScalarCount(result.html) > placeholderScalarCount(markdown) else { return result }
         let plain = SplitSource(markdown, options: options, extractMath: false)
         return MarkdownParsing.withDocument(plain.parsedBody, options: options.parseLimits) { outcome in
             renderResult(outcome, split: plain, options: options)
