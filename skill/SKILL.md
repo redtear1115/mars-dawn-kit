@@ -32,6 +32,15 @@ Options: `-o out.pdf` (default: beside the input), `--theme dawn|classic|modern|
 a newline is a space, except between two Chinese or Japanese characters, where it is
 dropped.
 
+`--layout document|manual` picks the page layout (default `document`; `handbook` is an alias for
+`manual`). `manual` is the Handbook layout: wider margins with a 25 mm binding side, every
+top-level heading on a new page, a table of contents of the level 1 and 2 headings, "n / N" page
+numbers and PDF bookmarks. A cover comes first when the front matter has a `title`; it also shows
+`subtitle`, `version`, `date`, `author` and `logo` (an image path) when present.
+`--toc-title "<text>"` sets the contents heading (default `Contents`) and only applies to
+`manual`. A line holding only `<!--BREAK-->` starts a new page, in either layout. The JSON result
+doesn't say which layout was used.
+
 On success it exits 0 and prints one JSON line:
 
 - `ok`: always true
@@ -69,7 +78,7 @@ On failure with `--json` it prints `{"ok": false, "error": <kind>, "message": ..
 | 2 | `input_not_found` | The input file isn't there. |
 | 3 | `app_not_installed` | MarsDawn isn't installed. Only `open` returns this. |
 | 4 | `output_exists` | The PDF (or `theme preview`'s PNG) already exists. Pass --force to replace it, or -o to write elsewhere. |
-| 5 | `export_failed` | Rendering failed. |
+| 5 | `export_failed` | Rendering failed. With `--layout manual` that includes a document whose page numbers couldn't be worked out; nothing is written, so retry with the `document` layout. |
 | 5 | `input_too_large` | The input is larger than 16 MiB (16,777,216 bytes), the most `export` renders. Nothing was written. Only `export` returns this. |
 | 6 | `app_cannot_open_folders` | This MarsDawn can't show a folder, so nothing was opened. Only `open` returns this. |
 | 7 | `skill_install_failed` | `skill --install` couldn't create the folder or write the file, or the final rename failed. An existing SKILL.md is left as it was. Only `skill --install` returns this. |
