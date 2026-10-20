@@ -11,7 +11,16 @@ struct KitLocalizationCoverageTests {
     nonisolated static let reference = "zh-Hant"
     nonisolated static let others = ["zh-Hans", "ja", "de", "fr", "es", "ko"]
     /// Translations that are the English word itself on purpose, so "equals the key" isn't a fallback.
-    nonisolated static let sameAsEnglish: [String: Set<String>] = ["de": ["Modern"]]
+    nonisolated static let sameAsEnglish: [String: Set<String>] = ["de": ["Modern"], "fr": ["Important"]]
+    /// Keys allowed to be missing from a language, per language. A pending entry FAILS once its
+    /// translation lands: delete it from here then. The callout titles of kit #135 landed in all
+    /// seven with kit #183, and the JSON and YAML page's labels (kit #128) in all seven with this
+    /// change, so nothing is pending.
+    nonisolated static let pending: [String: Set<String>] = [:]
+
+    @Test func nothingIsPending() {
+        #expect(Self.pending.isEmpty)
+    }
 
     nonisolated private static let tables = URL(fileURLWithPath: #filePath)
         .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
@@ -31,18 +40,40 @@ struct KitLocalizationCoverageTests {
 
     @Test func theReferenceTableIsTheRealOne() throws {
         let reference = try Self.keys(Self.reference)
-        #expect(reference.count >= 11, "positive fixture: zh-Hant has the kit's strings (found \(reference.count))")
+        #expect(reference.count >= 16, "positive fixture: zh-Hant has the kit's strings (found \(reference.count))")
         #expect(reference["Dawn"] == "黎明")
+    }
+
+    /// The JSON and YAML page's labels (kit #128) were written into every table as marked
+    /// placeholders while their copy waits for approval (needs-copy). This fails, naming each one,
+    /// until every placeholder is replaced by the approved translation.
+    nonisolated static let placeholderMarker = "NEEDS-COPY"
+
+    @Test(arguments: [reference] + others)
+    func noPlaceholderCopyIsLeft(in localization: String) throws {
+        let table = try Self.keys(localization)
+        let placeholders = table.filter { $0.value.contains(Self.placeholderMarker) }.keys.sorted()
+        #expect(placeholders.isEmpty, "\(localization): \(placeholders.count) placeholder(s) awaiting copy (kit #128): \(placeholders)")
     }
 
     @Test(arguments: others)
     func everyKeyIsTranslated(into localization: String) throws {
         let reference = try Self.keys(Self.reference)
         let table = try Self.keys(localization)
-        #expect(Set(table.keys) == Set(reference.keys), "\(localization) keys differ: \(Set(table.keys).symmetricDifference(reference.keys).sorted())")
+        let pending = Self.pending[localization] ?? []
+        for key in pending {
+            #expect(reference[key] != nil, "\(localization): \"\(key)\" is pending but the reference table has no such key")
+            #expect(table[key] == nil, "\(localization): \"\(key)\" now has a translation: remove it from `pending`")
+        }
+        let expected = Set(reference.keys).subtracting(pending)
+        #expect(Set(table.keys) == expected, "\(localization) keys differ: \(Set(table.keys).symmetricDifference(expected).sorted())")
         for (key, referenceValue) in reference {
             let shipped = try #require(PreviewWebView.moduleLocalizedString(key, localization: localization),
                                        "\(localization) doesn't ship in the resource bundle")
+            if pending.contains(key) {
+                #expect(shipped == key, "\(localization): pending \"\(key)\" ships as \(shipped)")
+                continue
+            }
             if !(Self.sameAsEnglish[localization]?.contains(key) ?? false) {
                 #expect(shipped != key, "\(localization): \"\(key)\" falls back to English")
             }

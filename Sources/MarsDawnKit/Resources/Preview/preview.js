@@ -791,12 +791,36 @@
   // inert.
   const blockedElements = "link, meta, base, iframe, frame, object, embed, portal, fencedframe, script, noscript";
 
+  // The document's language (kit #164). The renderer writes one `<md-content-lang data-lang="…">`
+  // as the fragment's very first node when a document is Japanese, and nowhere else; a document
+  // can put elements at the top level only after a node the renderer wrote, so an element of that
+  // name anywhere but first is the document's own and is left alone as content. The value is
+  // checked again (ASCII BCP 47 shape, primary subtag `ja`, at most 35 characters) and only ever
+  // set as a property, so it can't become markup. JavaScript's `$` without the `m` flag matches
+  // only at the very end.
+  const languageTagPattern = /^[A-Za-z]{2,3}(-[A-Za-z0-9]{1,8})*$/;
+  function takeContentLanguage(fragment) {
+    const first = fragment.firstChild;
+    if (!first || first.nodeType !== Node.ELEMENT_NODE || first.localName !== "md-content-lang"
+        || first.attributes.length !== 1 || !first.hasAttribute("data-lang") || first.hasChildNodes()) {
+      return null;
+    }
+    first.remove();
+    const tag = first.getAttribute("data-lang");
+    return tag.length <= 35 && languageTagPattern.test(tag) && /^ja(-|$)/i.test(tag) ? tag : null;
+  }
+
   function update(html, lines) {
     if (lines) lineCount = lines;
     invalidateAnchors();
     const root = content();
     const template = document.createElement("template");
     template.innerHTML = html;
+    // First, before the filter and the pool see the fragment, so its children are exactly those
+    // of the same document without a marker. Every update sets or clears it.
+    const language = takeContentLanguage(template.content);
+    if (language) root.lang = language;
+    else root.removeAttribute("lang");
     // Defence in depth for RawHTMLSafety.swift: drop every element that can open a connection or
     // a nested document before anything reaches the page. Template content is inert, so none of
     // these has loaded anything yet.
@@ -920,8 +944,29 @@
     window.scrollTo(0, y);
   }
 
+  // A callout's default title is CSS generated content (#135): the host's wording reaches the
+  // stylesheet only as a custom property holding a quoted string, built here. Every character
+  // outside [A-Za-z0-9 ] is written as a six-digit hex escape, so no label can end the string,
+  // open a block or start a rule; there is no other path from label text to CSS.
+  function cssString(text) {
+    let out = '"';
+    for (const ch of String(text)) {
+      out += /^[A-Za-z0-9 ]$/.test(ch) ? ch : "\\" + ch.codePointAt(0).toString(16).padStart(6, "0") + " ";
+    }
+    return out + '"';
+  }
+  const calloutTypes = ["note", "tip", "important", "warning", "caution"];
+
   function setLabels(labels) {
     if (labels && typeof labels.diagramLimitNote === "string") diagramLimitNote = labels.diagramLimitNote;
+    const titles = labels && labels.calloutTitles;
+    if (titles && typeof titles === "object") {
+      for (const type of calloutTypes) {
+        if (typeof titles[type] === "string") {
+          document.documentElement.style.setProperty("--callout-title-" + type, cssString(titles[type]));
+        }
+      }
+    }
   }
 
   window.MarsDawn = { update, setLabels, setTheme, setThemes, scrollToLine, setAssetState, setRemoteImageState, restoreScroll, idle };

@@ -24,3 +24,9 @@ It bundles the following third-party software, each under its own license:
   Sources/MarsDawnKit/Resources/Preview/vendor/katex.min.css (font sources reduced to woff2)
   Sources/MarsDawnKit/Resources/Preview/vendor/fonts/*.woff2
   License: Sources/MarsDawnKit/Resources/Preview/vendor/LICENSE-katex.txt
+
+- js-yaml 5.5.0
+  https://github.com/nodeca/js-yaml
+  MIT License, Copyright (C) 2011-2015 by Vitaly Puzrin
+  Sources/MarsDawnKit/Resources/Preview/vendor/js-yaml.umd.min.js (the JSON and YAML tree page only)
+  License: Sources/MarsDawnKit/Resources/Preview/vendor/LICENSE-js-yaml.txt

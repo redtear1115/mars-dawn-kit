@@ -265,8 +265,12 @@ enum MarsDawnApp {
         }
     }
 
+    /// Like `locate`, but per task: a test that sets it never changes what another running test
+    /// sees. Nil outside tests.
+    @TaskLocal static var locateOverride: (@Sendable () throws -> URL?)?
+
     static func require() throws -> URL {
-        guard let url = try locate() else { throw CLIFailure.appNotInstalled() }
+        guard let url = try (locateOverride ?? locate)() else { throw CLIFailure.appNotInstalled() }
         return url
     }
 
@@ -338,7 +342,42 @@ extension PreviewTheme: ExpressibleByArgument {
 }
 
 extension DocumentExporter.Paper: ExpressibleByArgument {}
-extension ExportLayout: ExpressibleByArgument {}
+extension ExportLayout: ExpressibleByArgument {
+    /// `handbook` is the CLI value for the Handbook layout; `manual` is a deprecated alias kept for
+    /// scripts that already pass it. Both give `.manual`, so the export and its `--json` result are
+    /// the same.
+    public init?(argument: String) {
+        switch argument {
+        case "document": self = .document
+        case "handbook", "manual": self = .manual
+        default: return nil
+        }
+    }
+
+    public static var allValueStrings: [String] { ["document", "handbook"] }
+}
+
+/// What `--layout` parses to, remembering whether the user typed the deprecated `manual` (both
+/// spellings give `.manual`, so the layout alone can't say).
+struct LayoutArgument: ExpressibleByArgument {
+    var layout: ExportLayout
+    var typedManual = false
+
+    static let deprecationWarning = "warning: --layout manual is deprecated; use --layout handbook"
+
+    init(_ layout: ExportLayout) { self.layout = layout }
+
+    init?(argument: String) {
+        guard let layout = ExportLayout(argument: argument) else { return nil }
+        self.layout = layout
+        typedManual = argument == "manual"
+    }
+
+    static var allValueStrings: [String] { ExportLayout.allValueStrings }
+    /// Without this the completion scripts offer no values: the default kind is built from CaseIterable.
+    static var defaultCompletionKind: CompletionKind { .list(allValueStrings) }
+    var defaultValueDescription: String { layout == .manual ? "handbook" : "document" }
+}
 
 // MARK: - open
 
@@ -568,7 +607,11 @@ extension MarsDawnCommand {
             for group in RevealEvent.groups(for: targets) {
                 let configuration = openConfiguration()
                 configuration.appleEvent = RevealEvent.openDocuments(urls: group.urls, line: group.line)
-                _ = try await NSWorkspace.shared.open(group.urls, withApplicationAt: app, configuration: configuration)
+                if let opener = Self.opener {
+                    try await opener(group.urls, app, configuration)
+                } else {
+                    _ = try await NSWorkspace.shared.open(group.urls, withApplicationAt: app, configuration: configuration)
+                }
             }
             // Folders travel on their own, with no reveal line: a folder has no line to land on.
             // PLAN #69 slice B: with an app that reports back and --wait > 0, a one-time token
@@ -606,7 +649,12 @@ extension MarsDawnCommand {
                 lines.append(Open.folderLine(path: folder.path, result: folderStatus))
             }
             output.report(fields, text: lines.joined(separator: "\n"))
+            SkillHint.emitAfterSuccess(json: output.json)
         }
+
+        /// Hands document URLs to the app. Tests set it, per task, so they never reach an
+        /// installed MarsDawn; nil sends them through `NSWorkspace`.
+        @TaskLocal static var opener: (@MainActor @Sendable ([URL], URL, NSWorkspace.OpenConfiguration) async throws -> Void)?
 
         /// The `"folder"` object in `--json`: always `path` and `requested: true`; `status` (and,
         /// for `needsUser`, `waitingFor`) only when `result` carries one. Shared by `run()` and by
@@ -665,10 +713,12 @@ extension MarsDawnCommand {
         @Option(help: "Paper size.")
         var paper: DocumentExporter.Paper = .a4
 
-        @Option(help: "Page layout: document (the default) or manual, with wider margins, a 25 mm binding side and every top-level heading on a new page, plus a cover (from the front matter's title, subtitle, version, date, author and logo), a table of contents of the level 1 and 2 headings, \"n / N\" page numbers and PDF bookmarks. <!--BREAK--> on its own line starts a new page in either.")
-        var layout: ExportLayout = .document
+        @Option(name: .customLong("layout"), help: "Page layout: document (the default) or handbook, the Handbook layout, with wider margins, a 25 mm binding side and every top-level heading on a new page, plus a cover (from the front matter's title, subtitle, version, date, author and logo), a table of contents of the level 1 and 2 headings, \"n / N\" page numbers and PDF bookmarks. <!--BREAK--> on its own line starts a new page in either. manual is deprecated: use handbook.")
+        var layoutArgument = LayoutArgument(.document)
 
-        @Option(help: "Title of the manual layout's table of contents.")
+        var layout: ExportLayout { layoutArgument.layout }
+
+        @Option(help: "Title of the Handbook layout's table of contents.")
         var tocTitle: String = "Contents"
 
         @Flag(help: "Load images from the web while rendering.")
@@ -698,6 +748,9 @@ extension MarsDawnCommand {
             // No MarsDawnApp.require() here: export is the same rendering the app does, and it
             // ships in this package, so it must work with nothing else installed (Homebrew builds
             // and tests the tool on machines that have no MarsDawn.app). `open` still needs it.
+            if layoutArgument.typedManual {
+                FileHandle.standardError.write(Data((LayoutArgument.deprecationWarning + "\n").utf8))
+            }
             let input = try existingFile(file)
             let destination = outputURL(for: input)
             if FileManager.default.fileExists(atPath: destination.path), !force {
@@ -725,7 +778,8 @@ extension MarsDawnCommand {
                     paper: paper,
                     softBreaksAsLineBreaks: breaks,
                     layout: layout,
-                    tocTitle: tocTitle
+                    tocTitle: tocTitle,
+                    calloutTitles: .preferred()
                 )
                 if FileManager.default.fileExists(atPath: destination.path) {
                     _ = try FileManager.default.replaceItemAt(destination, withItemAt: temporary)
@@ -749,6 +803,7 @@ extension MarsDawnCommand {
                 ),
                 text: text
             )
+            SkillHint.emitAfterSuccess(json: options.json)
         }
 
         /// The `--json` result's fields (`report` adds `ok`). This is the published export.v1

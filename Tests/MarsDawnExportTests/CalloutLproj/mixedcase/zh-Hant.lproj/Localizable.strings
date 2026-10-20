@@ -1,0 +1,6 @@
+/* Test fixture: a bundle whose Traditional Chinese folder is spelled one way (see CalloutTitlesTests). */
+"Note" = "附註";
+"Tip" = "提示";
+"Important" = "重要";
+"Warning" = "警告";
+"Caution" = "小心";

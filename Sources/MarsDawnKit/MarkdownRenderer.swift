@@ -88,7 +88,7 @@ public enum MarkdownRenderer {
     /// Like `render`, also saying whether the source fallback was used and why.
     public static func renderResult(_ markdown: String, options: Options = Options()) -> RenderResult {
         if let tooLarge = tooLargeResult(markdown, options: options) { return tooLarge }
-        return renderSplit(markdown, options: options)
+        return markingLanguage(of: markdown, in: renderSplit(markdown, options: options))
     }
 
     /// Like `render`, waiting for a parsing worker without blocking.
@@ -99,16 +99,58 @@ public enum MarkdownRenderer {
         // and this overload must not block its caller doing it. Inside `onWorker` every
         // nested `withDocument` runs inline on that one worker, so the extraction and the
         // render still take one worker slot between them, as the render alone did before.
-        return await MarkdownParsing.onWorker { renderSplit(markdown, options: options) }
+        return await MarkdownParsing.onWorker { markingLanguage(of: markdown, in: renderSplit(markdown, options: options)) }
+    }
+
+    /// `result` with the language marker in front when `markdown` is Japanese (kit #164), and
+    /// `result` itself otherwise, byte for byte. The marker becomes the fragment's first node, so
+    /// it must go in front of HTML whose own first node the renderer wrote: front matter, a block,
+    /// the html-block wrapper or the source fallback, never a document's raw markup. `preview.js`
+    /// recognises it only there. A document over the byte limit is never scanned and gets none.
+    private static func markingLanguage(of markdown: String, in result: RenderResult) -> RenderResult {
+        guard let tag = ContentLanguage.detect(markdown: markdown) else { return result }
+        return RenderResult(html: ContentLanguage.markerHTML(tag) + result.html, fallback: result.fallback)
     }
 
     /// Splits off the front matter, lifts the math out and renders what is left. Parses, so it
     /// blocks unless it is already on a parsing worker.
     private static func renderSplit(_ markdown: String, options: Options) -> RenderResult {
         let split = SplitSource(markdown, options: options)
-        return MarkdownParsing.withDocument(split.parsedBody, options: options.parseLimits) { outcome in
+        let result = MarkdownParsing.withDocument(split.parsedBody, options: options.parseLimits) { outcome in
             renderResult(outcome, split: split, options: options)
         }
+        // Defence in depth (#187): a placeholder the parse split apart is never expanded, so its
+        // pieces would reach the page, different on every render (the nonce is random). When this
+        // extraction made placeholders and more placeholder scalars came out than went in, render
+        // again with the math left as source text. Costs nothing for a document without math.
+        // A leak is a piece of this extraction's random nonce in the output (a placeholder cut
+        // short keeps most of it; 8 hex digits cannot occur by chance), or more scalars than the
+        // whole source holds (front matter included, as `result.html` renders it).
+        let nonce = split.math.nonce
+        guard split.math.expressionCount > 0,
+              result.html.contains(nonce.prefix(8)) || result.html.contains(nonce.suffix(8))
+                || placeholderScalarCount(result.html) > placeholderScalarCount(markdown) else { return result }
+        let plain = SplitSource(markdown, options: options, extractMath: false)
+        return MarkdownParsing.withDocument(plain.parsedBody, options: options.parseLimits) { outcome in
+            renderResult(outcome, split: plain, options: options)
+        }
+    }
+
+    /// How many U+E000 / U+E001 scalars `text` holds (the private-use pair math placeholders use).
+    private static func placeholderScalarCount(_ text: String) -> Int {
+        // UTF-8: U+E000 is EE 80 80 and U+E001 is EE 80 81.
+        let bytes = Array(text.utf8)
+        var count = 0
+        var index = 0
+        while index + 2 < bytes.count {
+            if bytes[index] == 0xEE, bytes[index + 1] == 0x80, bytes[index + 2] == 0x80 || bytes[index + 2] == 0x81 {
+                count += 1
+                index += 3
+            } else {
+                index += 1
+            }
+        }
+        return count
     }
 
     /// A document split into its front matter, rendered up front (it is never parsed as
@@ -131,7 +173,7 @@ public enum MarkdownRenderer {
         let footnotes: FootnoteExtraction
         let bodyLineOffset: Int
 
-        init(_ markdown: String, options: Options) {
+        init(_ markdown: String, options: Options, extractMath: Bool = true) {
             let (frontMatter, body, offset) = FrontMatter.split(markdown)
             if let frontMatter {
                 frontMatterHTML = MarkdownRenderer.frontMatterHTML(frontMatter, label: options.frontMatterLabel)
@@ -140,7 +182,9 @@ public enum MarkdownRenderer {
                 frontMatterHTML = ""
                 self.body = markdown
             }
-            math = MathExtractor.extract(from: self.body)
+            math = extractMath
+                ? MathExtractor.extract(from: self.body)
+                : MathExtractor.Extraction(markdown: self.body, nonce: "", expressions: [])
             // After the math, so `$[^1]$` stays TeX.
             footnotes = FootnoteExtractor.extract(from: math.markdown)
             parsedBody = footnotes.markdown
@@ -314,11 +358,19 @@ private struct HTMLVisitor: MarkupVisitor {
     private var tocEntries: [(level: Int, title: String)] = []
     private var tocRendered = false
     private var tightListStack: [Bool] = []
+    /// Whether the parsed Markdown has `:::` in it anywhere: only then are containers looked for.
+    private let containers: Bool
+    /// The source, for telling a marker from an escaped one; nil without `:::` in the document.
+    private let calloutSource: Callouts.Source?
+    /// Paragraphs that end in a `:::` closer a list absorbed: how many inline children to keep (#135).
+    private var trims: [Callouts.Position: Int] = [:]
 
     init(options: MarkdownRenderer.Options, lineOffset: Int, math: MathExtractor.Extraction,
          footnotes: FootnoteExtraction, source: String, escapes: EscapeMap = .none, inNote: Bool = false) {
         self.options = options
         self.source = SourceBytes(source)
+        containers = Callouts.mayContainContainers(source)
+        calloutSource = containers ? Callouts.Source(source) : nil
         self.escapes = escapes
         self.lineOffset = lineOffset
         self.math = math
@@ -331,7 +383,11 @@ private struct HTMLVisitor: MarkupVisitor {
     }
 
     private mutating func visitChildren(_ markup: any Markup) -> String {
-        let children = Array(markup.children)
+        visitChildren(markup, children: Array(markup.children))
+    }
+
+    /// `children` of `markup`, or some of them (the part of a paragraph between two markers).
+    private mutating func visitChildren(_ markup: any Markup, children: [any Markup]) -> String {
         // `<` first: an autolink's text is its URL, and `^` or `==` in it is not a mark.
         if markup is InlineContainer,
            let pieces = InlineMarks.pieces(of: children, escapes: escapes, scanText: !Self.isAutolink(markup)) {
@@ -453,6 +509,9 @@ private struct HTMLVisitor: MarkupVisitor {
     /// never rendered recursively.
     private mutating func visitBlockChildren(_ markup: any Markup) -> String {
         let children = Array(markup.children)
+        if containers, let events = Callouts.events(for: children.map { Callouts.Block($0) }, source: calloutSource) {
+            return renderEvents(events)
+        }
         guard children.contains(where: { $0 is HTMLBlock }) else {
             var html = ""
             for child in children { html += visit(child) }
@@ -489,8 +548,107 @@ private struct HTMLVisitor: MarkupVisitor {
         return html
     }
 
+    // MARK: Callouts (#135)
+
+    /// The start of a callout or a spoiler, with its title element. The type is a fixed class
+    /// string; the only author text is an author title, as escaped text. A default title is
+    /// empty here: the stylesheet draws it, in the page's language (preview.css, setLabels), so the
+    /// HTML never depends on the locale.
+    private func calloutOpening(_ opening: Callouts.Opening) -> String {
+        switch opening {
+        case .callout(let style, let title, let line):
+            let heading = title.map { "<p class=\"callout-title callout-title-author\">\(escapeHTML($0))</p>\n" }
+                ?? "<p class=\"callout-title\"></p>\n"
+            return "<div class=\"\(style.classAttribute)\"\(lineAttribute(line: line))>\n" + heading
+        case .spoiler(let title, let line):
+            return "<details\(lineAttribute(line: line))>\n<summary>\(escapeHTML(title))</summary>\n"
+        }
+    }
+
+    /// The blocks of a container with its markers applied, in one forward pass: an opener writes
+    /// its start, a closer its end, and every other block renders as it would anywhere else.
+    /// Nested containers are never rendered by recursing; they are the same list, further along.
+    ///
+    /// A `<details>` run (#414) is grouped within the container it stands in, as `visitBlockChildren`
+    /// does for a container without markers.
+    private mutating func renderEvents(_ events: [Callouts.Event]) -> String {
+        // The `<details>` groups of each frame (the container, then each callout inside it).
+        var groupEnd: [Int: Int] = [:]
+        var inGroup = Set<Int>()
+        struct Frame {
+            var entries: [Int] = []
+            var depths: [Int] = []
+            var depth = 0
+        }
+        func close(_ frame: Frame) {
+            for group in DetailsGrouping.groups(depthAfter: frame.depths) {
+                groupEnd[frame.entries[group.lowerBound]] = frame.entries[group.upperBound]
+                for entry in frame.entries[group] { inGroup.insert(entry) }
+            }
+        }
+        var frames = [Frame()]
+        for (index, event) in events.enumerated() {
+            switch event {
+            case .content(let block, _):
+                if let html = block.node as? HTMLBlock, block.inline == nil {
+                    frames[frames.count - 1].depth = DetailsScanner.depth(after: html.rawHTML, from: frames[frames.count - 1].depth)
+                }
+                frames[frames.count - 1].entries.append(index)
+                frames[frames.count - 1].depths.append(frames[frames.count - 1].depth)
+            case .open:
+                frames.append(Frame())
+            case .close:
+                close(frames.removeLast())
+            }
+        }
+        close(frames[0])
+
+        var html = ""
+        var spoilers: [Bool] = []
+        var groupEnds: [Int] = []
+        for (index, event) in events.enumerated() {
+            if let end = groupEnd[index], case .content(let block, _) = event {
+                groupEnds.append(end)
+                html += "<div class=\"html-block\"\(lineAttribute(block.node))>"
+            }
+            switch event {
+            case .content(let block, let trim):
+                if inGroup.contains(index), let raw = block.node as? HTMLBlock, block.inline == nil {
+                    html += neutralizingLinkTags(raw.rawHTML)
+                } else {
+                    html += contentHTML(block, trim: trim, bare: spoilers.isEmpty)
+                }
+            case .open(let opening):
+                html += calloutOpening(opening)
+                if case .spoiler = opening { spoilers.append(true) } else { spoilers.append(false) }
+                // Whatever stands in a callout is a block of its own, even in a tight list.
+                tightListStack.append(false)
+            case .close:
+                tightListStack.removeLast()
+                html += spoilers.removeLast() ? "</details>\n" : "</div>\n"
+            }
+            while groupEnds.last == index {
+                groupEnds.removeLast()
+                html += "</div>\n"
+            }
+        }
+        return html
+    }
+
+    /// One block of a container, or the part of a paragraph between two markers.
+    private mutating func contentHTML(_ block: Callouts.Block, trim: Callouts.Trim?, bare: Bool) -> String {
+        if let trim { trims[trim.position] = trim.keep }
+        guard let range = block.inline, let paragraph = block.node as? Paragraph else { return visit(block.node) }
+        let children = Array(block.inlines[range])
+        return paragraphHTML(paragraph, children: children, line: children.first?.range?.lowerBound.line, mayBeBare: bare)
+    }
+
     private func lineAttribute(_ markup: any Markup) -> String {
-        guard !inNote, let line = markup.range?.lowerBound.line else { return "" }
+        lineAttribute(line: markup.range?.lowerBound.line)
+    }
+
+    private func lineAttribute(line: Int?) -> String {
+        guard !inNote, let line else { return "" }
         return " data-line=\"\(line + lineOffset)\""
     }
 
@@ -519,24 +677,35 @@ private struct HTMLVisitor: MarkupVisitor {
     }
 
     mutating func visitParagraph(_ paragraph: Paragraph) -> String {
-        if !inNote, !tocRendered, isTOCMarker(paragraph) {
-            tocRendered = true
-            return tocHTML(lineAttribute: lineAttribute(paragraph))
+        var children = Array(paragraph.children)
+        // The last line of a list's last paragraph was a `:::` that closes a container (#135).
+        if !trims.isEmpty, let position = Callouts.Position(paragraph), let keep = trims[position] {
+            children.removeSubrange(keep...)
         }
-        let inner = embedLinks(paragraph) ?? visitChildren(paragraph)
-        if tightListStack.last == true, paragraph.parent is ListItem {
+        return paragraphHTML(paragraph, children: children, line: paragraph.range?.lowerBound.line, mayBeBare: true)
+    }
+
+    /// `paragraph`, or the `children` of it that a container's markers left (#135). A paragraph of
+    /// a tight list item is written without its `<p>` when `mayBeBare`.
+    private mutating func paragraphHTML(_ paragraph: Paragraph, children: [any Markup], line: Int?, mayBeBare: Bool) -> String {
+        if !inNote, !tocRendered, isTOCMarker(children) {
+            tocRendered = true
+            return tocHTML(lineAttribute: lineAttribute(line: line))
+        }
+        let inner = embedLinks(children) ?? visitChildren(paragraph, children: children)
+        if mayBeBare, tightListStack.last == true, paragraph.parent is ListItem {
             return inner + "\n"
         }
-        return "<p\(lineAttribute(paragraph))>\(inner)</p>\n"
+        return "<p\(lineAttribute(line: line))>\(inner)</p>\n"
     }
 
     /// The links for a paragraph that is nothing but HackMD embed tags, one per line (`HackMDEmbeds`).
     /// Only text and autolinks may be in it: any other markup means it is not a tag line.
-    private func embedLinks(_ paragraph: Paragraph) -> String? {
+    private func embedLinks(_ children: [any Markup]) -> String? {
         // Cheap test first: this runs for every paragraph.
-        guard let first = paragraph.child(at: 0) as? Text, first.string.hasPrefix("{%") else { return nil }
+        guard let first = children.first as? Text, first.string.hasPrefix("{%") else { return nil }
         var lines = [""]
-        for child in paragraph.children {
+        for child in children {
             switch child {
             case let text as Text: lines[lines.count - 1] += text.string
             case let link as Link: lines[lines.count - 1] += link.plainText
@@ -549,9 +718,9 @@ private struct HTMLVisitor: MarkupVisitor {
 
     /// A paragraph of nothing but `[TOC]`, in any case. Plain text only: a link (`[TOC](x)`, or
     /// `[TOC]` with a definition of that name) or any markup in it is not a marker.
-    private func isTOCMarker(_ paragraph: Paragraph) -> Bool {
-        guard paragraph.children.allSatisfy({ $0 is Text }) else { return false }
-        return paragraph.plainText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "[toc]"
+    private func isTOCMarker(_ children: [any Markup]) -> Bool {
+        guard children.allSatisfy({ $0 is Text }) else { return false }
+        return children.map { ($0 as? Text)?.string ?? "" }.joined().trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "[toc]"
     }
 
     /// A heading's text for the contents list: code spans without their backticks, images as
@@ -622,7 +791,12 @@ private struct HTMLVisitor: MarkupVisitor {
     }
 
     mutating func visitBlockQuote(_ blockQuote: BlockQuote) -> String {
-        "<blockquote\(lineAttribute(blockQuote))>\n\(visitBlockChildren(blockQuote))</blockquote>\n"
+        if let alert = Callouts.alert(in: blockQuote) {
+            let events = (containers ? Callouts.events(for: alert.blocks, source: calloutSource) : nil) ?? alert.blocks.map { .content($0, trim: nil) }
+            return calloutOpening(.callout(alert.style, title: nil, line: blockQuote.range?.lowerBound.line))
+                + renderEvents(events) + "</div>\n"
+        }
+        return "<blockquote\(lineAttribute(blockQuote))>\n\(visitBlockChildren(blockQuote))</blockquote>\n"
     }
 
     mutating func visitCodeBlock(_ codeBlock: CodeBlock) -> String {
