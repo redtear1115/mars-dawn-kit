@@ -343,14 +343,40 @@ extension PreviewTheme: ExpressibleByArgument {
 
 extension DocumentExporter.Paper: ExpressibleByArgument {}
 extension ExportLayout: ExpressibleByArgument {
-    /// `handbook` is the name the app uses for the manual layout; `manual` stays for scripts that
-    /// already pass it. Both give `.manual`, so the export and its `--json` result are the same.
+    /// `handbook` is the CLI value for the Handbook layout; `manual` is a deprecated alias kept for
+    /// scripts that already pass it. Both give `.manual`, so the export and its `--json` result are
+    /// the same.
     public init?(argument: String) {
-        guard let layout = ExportLayout(rawValue: argument) ?? (argument == "handbook" ? .manual : nil) else { return nil }
-        self = layout
+        switch argument {
+        case "document": self = .document
+        case "handbook", "manual": self = .manual
+        default: return nil
+        }
     }
 
-    public static var allValueStrings: [String] { allCases.map(\.rawValue) + ["handbook"] }
+    public static var allValueStrings: [String] { ["document", "handbook"] }
+}
+
+/// What `--layout` parses to, remembering whether the user typed the deprecated `manual` (both
+/// spellings give `.manual`, so the layout alone can't say).
+struct LayoutArgument: ExpressibleByArgument {
+    var layout: ExportLayout
+    var typedManual = false
+
+    static let deprecationWarning = "warning: --layout manual is deprecated; use --layout handbook"
+
+    init(_ layout: ExportLayout) { self.layout = layout }
+
+    init?(argument: String) {
+        guard let layout = ExportLayout(argument: argument) else { return nil }
+        self.layout = layout
+        typedManual = argument == "manual"
+    }
+
+    static var allValueStrings: [String] { ExportLayout.allValueStrings }
+    /// Without this the completion scripts offer no values: the default kind is built from CaseIterable.
+    static var defaultCompletionKind: CompletionKind { .list(allValueStrings) }
+    var defaultValueDescription: String { layout == .manual ? "handbook" : "document" }
 }
 
 // MARK: - open
@@ -687,8 +713,10 @@ extension MarsDawnCommand {
         @Option(help: "Paper size.")
         var paper: DocumentExporter.Paper = .a4
 
-        @Option(help: "Page layout: document (the default) or manual (alias: handbook), the Handbook layout, with wider margins, a 25 mm binding side and every top-level heading on a new page, plus a cover (from the front matter's title, subtitle, version, date, author and logo), a table of contents of the level 1 and 2 headings, \"n / N\" page numbers and PDF bookmarks. <!--BREAK--> on its own line starts a new page in either.")
-        var layout: ExportLayout = .document
+        @Option(name: .customLong("layout"), help: "Page layout: document (the default) or handbook, the Handbook layout, with wider margins, a 25 mm binding side and every top-level heading on a new page, plus a cover (from the front matter's title, subtitle, version, date, author and logo), a table of contents of the level 1 and 2 headings, \"n / N\" page numbers and PDF bookmarks. <!--BREAK--> on its own line starts a new page in either. manual is deprecated: use handbook.")
+        var layoutArgument = LayoutArgument(.document)
+
+        var layout: ExportLayout { layoutArgument.layout }
 
         @Option(help: "Title of the Handbook layout's table of contents.")
         var tocTitle: String = "Contents"
@@ -720,6 +748,9 @@ extension MarsDawnCommand {
             // No MarsDawnApp.require() here: export is the same rendering the app does, and it
             // ships in this package, so it must work with nothing else installed (Homebrew builds
             // and tests the tool on machines that have no MarsDawn.app). `open` still needs it.
+            if layoutArgument.typedManual {
+                FileHandle.standardError.write(Data((LayoutArgument.deprecationWarning + "\n").utf8))
+            }
             let input = try existingFile(file)
             let destination = outputURL(for: input)
             if FileManager.default.fileExists(atPath: destination.path), !force {

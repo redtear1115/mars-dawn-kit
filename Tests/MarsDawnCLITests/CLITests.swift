@@ -2,6 +2,7 @@
 import AppKit
 import ArgumentParser
 import Foundation
+import MarsDawnExport
 import MarsDawnKit
 import MarsDawnThemes
 import Testing
@@ -36,19 +37,38 @@ struct CLITests {
     @Test func exportLayoutDefaultsToDocumentAndRejectsOthers() throws {
         #expect(try MarsDawnCommand.Export.parse(["plan.md"]).layout == .document)
         #expect(try MarsDawnCommand.Export.parse(["plan.md", "--layout", "document"]).layout == .document)
-        #expect(try MarsDawnCommand.Export.parse(["plan.md", "--layout", "manual"]).layout == .manual)
+        #expect(try MarsDawnCommand.Export.parse(["plan.md", "--layout", "manual"]).layout == .manual) // deprecated alias
         #expect(try MarsDawnCommand.Export.parse(["plan.md", "--layout", "handbook"]).layout == .manual)
         #expect(throws: (any Error).self) { try MarsDawnCommand.Export.parse(["plan.md", "--layout", "bogus"]) }
         #expect(throws: (any Error).self) { try MarsDawnCommand.Export.parse(["plan.md", "--layout", "handout"]) }
         #expect(throws: (any Error).self) { try MarsDawnCommand.Export.parse(["plan.md", "--layout"]) }
         let help = MarsDawnCommand.Export.helpMessage()
-        #expect(help.contains("--layout") && help.contains("manual") && help.contains("Handbook") && help.contains("<!--BREAK-->"))
+        #expect(help.contains("--layout") && help.contains("handbook") && help.contains("deprecated") && help.contains("Handbook") && help.contains("<!--BREAK-->"))
+    }
+
+    /// kit #211: completion and help list `document` and `handbook`; the deprecated `manual` still parses.
+    @Test func layoutCompletionListsDocumentAndHandbookOnly() {
+        #expect(ExportLayout.allValueStrings == ["document", "handbook"])
+        #expect(LayoutArgument.allValueStrings == ["document", "handbook"])
+        #expect(!MarsDawnCommand.Export.helpMessage().contains("alias"))
+        // What the shells are actually given: the generated completion scripts.
+        for shell in [CompletionShell.bash, .zsh, .fish] {
+            let script = MarsDawnCommand.completionScript(for: shell)
+            // The value lists: bash -W 'document'$'\n''handbook', zsh ('document' 'handbook'),
+            // fish -fka 'document handbook'. The --layout help text also says "manual is deprecated",
+            // so look for manual as a quoted value, not as a word.
+            let lines = script.split(separator: "\n")
+            #expect(lines.contains { $0.contains("document") && ($0.contains("'handbook'") || $0.contains(" handbook'")) }, "\(shell): document and handbook are offered")
+            #expect(!lines.contains { $0.contains("'manual'") || $0.contains(" manual'") }, "\(shell): manual is not offered")
+        }
+        #expect(LayoutArgument(argument: "manual")?.typedManual == true)
+        #expect(LayoutArgument(argument: "handbook")?.typedManual == false)
     }
 
     /// `--toc-title` (mars-dawn#432 S2): "Contents" unless given.
     @Test func exportTOCTitleDefaultsToContents() throws {
         #expect(try MarsDawnCommand.Export.parse(["plan.md"]).tocTitle == "Contents")
-        #expect(try MarsDawnCommand.Export.parse(["plan.md", "--layout", "manual", "--toc-title", "目錄"]).tocTitle == "目錄")
+        #expect(try MarsDawnCommand.Export.parse(["plan.md", "--layout", "handbook", "--toc-title", "目錄"]).tocTitle == "目錄")
         #expect(MarsDawnCommand.Export.helpMessage().contains("--toc-title"))
     }
 
