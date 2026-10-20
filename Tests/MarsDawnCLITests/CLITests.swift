@@ -51,6 +51,16 @@ struct CLITests {
         #expect(ExportLayout.allValueStrings == ["document", "handbook"])
         #expect(LayoutArgument.allValueStrings == ["document", "handbook"])
         #expect(!MarsDawnCommand.Export.helpMessage().contains("alias"))
+        // What the shells are actually given: the generated completion scripts.
+        for shell in [CompletionShell.bash, .zsh, .fish] {
+            let script = MarsDawnCommand.completionScript(for: shell)
+            // The value lists: bash -W 'document'$'\n''handbook', zsh ('document' 'handbook'),
+            // fish -fka 'document handbook'. The --layout help text also says "manual is deprecated",
+            // so look for manual as a quoted value, not as a word.
+            let lines = script.split(separator: "\n")
+            #expect(lines.contains { $0.contains("document") && ($0.contains("'handbook'") || $0.contains(" handbook'")) }, "\(shell): document and handbook are offered")
+            #expect(!lines.contains { $0.contains("'manual'") || $0.contains(" manual'") }, "\(shell): manual is not offered")
+        }
         #expect(LayoutArgument(argument: "manual")?.typedManual == true)
         #expect(LayoutArgument(argument: "handbook")?.typedManual == false)
     }

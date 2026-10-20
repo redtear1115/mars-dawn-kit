@@ -374,6 +374,8 @@ struct LayoutArgument: ExpressibleByArgument {
     }
 
     static var allValueStrings: [String] { ExportLayout.allValueStrings }
+    /// Without this the completion scripts offer no values: the default kind is built from CaseIterable.
+    static var defaultCompletionKind: CompletionKind { .list(allValueStrings) }
     var defaultValueDescription: String { layout == .manual ? "handbook" : "document" }
 }
 
