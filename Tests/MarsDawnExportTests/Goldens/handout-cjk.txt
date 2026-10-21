@@ -71,9 +71,9 @@ layout
 ZHCELL2
 docs/minutes/2026-10.md
 草稿 ZHMER 審閱 列印
+1
 E= mc2
 行內數學 ZHMATH 與區塊:
-1
 ∫0
 1
 x dx =
