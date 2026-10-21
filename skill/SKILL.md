@@ -38,8 +38,9 @@ top-level heading on a new page, a table of contents of the level 1 and 2 headin
 numbers and PDF bookmarks. A cover comes first when the front matter has a `title`; it also shows
 `subtitle`, `version`, `date`, `author` and `logo` (an image path) when present.
 `--toc-title "<text>"` sets the contents heading (default `Contents`) and only applies to
-`handbook`. `handout` leaves a blank notes column on the right of every page, puts the front
-matter's `title` (or the file name) and `date` at the top of page 1, and ends every page with
+`handbook`. `handout` leaves a blank notes column on the right of every page (a table too
+wide for the body may run into it), puts the front matter's `title` (or the file name) and `date`
+at the top of page 1, and ends every page with
 "file name · date · n / N"; without a front-matter `date` it is the day of the export.
 A line holding only `<!--BREAK-->` starts a new page, in every layout. The JSON result
 doesn't say which layout was used.
