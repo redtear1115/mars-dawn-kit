@@ -40,16 +40,17 @@ struct CLITests {
         #expect(try MarsDawnCommand.Export.parse(["plan.md", "--layout", "manual"]).layout == .manual) // deprecated alias
         #expect(try MarsDawnCommand.Export.parse(["plan.md", "--layout", "handbook"]).layout == .manual)
         #expect(throws: (any Error).self) { try MarsDawnCommand.Export.parse(["plan.md", "--layout", "bogus"]) }
-        #expect(throws: (any Error).self) { try MarsDawnCommand.Export.parse(["plan.md", "--layout", "handout"]) }
+        #expect(try MarsDawnCommand.Export.parse(["plan.md", "--layout", "handout"]).layout == .handout)
         #expect(throws: (any Error).self) { try MarsDawnCommand.Export.parse(["plan.md", "--layout"]) }
         let help = MarsDawnCommand.Export.helpMessage()
-        #expect(help.contains("--layout") && help.contains("handbook") && help.contains("deprecated") && help.contains("Handbook") && help.contains("<!--BREAK-->"))
+        #expect(help.contains("--layout") && help.contains("handbook") && help.contains("handout") && help.contains("deprecated") && help.contains("Handbook") && help.contains("<!--BREAK-->"))
     }
 
-    /// kit #211: completion and help list `document` and `handbook`; the deprecated `manual` still parses.
-    @Test func layoutCompletionListsDocumentAndHandbookOnly() {
-        #expect(ExportLayout.allValueStrings == ["document", "handbook"])
-        #expect(LayoutArgument.allValueStrings == ["document", "handbook"])
+    /// kit #211: completion and help list `document`, `handbook` and (mars-dawn#432 S3) `handout`;
+    /// the deprecated `manual` still parses.
+    @Test func layoutCompletionListsDocumentHandbookAndHandoutOnly() {
+        #expect(ExportLayout.allValueStrings == ["document", "handbook", "handout"])
+        #expect(LayoutArgument.allValueStrings == ["document", "handbook", "handout"])
         #expect(!MarsDawnCommand.Export.helpMessage().contains("alias"))
         // What the shells are actually given: the generated completion scripts.
         for shell in [CompletionShell.bash, .zsh, .fish] {
@@ -58,7 +59,8 @@ struct CLITests {
             // fish -fka 'document handbook'. The --layout help text also says "manual is deprecated",
             // so look for manual as a quoted value, not as a word.
             let lines = script.split(separator: "\n")
-            #expect(lines.contains { $0.contains("document") && ($0.contains("'handbook'") || $0.contains(" handbook'")) }, "\(shell): document and handbook are offered")
+            #expect(lines.contains { $0.contains("document") && ($0.contains("'handbook'") || $0.contains(" handbook ")) }, "\(shell): document and handbook are offered")
+            #expect(lines.contains { $0.contains("document") && ($0.contains("'handout'") || $0.contains(" handout'")) }, "\(shell): handout is offered")
             #expect(!lines.contains { $0.contains("'manual'") || $0.contains(" manual'") }, "\(shell): manual is not offered")
         }
         #expect(LayoutArgument(argument: "manual")?.typedManual == true)

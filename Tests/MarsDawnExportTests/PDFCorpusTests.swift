@@ -140,7 +140,8 @@ struct PDFCorpus {
     static func assertGolden(_ fixture: CorpusFixture) async throws {
         let outcome = try await exportOnce(
             markdown: fixture.markdown, baseDirectory: fixture.baseDirectory,
-            allowRemoteImages: fixture.expectation.allowRemoteImages, layout: fixture.expectation.layout, measureInk: false
+            allowRemoteImages: fixture.expectation.allowRemoteImages, layout: fixture.expectation.layout,
+            displayName: fixture.expectation.displayName, measureInk: false
         )
         let currentHeader = GoldenHeader.current(paper: "a4")
         let url = GoldenStore.url(for: fixture.name)
@@ -191,7 +192,8 @@ struct PDFCorpus {
     static func assertFixture(_ fixture: CorpusFixture, checkStability: Bool) async throws {
         let outcome = try await exportOnce(
             markdown: fixture.markdown, baseDirectory: fixture.baseDirectory,
-            allowRemoteImages: fixture.expectation.allowRemoteImages, layout: fixture.expectation.layout
+            allowRemoteImages: fixture.expectation.allowRemoteImages, layout: fixture.expectation.layout,
+            displayName: fixture.expectation.displayName
         )
         let fullText = corpusNormalize(outcome.pageTexts.joined(separator: "\n"))
         let lastPageText = outcome.pageTexts.last.map(corpusNormalize) ?? ""
@@ -228,6 +230,8 @@ struct PDFCorpus {
         Self.assertPageLayout(outcome, fixture: fixture)
         if fixture.expectation.layout == .manual {
             try Self.assertManual(outcome, fixture: fixture)
+        } else if fixture.expectation.layout == .handout {
+            Self.assertHandout(outcome, fixture: fixture)
         } else {
             #expect(outcome.manual == nil, "\(fixture.name): the document layout ran the manual layout's passes")
         }
@@ -247,7 +251,8 @@ struct PDFCorpus {
         guard checkStability else { return }
         let second = try await exportOnce(
             markdown: fixture.markdown, baseDirectory: fixture.baseDirectory,
-            allowRemoteImages: fixture.expectation.allowRemoteImages, layout: fixture.expectation.layout, measureInk: false
+            allowRemoteImages: fixture.expectation.allowRemoteImages, layout: fixture.expectation.layout,
+            displayName: fixture.expectation.displayName, measureInk: false
         )
         #expect(second.pageCount == outcome.pageCount, "\(fixture.name): page count changed between two exports")
         #expect(
@@ -264,7 +269,9 @@ struct PDFCorpus {
         // contents come first (and the contents repeats the headings), and each body page ends
         // with its "n / N" footer (S2).
         let bodyStart = outcome.manual?.bodyStart ?? 0
-        let pages = outcome.pageTexts.dropFirst(bodyStart).map { corpusNormalize(ManualProbe.withoutFooter($0)) }
+        let pages = outcome.pageTexts.dropFirst(bodyStart).map {
+            corpusNormalize(expectation.layout == .handout ? HandoutProbe.withoutFooter($0) : ManualProbe.withoutFooter($0))
+        }
         // The margins reach the layout width as well as the print info (spike M4): with only the
         // print info, keep-with-next measures at the wrong width and page texts move.
         #expect(
@@ -290,6 +297,9 @@ struct PDFCorpus {
         for group in expectation.samePage {
             let holders = Set(group.flatMap { text in pages.indices.filter { pages[$0].contains(corpusNormalize(text)) } })
             #expect(holders.count == 1, "\(fixture.name): \(group) are on pages \(holders.sorted().map { $0 + 1 + bodyStart })")
+        }
+        if expectation.layout == .handout {
+            HandoutProbe.assertInsideBody(outcome.pageExtents, paper: outcome.paperSize, name: fixture.name)
         }
         guard expectation.layout == .manual else { return }
         let margins = expectation.layout.pageMargins
@@ -382,6 +392,8 @@ struct PDFCorpus {
         /// The manual layout only: the y (PDF points, origin bottom left) of each page's topmost
         /// painted pixel; nil for a blank page or the document layout.
         var pageInkTops: [CGFloat?] = []
+        /// The handout layout's report (S3), nil in the other layouts.
+        var handout: HandoutReport?
     }
 
     /// Every DOM query the corpus needs, read through `inspect` on the exporter that then
@@ -400,7 +412,8 @@ struct PDFCorpus {
     """
 
     static func exportOnce(
-        markdown: String, baseDirectory: URL?, allowRemoteImages: Bool, layout: ExportLayout = .document, measureInk: Bool = true
+        markdown: String, baseDirectory: URL?, allowRemoteImages: Bool, layout: ExportLayout = .document,
+        displayName: String? = nil, paper: DocumentExporter.Paper = .a4, measureInk: Bool = true
     ) async throws -> ExportOutcome {
         let outputDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
@@ -409,11 +422,14 @@ struct PDFCorpus {
 
         var inspected: Inspected!
         var manual: ManualReport?
+        var handout: HandoutReport?
         var hooks = ManualHooks()
         hooks.report = { manual = $0 }
+        hooks.handoutReport = { handout = $0 }
         let result = try await DocumentExporter.exportPDF(
             markdown: markdown, to: pdfURL, theme: .dawn,
-            baseDirectory: baseDirectory, allowRemoteImages: allowRemoteImages, layout: layout,
+            baseDirectory: baseDirectory, allowRemoteImages: allowRemoteImages, paper: paper, layout: layout,
+            displayName: displayName,
             // The goldens are English whatever the language of the machine that runs them.
             calloutTitles: .english, inspect: { exporter in
             let raw = try await exporter.webView.evaluateJavaScript(Self.domInspectionScript) as? String ?? "{}"
@@ -457,7 +473,7 @@ struct PDFCorpus {
             pageCount: document.pageCount, pageTexts: pageTexts,
             pageHasInk: pageHasInk, inspected: inspected, imageXObjectCount: imageXObjectCount,
             pageExtents: pageExtents, paperSize: paperSize, manual: manual, data: try Data(contentsOf: pdfURL),
-            pageInkTops: pageInkTops
+            pageInkTops: pageInkTops, handout: handout
         )
     }
 

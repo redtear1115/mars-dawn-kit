@@ -400,6 +400,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         softBreaksAsLineBreaks: Bool = false,
         layout: ExportLayout = .document,
         tocTitle: String = "Contents",
+        displayName: String? = nil,
         calloutTitles: CalloutTitles? = nil,
         printInfo: NSPrintInfo,
         window: NSWindow?,
@@ -408,7 +409,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         try await runReportingDiagrams(
             markdown: markdown, theme: theme, baseDirectory: baseDirectory, allowRemoteImages: allowRemoteImages,
             scopeRoot: scopeRoot, footnoteBackLabel: footnoteBackLabel, softBreaksAsLineBreaks: softBreaksAsLineBreaks,
-            layout: layout, tocTitle: tocTitle, calloutTitles: calloutTitles, printInfo: printInfo, window: window, configure: configure
+            layout: layout, tocTitle: tocTitle, displayName: displayName, calloutTitles: calloutTitles, printInfo: printInfo, window: window, configure: configure
         ).completed
     }
 
@@ -430,6 +431,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         softBreaksAsLineBreaks: Bool = false,
         layout: ExportLayout = .document,
         tocTitle: String = "Contents",
+        displayName: String? = nil,
         calloutTitles: CalloutTitles? = nil,
         printInfo: NSPrintInfo,
         window: NSWindow?,
@@ -438,7 +440,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         let result = try await runReportingDiagramDetails(
             markdown: markdown, theme: theme, baseDirectory: baseDirectory, allowRemoteImages: allowRemoteImages,
             scopeRoot: scopeRoot, footnoteBackLabel: footnoteBackLabel, softBreaksAsLineBreaks: softBreaksAsLineBreaks,
-            layout: layout, tocTitle: tocTitle, calloutTitles: calloutTitles, printInfo: printInfo, window: window, configure: configure
+            layout: layout, tocTitle: tocTitle, displayName: displayName, calloutTitles: calloutTitles, printInfo: printInfo, window: window, configure: configure
         )
         return (result.completed, result.diagramErrors)
     }
@@ -455,6 +457,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         softBreaksAsLineBreaks: Bool = false,
         layout: ExportLayout = .document,
         tocTitle: String = "Contents",
+        displayName: String? = nil,
         calloutTitles: CalloutTitles? = nil,
         printInfo: NSPrintInfo,
         window: NSWindow?,
@@ -463,7 +466,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         try await runReportingDiagramDetails(
             markdown: markdown, theme: theme, baseDirectory: baseDirectory, allowRemoteImages: allowRemoteImages,
             scopeRoot: scopeRoot, footnoteBackLabel: footnoteBackLabel, softBreaksAsLineBreaks: softBreaksAsLineBreaks,
-            layout: layout, tocTitle: tocTitle, calloutTitles: calloutTitles, printInfo: printInfo, window: window, inspect: nil, configure: configure
+            layout: layout, tocTitle: tocTitle, displayName: displayName, calloutTitles: calloutTitles, printInfo: printInfo, window: window, inspect: nil, configure: configure
         )
     }
 
@@ -482,6 +485,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         softBreaksAsLineBreaks: Bool = false,
         layout: ExportLayout = .document,
         tocTitle: String = "Contents",
+        displayName: String? = nil,
         calloutTitles: CalloutTitles? = nil,
         printInfo: NSPrintInfo,
         window: NSWindow?,
@@ -515,6 +519,25 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
                 host: host, hooks: hooks
             )
             return (completed, exporter.diagramErrors, exporter.diagramErrorDetails)
+        }
+        if layout == .handout {
+            let header = HandoutLayout.header(
+                markdown: markdown, displayName: displayName, now: hooks.now ?? Date(), timeZone: hooks.timeZone ?? .current
+            )
+            let token = ManualLayout.makeToken()
+            let tables = try await HandoutLayout.build(
+                header, token: token, printableWidth: printableWidth, fitsTables: hooks.handoutFitsTables, in: exporter.webView
+            )
+            // The footer and the notes column's rule are drawn on a printed file, so a job that
+            // doesn't save straight to one (a print panel) gets the header and the margins only.
+            if let destination = manualDestination(of: operation) {
+                try hooks.beforePrint?(operation)
+                let completed = try await exporter.runHandout(
+                    markdown: markdown, header: header, token: token, tables: tables, displayName: displayName, configured: operation,
+                    destination: destination, host: host, hooks: hooks
+                )
+                return (completed, exporter.diagramErrors, exporter.diagramErrorDetails)
+            }
         }
         try hooks.beforePrint?(operation)
         let completed = await exporter.run(operation, host: host)
@@ -579,6 +602,9 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
     ///     (#100).
     ///   - softBreaksAsLineBreaks: Likewise (#129).
     ///   - calloutTitles: Likewise (#135): the default titles of callouts in the PDF.
+    ///   - displayName: The handout layout's document name (S3 of mars-dawn#432), for its
+    ///     footer and, without a front-matter title, its header: a file name without its
+    ///     extension, never a path. Nil leaves the name out. Other layouts ignore it.
     public static func exportPDF(
         markdown: String,
         to url: URL,
@@ -591,13 +617,14 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         softBreaksAsLineBreaks: Bool = false,
         layout: ExportLayout = .document,
         tocTitle: String = "Contents",
+        displayName: String? = nil,
         calloutTitles: CalloutTitles? = nil
     ) async throws -> PDFResult {
         try await exportPDF(
             markdown: markdown, to: url, theme: theme, baseDirectory: baseDirectory,
             allowRemoteImages: allowRemoteImages, paper: paper, scopeRoot: scopeRoot,
             footnoteBackLabel: footnoteBackLabel, softBreaksAsLineBreaks: softBreaksAsLineBreaks,
-            layout: layout, tocTitle: tocTitle, calloutTitles: calloutTitles, inspect: nil
+            layout: layout, tocTitle: tocTitle, displayName: displayName, calloutTitles: calloutTitles, inspect: nil
         )
     }
 
@@ -614,6 +641,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         softBreaksAsLineBreaks: Bool = false,
         layout: ExportLayout = .document,
         tocTitle: String = "Contents",
+        displayName: String? = nil,
         calloutTitles: CalloutTitles? = nil,
         inspect: Inspection?,
         hooks: ManualHooks = ManualHooks()
@@ -624,7 +652,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         let result = try await runReportingDiagramDetails(
             markdown: markdown, theme: theme, baseDirectory: baseDirectory,
             allowRemoteImages: allowRemoteImages, scopeRoot: scopeRoot, footnoteBackLabel: footnoteBackLabel,
-            softBreaksAsLineBreaks: softBreaksAsLineBreaks, layout: layout, tocTitle: tocTitle,
+            softBreaksAsLineBreaks: softBreaksAsLineBreaks, layout: layout, tocTitle: tocTitle, displayName: displayName,
             calloutTitles: calloutTitles, printInfo: printInfo, window: nil, inspect: inspect, hooks: hooks
         ) { info, operation in
             info.jobDisposition = .save

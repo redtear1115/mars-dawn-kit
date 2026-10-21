@@ -48,13 +48,17 @@ Options: `-o out.pdf` (default: beside the input), `--theme dawn|classic|modern|
 a newline is a space, except between two Chinese or Japanese characters, where it is
 dropped.
 
-`--layout document|handbook` picks the page layout (default `document`; `manual`, the 0.7.1 name,
+`--layout document|handbook|handout` picks the page layout (default `document`; `manual`, the 0.7.1 name,
 still works but is deprecated). `handbook` is the Handbook layout: wider margins with a 25 mm binding side, every
 top-level heading on a new page, a table of contents of the level 1 and 2 headings, "n / N" page
 numbers and PDF bookmarks. A cover comes first when the front matter has a `title`; it also shows
 `subtitle`, `version`, `date`, `author` and `logo` (an image path) when present.
 `--toc-title "<text>"` sets the contents heading (default `Contents`) and only applies to
-`handbook`. A line holding only `<!--BREAK-->` starts a new page, in either layout. The JSON result
+`handbook`. `handout` leaves a blank notes column on the right of every page (a table too
+wide for the body may run into it), puts the front matter's `title` (or the file name) and `date`
+at the top of page 1, and ends every page with
+"file name · date · n / N"; without a front-matter `date` it is the day of the export.
+A line holding only `<!--BREAK-->` starts a new page, in every layout. The JSON result
 doesn't say which layout was used.
 
 On success it exits 0 and prints one JSON line:
