@@ -9,10 +9,13 @@ import WebKit
 ///
 /// One pass, on the page `DocumentExporter.prepare` already loaded:
 /// 1. A title header goes before the body on page 1: the front matter's `title`, else the
-///    caller's display name, with the date beneath. Tables get a fixed layout at the body's
-///    width, so a wide table wraps inside the body instead of running into the notes column.
-/// 2. The page prints once, at the document layout's margins plus the notes column
-///    (`ExportLayout.notesColumnWidth`), into a private folder under the temporary directory.
+///    caller's display name, with the date beneath. The body is inset from the right by the
+///    notes column (`ExportLayout.notesColumnWidth`). Each table is measured: one that fits the
+///    body keeps its natural width; a wider one runs into the column, up to the full printable
+///    width; one wider still gets a fixed layout at that width, its cells wrapping anywhere
+///    (amendment A1-R2, the owner's decision on 2026-10-21).
+/// 2. The page prints once, at the document layout's margins, into a private folder under the
+///    temporary directory.
 /// 3. PDFKit draws a thin rule at the notes column's edge and the "name · date · n / N" footer
 ///    on every page, then the ToUnicode repair runs once on that file, which is then written to
 ///    the caller's URL in one atomic write.
@@ -86,18 +89,47 @@ enum HandoutLayout {
     /// The root element's attribute that scopes the handout's stylesheet.
     static func rootAttribute(_ token: String) -> String { "data-" + token.lowercased() }
 
-    static func stylesheet(token: String) -> String {
+    /// A table's attribute for each width decision (`buildScript`), scoped like the root's.
+    static func tableAttribute(_ token: String, _ fit: TableFit.Kind) -> String { rootAttribute(token) + "-" + fit.rawValue }
+
+    /// WebKit lays a page out for printing at this many times the printable width, then scales
+    /// it down to fit (its minimum shrink factor): a 15 px date prints at 12 pt. The export's own
+    /// layout is at the printable width, so the script scales its measurements by this.
+    nonisolated static let printLayoutScale = 1.25
+
+    /// A table cell with a run of at least this many characters without a space (a URL, a
+    /// path) may wrap inside it when the table is too wide otherwise.
+    nonisolated static let longWord = 20
+
+    /// The body's inset and the table rules, in fractions of the printable width, which hold
+    /// at any print scale. Not print-only, so the page the script measures has the same body.
+    static func stylesheet(token: String, printableWidth: CGFloat) -> String {
         let root = ":root[\(rootAttribute(token))]"
+        let column = ExportLayout.notesColumnWidth / printableWidth
+        let inset = String(format: "%.4f%%", column * 100)
+        // 100% of the body widened to the printable width.
+        let full = String(format: "%.4f%%", 100 / (1 - column))
+        let span = "[\(tableAttribute(token, .span))]", wide = "[\(tableAttribute(token, .wide))]"
         func c(_ name: String) -> String { "." + ManualLayout.className(token, name) }
         return """
-        \(c("header")) { margin: 0 0 1.4em; break-inside: avoid; page-break-inside: avoid; }
+        \(c("header")) { margin: 0 \(inset) 1.4em 0; break-inside: avoid; page-break-inside: avoid; }
         \(c("title")) { font-size: 1.6em; font-weight: 700; line-height: 1.25; color: var(--heading); overflow-wrap: anywhere; }
         \(c("date")) { margin-top: 0.3em; color: var(--muted); overflow-wrap: anywhere; }
-        @media print {
-          \(root) table { table-layout: fixed; width: 100%; }
-          \(root) th, \(root) td { overflow-wrap: anywhere; }
-        }
+        \(root) .markdown-body, \(root) [data-theme] .markdown-body { max-width: none; margin: 0; padding: 0 \(inset) 0 0; }
+        \(root) table\(span), \(root) table\(wide) { break-inside: avoid; page-break-inside: avoid; }
+        \(root) table\(span) { max-width: \(full); background-color: white; }
+        \(root) table\(wide) { display: table; table-layout: fixed; width: \(full); max-width: none; overflow: visible; background-color: white; }
+        \(root) table\(wide) th, \(root) table\(wide) td, \(root) table [\(rootAttribute(token))-long] { overflow-wrap: anywhere; }
         """
+    }
+
+    /// How a table was fitted (amendment A1-R2), with its text for the tests' column probe.
+    struct TableFit: Equatable {
+        enum Kind: String { case natural, span, wide }
+        var kind: Kind
+        /// Its natural (max-content) width, CSS px.
+        var width: Double
+        var text: String
     }
 
     /// Marks the root, adds the stylesheet, and puts the header (when there is a title) before
@@ -122,16 +154,60 @@ enum HandoutLayout {
       header.append(titleLine, dateLine);
       content.before(header);
     }
-    return true;
+    // Each table against the body's and the column's right edges as they will print: text
+    // keeps its size in px, the page is `scale` times wider. A table whose natural width fits
+    // the body stays; one that can wrap, at word breaks, within body and column spans; one
+    // whose narrowest layout is still wider gets the fixed layout.
+    const left = content.getBoundingClientRect().left;
+    const full = content.clientWidth * scale;
+    const bodyRight = full * (1 - column);
+    const attribute = "data-" + token.toLowerCase();
+    const fits = [];
+    for (const table of fitsTables ? content.querySelectorAll("table") : []) {
+      const saved = [table.style.maxWidth, table.style.width];
+      const offset = table.getBoundingClientRect().left - left;
+      table.style.maxWidth = "none";
+      const natural = table.scrollWidth;
+      table.style.width = "min-content";
+      const narrowest = table.scrollWidth;
+      [table.style.maxWidth, table.style.width] = saved;
+      let kind = offset + natural > bodyRight + 0.5 ? "span" : "natural";
+      if (kind === "span" && offset + narrowest > full + 0.5) {
+        // Too wide even wrapped at word breaks: let the cells holding a long unbreakable run
+        // (a URL, a path) wrap anywhere, and measure again; only then fall back to fixed.
+        for (const cell of table.querySelectorAll("th, td")) {
+          if (cell.textContent.split(/\\s+/).some((word) => word.length >= longWord)) cell.setAttribute(attribute + "-long", "");
+        }
+        table.style.width = "min-content";
+        table.style.maxWidth = "none";
+        const narrower = table.scrollWidth;
+        [table.style.maxWidth, table.style.width] = saved;
+        if (offset + narrower > full + 0.5) kind = "wide";
+      }
+      if (kind !== "natural") table.setAttribute(attribute + "-" + kind, "");
+      fits.push({ kind: kind, width: natural, text: table.textContent });
+    }
+    return fits;
     """
 
-    /// Runs `buildScript` on `webView` for `header`.
-    static func build(_ header: Header, token: String, in webView: WKWebView) async throws {
-        _ = try await webView.callAsyncJavaScript(
+    /// Runs `buildScript` on `webView` for `header`, and returns how it fitted each table.
+    @discardableResult
+    static func build(
+        _ header: Header, token: String, printableWidth: CGFloat, fitsTables: Bool = true, in webView: WKWebView
+    ) async throws -> [TableFit] {
+        let result = try await webView.callAsyncJavaScript(
             buildScript,
-            arguments: ["token": token, "css": stylesheet(token: token), "title": header.title ?? "", "date": header.date],
+            arguments: [
+                "token": token, "css": stylesheet(token: token, printableWidth: printableWidth), "title": header.title ?? "",
+                "date": header.date, "column": Double(ExportLayout.notesColumnWidth / printableWidth), "scale": printLayoutScale,
+                "longWord": longWord, "fitsTables": fitsTables,
+            ],
             in: nil, contentWorld: world
         )
+        return (result as? [[String: Any]] ?? []).compactMap { fit in
+            guard let kind = (fit["kind"] as? String).flatMap(TableFit.Kind.init(rawValue:)) else { return nil }
+            return TableFit(kind: kind, width: (fit["width"] as? NSNumber)?.doubleValue ?? 0, text: fit["text"] as? String ?? "")
+        }
     }
 
     // MARK: Footer and notes column
@@ -162,6 +238,8 @@ enum HandoutLayout {
         let ruleX: CGFloat
         let ruleMinY: CGFloat
         let ruleMaxY: CGFloat
+        /// Pages where a table runs into the notes column: they get no rule, which would cross it.
+        var pagesWithoutRule: Set<Int> = []
         let baselineY: CGFloat
         let font: CTFont
         /// The name and date as drawn (sanitized and truncated), nil name when none.
@@ -285,7 +363,8 @@ enum HandoutLayout {
             return (name, date)
         }
 
-        func draw(page index: Int, in context: CGContext, mediaBox: CGRect) {
+        func drawRule(in context: CGContext, mediaBox: CGRect) {
+            // WebKit paints the page's white, so the rule has to go on top of it.
             context.saveGState()
             context.setStrokeColor(CGColor(gray: 0.8, alpha: 1))
             context.setLineWidth(0.5)
@@ -293,6 +372,10 @@ enum HandoutLayout {
             context.addLine(to: CGPoint(x: mediaBox.minX + ruleX, y: mediaBox.minY + ruleMaxY))
             context.strokePath()
             context.restoreGState()
+        }
+
+        func draw(page index: Int, in context: CGContext, mediaBox: CGRect) {
+            if !pagesWithoutRule.contains(index) { drawRule(in: context, mediaBox: mediaBox) }
             guard index >= 0, index < pageCount else { return }
             let pieces = Self.lines(name: name, date: date, number: index + 1, total: pageCount, font: font)
             var x = mediaBox.minX + (bodyMinX + bodyMaxX) / 2 - pieces.reduce(0) { $0 + $1.width } / 2
@@ -319,6 +402,8 @@ struct HandoutReport {
     var footerDate: String
     /// The repair's source: the document plus the display name when the header prints it.
     var repairSource: String
+    /// How each table was fitted, in document order.
+    var tables: [HandoutLayout.TableFit]
 }
 
 extension DocumentExporter {
@@ -329,6 +414,7 @@ extension DocumentExporter {
         markdown: String,
         header: HandoutLayout.Header,
         token: String,
+        tables: [HandoutLayout.TableFit],
         displayName: String?,
         configured: NSPrintOperation,
         destination: URL,
@@ -347,10 +433,18 @@ extension DocumentExporter {
         try await hooks.afterPassB?(webView)
 
         let footers = HandoutLayout.Footers(
-            name: displayName, date: header.date, pageCount: printed.pageCount, margins: layout.pageMargins,
+            name: displayName, date: header.date, pageCount: printed.pageCount, margins: layout.bodyMargins,
             paperSize: configured.printInfo.paperSize
         )
+        // The delegate first: PDFKit picks a page's class (`Page`) when it first makes the page.
         printed.delegate = footers
+        // A page whose text runs past the body's edge carries a table spanning into the column.
+        footers.pagesWithoutRule = Set((0..<printed.pageCount).filter { index in
+            guard let page = printed.page(at: index) else { return false }
+            return (page.selection(for: page.bounds(for: .mediaBox))?.selectionsByLine() ?? []).contains {
+                $0.bounds(for: page).maxX > footers.bodyMaxX + 0.5
+            }
+        })
         let finalURL = work.appendingPathComponent("handout.pdf")
         guard withExtendedLifetime(footers, { printed.write(to: finalURL) }) else { throw ExportError.printFailed }
         try Task.checkCancellation()
@@ -362,7 +456,7 @@ extension DocumentExporter {
         let outcome = ToUnicodeRepair.repairFile(at: finalURL, source: source, generated: generated)
         hooks.handoutReport?(HandoutReport(
             token: token, header: header, repair: outcome, footerFonts: footers.fontNames, footerText: footers.allText,
-            footerName: footers.name, footerDate: footers.date, repairSource: source
+            footerName: footers.name, footerDate: footers.date, repairSource: source, tables: tables
         ))
 
         let finished = try Data(contentsOf: finalURL)

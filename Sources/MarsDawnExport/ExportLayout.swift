@@ -24,10 +24,19 @@ public enum ExportLayout: String, CaseIterable, Sendable {
             // The binding side is the left on every page: there is no duplex.
             NSEdgeInsets(top: Self.millimetres(20), left: Self.millimetres(25), bottom: Self.millimetres(20), right: Self.millimetres(20))
         case .handout:
-            // The notes column is part of the right margin, so nothing the page lays out can
-            // reach it: on A4 the body is two thirds of the 505 pt between the outer margins.
-            NSEdgeInsets(top: 51, left: 45, bottom: 51, right: 45 + Self.notesColumnWidth)
+            // The notes column is inside the printable area, so a table wider than the body can
+            // run into it (mars-dawn#432 S3, amendment A1-R2); the body's own edge is `bodyMargins`.
+            NSEdgeInsets(top: 51, left: 45, bottom: 51, right: 45)
         }
+    }
+
+    /// Where the body's text column ends: `pageMargins`, except in the handout, where the notes
+    /// column (`notesColumnWidth`) sits between the body and the right margin. On A4 the
+    /// handout's body is two thirds of the 505 pt between the outer margins.
+    public var bodyMargins: NSEdgeInsets {
+        var margins = pageMargins
+        if self == .handout { margins.right += Self.notesColumnWidth }
+        return margins
     }
 
     /// Width of the text column on a page `paperWidth` points wide.

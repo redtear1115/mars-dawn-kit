@@ -20,6 +20,8 @@ struct ManualHooks {
     var timeZone: TimeZone?
     /// Receives what the handout run did, before its private folder is removed.
     var handoutReport: ((HandoutReport) -> Void)?
+    /// Tests only: false skips the handout's table fitting (A1-R2), for its control.
+    var handoutFitsTables = true
 }
 
 /// What one manual run did, for the tests.

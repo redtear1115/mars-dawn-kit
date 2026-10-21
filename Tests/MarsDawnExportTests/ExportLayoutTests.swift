@@ -28,8 +28,23 @@ struct ExportLayoutTests {
         #expect(ExportLayout.manual.printableWidth(paperWidth: 595) < ExportLayout.document.printableWidth(paperWidth: 595))
     }
 
+    /// The handout (S3): the document layout's margins plus a notes column on the right, so the
+    /// body is about two thirds of the width between the outer margins.
+    @Test func handoutIsTheDocumentMarginsPlusANotesColumn() {
+        // It prints at the document's margins, so a wide table can reach into the column (A1-R2).
+        #expect(NSEdgeInsetsEqual(ExportLayout.handout.pageMargins, ExportLayout.document.pageMargins))
+        let margins = ExportLayout.handout.bodyMargins
+        #expect(margins.top == 51 && margins.bottom == 51 && margins.left == 45)
+        #expect(margins.right == 45 + ExportLayout.notesColumnWidth)
+        #expect(NSEdgeInsetsEqual(ExportLayout.document.bodyMargins, ExportLayout.document.pageMargins))
+        for paper in [CGFloat(595), 612] {
+            let ratio = (paper - margins.left - margins.right) / (paper - 90)
+            #expect(ratio > 0.64 && ratio < 0.69, "\(paper): body is \(ratio) of the width")
+        }
+    }
+
     @Test func layoutNamesAreTheCLIValues() {
-        #expect(ExportLayout.allCases.map(\.rawValue) == ["document", "manual"])
+        #expect(ExportLayout.allCases.map(\.rawValue) == ["document", "manual", "handout"])
     }
 }
 #endif

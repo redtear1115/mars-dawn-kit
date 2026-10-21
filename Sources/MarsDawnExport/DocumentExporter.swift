@@ -525,13 +525,15 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
                 markdown: markdown, displayName: displayName, now: hooks.now ?? Date(), timeZone: hooks.timeZone ?? .current
             )
             let token = ManualLayout.makeToken()
-            try await HandoutLayout.build(header, token: token, in: exporter.webView)
+            let tables = try await HandoutLayout.build(
+                header, token: token, printableWidth: printableWidth, fitsTables: hooks.handoutFitsTables, in: exporter.webView
+            )
             // The footer and the notes column's rule are drawn on a printed file, so a job that
             // doesn't save straight to one (a print panel) gets the header and the margins only.
             if let destination = manualDestination(of: operation) {
                 try hooks.beforePrint?(operation)
                 let completed = try await exporter.runHandout(
-                    markdown: markdown, header: header, token: token, displayName: displayName, configured: operation,
+                    markdown: markdown, header: header, token: token, tables: tables, displayName: displayName, configured: operation,
                     destination: destination, host: host, hooks: hooks
                 )
                 return (completed, exporter.diagramErrors, exporter.diagramErrorDetails)

@@ -42,13 +42,16 @@ struct FixtureExpectation: Decodable {
     /// (which means exactly `.unchanged("no radical destinations")`). Absent: either of the two,
     /// and never another `.unchanged` reason.
     var repair: String?
+    /// Handout layout (S3 of mars-dawn#432): the display name the export is given, as the CLI
+    /// would pass a file name without its extension.
+    var displayName: String?
 
     init() {}
 
     private enum CodingKeys: String, CodingKey {
         case markers, markersOnLastPage, absent, placeholders, diagrams, images, allowRemoteImages, notes
         case layout, startsPage, samePage, minPages, textOnEveryPage
-        case cover, logo, tocEntries, minTocPages, repair
+        case cover, logo, tocEntries, minTocPages, repair, displayName
     }
 
     init(from decoder: Decoder) throws {
@@ -76,6 +79,7 @@ struct FixtureExpectation: Decodable {
         tocEntries = try container.decodeIfPresent(Int.self, forKey: .tocEntries)
         minTocPages = try container.decodeIfPresent(Int.self, forKey: .minTocPages)
         repair = try container.decodeIfPresent(String.self, forKey: .repair)
+        displayName = try container.decodeIfPresent(String.self, forKey: .displayName)
     }
 }
 
