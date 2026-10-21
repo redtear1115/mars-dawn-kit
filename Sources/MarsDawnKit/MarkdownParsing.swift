@@ -506,7 +506,9 @@ enum CMarkDepthScan {
 /// construction, which the public API only hands out from `cmark_parser_finish`. Everything else
 /// goes through public functions.
 ///
-/// `lowerBound(below:)`'s proof (see `CMarkDepthScan`) was made by reading swift-cmark 0.8.0, so
+/// `lowerBound(below:)`'s proof (see `CMarkDepthScan`) was made by reading swift-cmark 0.8.0 and
+/// re-checked for 0.9.0, whose only source change from 0.8.0 is two string literals in `html.c`
+/// spelled as escapes (the same bytes); `blocks.c` and `extensions/table.c` are unchanged. So
 /// the early stop runs only when `isAudited` says this is that cmark-gfm; otherwise the pre-scan
 /// counts every document exactly, as it did before. No runtime check can tell swift-cmark 0.8.0
 /// from 0.9.0, whose C sources differ in one string literal's spelling and compile to the same
@@ -514,10 +516,10 @@ enum CMarkDepthScan {
 /// string, the layout of the struct it reads, and the node counts of a few documents chosen to
 /// exercise what the proof relies on. It does not detect a behaviour change that leaves all
 /// three alone. `CMarkVersionPinTests` fails when the package resolves any swift-cmark other than
-/// 0.8.0, and RELEASING.md says a bump means redoing the audit.
+/// 0.9.0, and RELEASING.md says a bump means redoing the audit.
 enum CMarkInternals {
     /// What `isAudited` compares, recorded from swift-cmark 0.8.0 (924936d0) on 64-bit Apple
-    /// platforms.
+    /// platforms; unchanged on 0.9.0 (08ddb528), which reports the same version string.
     struct Fingerprint: Equatable {
         var version: String
         var parserSize: Int
