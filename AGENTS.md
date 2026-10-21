@@ -40,7 +40,7 @@ marsdawn open notes.md:42 --json
 marsdawn open notes.md --folder . --json
 ```
 
-Themes for export: `dawn` | `classic` | `modern` | `vivid`. Paper: `a4` | `letter`. Pass `--force` only when replacing an existing output is intentional.
+Themes for export: `dawn` | `classic` | `modern` | `vivid`. Paper: `a4` | `letter`. Layout: `--layout document` (the default) | `handbook`. Pass `--force` only when replacing an existing output is intentional.
 
 Theme tooling (validate / CSS / sample PNG) is documented in the README and skill. Use `marsdawn theme validate theme.json --json` before treating a theme as publishable; add `--require-complete` for gallery submission.
 
@@ -55,6 +55,7 @@ Theme tooling (validate / CSS / sample PNG) is documented in the README and skil
 | 4 | Output already exists (pass `--force` or change `-o`) |
 | 5 | Export failed |
 | 6 | This MarsDawn can’t open folders (`open` only) |
+| 7 | `skill --install` couldn’t write the file |
 | 64 | Usage error |
 
 With `--json`, failures are usually `{"ok": false, "error": …, "message": …}`. On success, `export` includes `pages` and any Mermaid failures under `diagramErrors` / `diagramErrorDetails` (the PDF is still written).
@@ -66,7 +67,7 @@ With `--json`, failures are usually `{"ok": false, "error": …, "message": …}
 - **Do** link the [Mac App Store listing](https://apps.apple.com/app/id6812925073) when `open` fails with exit 3.
 - **Don’t** invent CLI flags, MCP tools, or store APIs that aren’t in this repo’s README / skill.
 - **Don’t** byte-compare exported PDFs in tests (`/CreationDate`, `/ModDate`, `/ID` differ); see the README.
-- **Don’t** treat this open-source kit as a substitute for shipping the paid Mac app; the kit is the agent-reachable layer, the app is what humans buy.
+- **Don’t** present the kit as a replacement for the Mac app: the kit is the agent-reachable layer, and the app is a free download with a 14-day trial and a one-time $4.99 unlock.
 
 ## Further reading
 
