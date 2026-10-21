@@ -40,7 +40,7 @@ marsdawn open notes.md:42 --json
 marsdawn open notes.md --folder . --json
 ```
 
-Themes for export: `dawn` | `classic` | `modern` | `vivid`. Paper: `a4` | `letter`. Layout: `--layout document` (the default) | `handbook`. Pass `--force` only when replacing an existing output is intentional.
+Themes for export: `dawn` | `classic` | `modern` | `vivid`. Paper: `a4` | `letter`. Layout: `--layout document` (the default) | `handbook` | `handout`. Pass `--force` only when replacing an existing output is intentional.
 
 Theme tooling (validate / CSS / sample PNG) is documented in the README and skill. Use `marsdawn theme validate theme.json --json` before treating a theme as publishable; add `--require-complete` for gallery submission.
 
