@@ -1,0 +1,193 @@
+OS build: Version 26.6.2 (Build 25G83) | WebKit: 21624.5.1.11.3 | Paper: a4
+Page count: 4
+
+--- Page 1 ---
+Field Notes HONAME
+2026-10-01
+Briefing HOH1
+HOAP01 A reader who skips ahead will find that each section
+repeats the vocabulary of the one before it, on purpose.
+Measurements were taken at the start and at the end of the
+period, and the difference between them is reported below.
+HOAP02 A reader who skips ahead will find that each section
+repeats the vocabulary of the one before it, on purpose.
+Measurements were taken at the start and at the end of the
+period, and the difference between them is reported below.
+HOAP03 A reader who skips ahead will find that each section
+repeats the vocabulary of the one before it, on purpose.
+Measurements were taken at the start and at the end of the
+period, and the difference between them is reported below.
+HOAP04 A reader who skips ahead will find that each section
+repeats the vocabulary of the one before it, on purpose.
+Measurements were taken at the start and at the end of the
+period, and the difference between them is reported below.
+HOAP05 A reader who skips ahead will find that each section
+repeats the vocabulary of the one before it, on purpose.
+Measurements were taken at the start and at the end of the
+period, and the difference between them is reported below.
+HOAP06 A reader who skips ahead will find that each section
+repeats the vocabulary of the one before it, on purpose.
+Measurements were taken at the start and at the end of the
+period, and the difference between them is reported below.
+Wide table HOTBL
+Field Notes HONAME · 2026-10-01 · 1 / 4
+
+--- Page 2 ---
+Item Owner Due Status HOCELL1
+Export
+the
+handout
+layout
+Alice
+Johnson
+2026-
+11-11
+In
+progress
+Quarterly
+review
+Bob Lee
+2026-
+12-02
+Not
+started
+Release
+notes
+Carol
+Wu
+2026-
+12-09
+Done
+Narrow table HONARROW
+Term Meaning
+HONARROW1 short
+Rule a thin line
+Field Notes HONAME · 2026-10-01 · 2 / 4
+Notes Keep the
+right
+third of
+every
+page
+blank for
+notes
+Prepare
+the
+summary
+slides
+and the
+budget
+appendix
+Short,
+plain, one
+line per
+change
+HOCELL2
+Reference
+https://example.c
+om/spec/handou
+t-layout
+docs/review/q4-
+summary.md
+CHANGELOG.md
+
+--- Page 3 ---
+Ten columns HOTEN
+Colu
+mn
+A
+Colu
+mn
+B
+Colu
+mn
+C
+Colu
+mn
+D
+Colu
+mn E
+Colu
+mn F
+Colu
+mn
+G
+Colu
+mn
+H
+Colu
+mn I
+HOT
+ENA
+first
+cell
+John
+son
+202
+6-
+11-11
+In
+prog
+ress
+Quar
+terly
+revie
+w of
+the
+budg
+et
+docs
+/revi
+ew/q
+4-
+sum
+mary
+.md
+Alice Bob Carol
+HOCODEBEFORE
+0123456789012345678901234567890123456789012345678
+9012345678901234567890123456789
+HOCODE80 the line above is exactly eighty columns
+wide and must wrap inside the body
+HOCODEAFTER
+Draft HOMER Review Print Notes
+Inline math a +
+2 b=
+2 c2
+HOMATH and a display block:
+∑n
+i=1
+i=
+n(n + 1)
+2
+Field Notes HONAME · 2026-10-01 · 3 / 4
+Colu
+mn J
+HOT
+ENJ
+last
+cell
+
+--- Page 4 ---
+HOAFTERBREAK starts a new page.
+HOAP07 A reader who skips ahead will find that each section
+repeats the vocabulary of the one before it, on purpose.
+Measurements were taken at the start and at the end of the
+period, and the difference between them is reported below.
+HOAP08 A reader who skips ahead will find that each section
+repeats the vocabulary of the one before it, on purpose.
+Measurements were taken at the start and at the end of the
+period, and the difference between them is reported below.
+HOAP09 A reader who skips ahead will find that each section
+repeats the vocabulary of the one before it, on purpose.
+Measurements were taken at the start and at the end of the
+period, and the difference between them is reported below.
+HOAP10 A reader who skips ahead will find that each section
+repeats the vocabulary of the one before it, on purpose.
+Measurements were taken at the start and at the end of the
+period, and the difference between them is reported below.
+HOAP11 A reader who skips ahead will find that each section
+repeats the vocabulary of the one before it, on purpose.
+Measurements were taken at the start and at the end of the
+period, and the difference between them is reported below.
+HOEND99
+Field Notes HONAME · 2026-10-01 · 4 / 4
