@@ -1,0 +1,36 @@
+{
+  "layout": "handout",
+  "displayName": "Field Notes HONAME",
+  "minPages": 2,
+  "textOnEveryPage": true,
+  "repair": "unchanged",
+  "diagrams": {
+    "rendered": 1,
+    "failed": 0
+  },
+  "markers": [
+    "HOH1",
+    "HOAP01",
+    "HOTBL",
+    "HOCELL1",
+    "HOCELL2",
+    "HONARROW1",
+    "HOTENA",
+    "HOTENJ",
+    "HOCODEBEFORE",
+    "HOCODE80",
+    "HOCODEAFTER",
+    "HOMER",
+    "HOMATH",
+    "HOAFTERBREAK",
+    "HOEND99"
+  ],
+  "markersOnLastPage": [
+    "HOEND99"
+  ],
+  "startsPage": [
+    "Field Notes HONAME 2026-10-01 Briefing HOH1",
+    "HOAFTERBREAK"
+  ],
+  "notes": "Handout layout (S3 of mars-dawn#432), English, no front-matter title: the header shows the display name, then the front-matter date. A two-column table keeps its natural width; a six-column table runs into the notes column, a ten-column one fills body and column with a fixed layout (amendment A1-R2); an 80-column code line, a Mermaid diagram and KaTeX must stay inside the body; a <!--BREAK--> still starts a page; nothing else enters the notes column."
+}

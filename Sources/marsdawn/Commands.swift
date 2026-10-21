@@ -350,11 +350,12 @@ extension ExportLayout: ExpressibleByArgument {
         switch argument {
         case "document": self = .document
         case "handbook", "manual": self = .manual
+        case "handout": self = .handout
         default: return nil
         }
     }
 
-    public static var allValueStrings: [String] { ["document", "handbook"] }
+    public static var allValueStrings: [String] { ["document", "handbook", "handout"] }
 }
 
 /// What `--layout` parses to, remembering whether the user typed the deprecated `manual` (both
@@ -376,7 +377,13 @@ struct LayoutArgument: ExpressibleByArgument {
     static var allValueStrings: [String] { ExportLayout.allValueStrings }
     /// Without this the completion scripts offer no values: the default kind is built from CaseIterable.
     static var defaultCompletionKind: CompletionKind { .list(allValueStrings) }
-    var defaultValueDescription: String { layout == .manual ? "handbook" : "document" }
+    var defaultValueDescription: String {
+        switch layout {
+        case .document: "document"
+        case .manual: "handbook"
+        case .handout: "handout"
+        }
+    }
 }
 
 // MARK: - open
@@ -713,7 +720,7 @@ extension MarsDawnCommand {
         @Option(help: "Paper size.")
         var paper: DocumentExporter.Paper = .a4
 
-        @Option(name: .customLong("layout"), help: "Page layout: document (the default) or handbook, the Handbook layout, with wider margins, a 25 mm binding side and every top-level heading on a new page, plus a cover (from the front matter's title, subtitle, version, date, author and logo), a table of contents of the level 1 and 2 headings, \"n / N\" page numbers and PDF bookmarks. <!--BREAK--> on its own line starts a new page in either. manual is deprecated: use handbook.")
+        @Option(name: .customLong("layout"), help: "Page layout: document (the default); handbook, the Handbook layout, with wider margins, a 25 mm binding side and every top-level heading on a new page, plus a cover (from the front matter's title, subtitle, version, date, author and logo), a table of contents of the level 1 and 2 headings, \"n / N\" page numbers and PDF bookmarks. handout: a blank notes column on the right of every page (a table too wide for the body may run into it), the front matter's title (or the file name) and date at the top of page 1, and a \"file name · date · n / N\" footer; the date is the front matter's date, else today's. <!--BREAK--> on its own line starts a new page in every layout. manual is deprecated: use handbook.")
         var layoutArgument = LayoutArgument(.document)
 
         var layout: ExportLayout { layoutArgument.layout }
@@ -779,6 +786,8 @@ extension MarsDawnCommand {
                     softBreaksAsLineBreaks: breaks,
                     layout: layout,
                     tocTitle: tocTitle,
+                    // The file's name without its extension, never its folders (S3 of mars-dawn#432).
+                    displayName: input.deletingPathExtension().lastPathComponent,
                     calloutTitles: .preferred()
                 )
                 if FileManager.default.fileExists(atPath: destination.path) {

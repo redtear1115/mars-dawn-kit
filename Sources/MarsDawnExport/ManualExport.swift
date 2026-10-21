@@ -15,6 +15,13 @@ struct ManualHooks {
     var report: ((ManualReport) -> Void)?
     /// Called with the page after pass B printed, to read its state (the injection tests).
     var afterPassB: (@MainActor (WKWebView) async throws -> Void)?
+    /// The handout layout's clock: the export date when the front matter has none (S3).
+    var now: Date?
+    var timeZone: TimeZone?
+    /// Receives what the handout run did, before its private folder is removed.
+    var handoutReport: ((HandoutReport) -> Void)?
+    /// Tests only: false skips the handout's table fitting (A1-R2), for its control.
+    var handoutFitsTables = true
 }
 
 /// What one manual run did, for the tests.
@@ -139,7 +146,7 @@ extension DocumentExporter {
     }
 
     /// Prints the prepared page as `configured` would, but to `url` and never with a panel.
-    private func printPass(like configured: NSPrintOperation, to url: URL, host: NSWindow) async -> Bool {
+    func printPass(like configured: NSPrintOperation, to url: URL, host: NSWindow) async -> Bool {
         let info = configured.printInfo.copy() as! NSPrintInfo
         info.jobDisposition = .save
         info.dictionary()[NSPrintInfo.AttributeKey.jobSavingURL] = url
