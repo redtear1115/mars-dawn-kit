@@ -1,13 +1,14 @@
 OS build: Version 26.6.2 (Build 25G83) | WebKit: 21624.5.1.11.3 | Paper: a4
 Page count: 1
+Lines: minX minY maxX maxY | text, whole points from the page's bottom left, sorted by text; compared within 1 pt
 
 --- Page 1 ---
-Comments HCTITLE
-Text after the note HCTEXT1. Measurements were taken at the start and at the end of the
-period, and the difference between them is reported below.
-Lower case marker is not a marker HCLOWER.
-trailing words HCTRAIL
-HCDIV block
-Spaced marker is not a marker HCSPACED. Where the instructions say to wait, wait until the
-indicator stops flashing and only then continue with the next step.
-HCEND99
+45 723 269 751 | Comments HCTITLE
+45 582 115 596 | HCDIV block
+45 512 101 526 | HCEND99
+45 632 297 646 | Lower case marker is not a marker HCLOWER.
+45 563 546 577 | Spaced marker is not a marker HCSPACED. Where the instructions say to wait, wait until the
+45 683 532 697 | Text after the note HCTEXT1. Measurements were taken at the start and at the end of the
+45 543 405 558 | indicator stops flashing and only then continue with the next step.
+45 663 369 678 | period, and the difference between them is reported below.
+45 601 172 615 | trailing words HCTRAIL

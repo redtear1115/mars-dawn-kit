@@ -1,24 +1,28 @@
 OS build: Version 26.6.2 (Build 25G83) | WebKit: 21624.5.1.11.3 | Paper: a4
 Page count: 2
+Lines: minX minY maxX maxY | text, whole points from the page's bottom left, sorted by text; compared within 1 pt
 
 --- Page 1 ---
-MarsDawn README HDMAIN01
-繁體中文介紹段落 CJKINTRO01:這是一段測試文字,用來檢查匯出功能是否正常運作。
-Features TBLHEAD01
-Feature KeyA01 Status ValA02
-Live preview CELLA03 Done CELLB04
-Tasks TASKHEAD01
-Ship the exporter DONETASK01
-Add DOCX support OPENTASK02
-A quoted note QUOTE01 from the maintainers.
-let codeMARKER01 = 42
-Image not available: missing.png
-FLOWSTART01 FLOWEND02
+59 414 314 428 | A quoted note QUOTE01 from the maintainers.
+66 445 250 459 | Add DOCX support OPENTASK02
+200 560 284 574 | Done CELLB04
+341 244 409 257 | FLOWEND02
+182 244 260 257 | FLOWSTART01
+72 590 163 604 | Feature KeyA01
+45 630 224 651 | Features TBLHEAD01
+57 299 212 311 | Image not available: missing.png
+56 560 179 574 | Live preview CELLA03
+45 723 395 751 | MarsDawn README HDMAIN01
+66 467 239 481 | Ship the exporter DONETASK01
+201 590 283 604 | Status ValA02
+45 502 211 523 | Tasks TASKHEAD01
+58 376 190 389 | let codeMARKER01 = 42
+45 682 512 697 | 繁體中文介紹段落 CJKINTRO01:這是一段測試文字,用來檢查匯出功能是否正常運作。
 
 --- Page 2 ---
-SEQFROM01
-SEQTO02
-SEQMSG03 SEQMSG03
-SEQFROM01
-SEQTO02
-Last paragraph in the document ENDMARK99.
+45 541 299 555 | Last paragraph in the document ENDMARK99.
+181 749 255 764 | SEQFROM01
+181 635 255 650 | SEQFROM01
+256 691 330 706 | SEQMSG03 SEQMSG03
+349 749 406 764 | SEQTO02
+349 635 406 650 | SEQTO02

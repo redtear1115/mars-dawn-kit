@@ -1,17 +1,18 @@
 OS build: Version 26.6.2 (Build 25G83) | WebKit: 21624.5.1.11.3 | Paper: a4
 Page count: 2
+Lines: minX minY maxX maxY | text, whole points from the page's bottom left, sorted by text; compared within 1 pt
 
 --- Page 1 ---
-Release Notes COTITLE
-No headings in this one COSUB
-2026-10-18
+71 596 137 611 | 2026-10-18
+71 642 302 662 | No headings in this one COSUB
+71 674 386 708 | Release Notes COTITLE
 
 --- Page 2 ---
-COFIRST The cover is page one and has no number. There is no table of contents,
-because this document has no level 1 or level 2 heading, so the body starts on the
-page after the cover.
-A level 3 heading is not listed COH3
-COSECOND Level 3 headings stay out of the contents and out of the bookmarks;
-only level 1 and level 2 headings are listed.
-COEND99 The footer on this page reads 1 / 1.
-1 / 1
+295 22 314 34 | 1 / 1
+71 685 322 703 | A level 3 heading is not listed COH3
+71 608 319 623 | COEND99 The footer on this page reads 1 / 1.
+71 768 519 782 | COFIRST The cover is page one and has no number. There is no table of contents,
+71 659 514 673 | COSECOND Level 3 headings stay out of the contents and out of the bookmarks;
+71 749 519 763 | because this document has no level 1 or level 2 heading, so the body starts on the
+71 640 303 654 | only level 1 and level 2 headings are listed.
+71 729 184 743 | page after the cover.
