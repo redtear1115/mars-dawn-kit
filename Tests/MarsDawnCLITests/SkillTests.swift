@@ -28,7 +28,7 @@ struct SkillTests {
     /// first place — fails loudly instead of silently writing into the real `~/.claude`. The one
     /// test that legitimately exercises the default (`withoutDirItWritesTheDefaultDirectory`)
     /// installs its own override before calling `install(dir: nil, …)`, same as every other test
-    /// here installs its own fakes for `MarsDawnApp.locate` elsewhere in this target.
+    /// here installs its own fakes (the task-local `MarsDawnApp.locateOverride`) elsewhere in this target.
     init() {
         SkillInstaller.defaultDirectory = {
             Issue.record("SkillInstaller.defaultDirectory was called with no test override in place — this would have touched the real ~/.claude/skills/marsdawn")
