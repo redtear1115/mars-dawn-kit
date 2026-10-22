@@ -96,14 +96,16 @@ jobs:
       # request the release pass runs only the suites where the configuration changes what is
       # measured: the deepest-nesting and stack-margin suites, the budget and cost suites whose
       # bounds are written for release, and the suites with `#if DEBUG` branches. The rest repeated
-      # the debug pass and took about 25 of macos-15's 60 minutes. A push to main or a tag still
-      # runs the whole release pass, so every tag has had every suite in both configurations.
+      # the debug pass and took about 25 of macos-15's 60 minutes. A pull request into main (a
+      # release branch going out), a push to main and a tag still run the whole release pass, so a
+      # release is checked in full before it reaches main, and every tag has had every suite in
+      # both configurations.
       #
       # The Unicode scalar sweeps (ScalarEscaperTests, ScalarRendererTests: every scalar, about
       # three minutes) run in the debug pass only. They test grapheme rules, which come from the
       # OS's Swift runtime rather than the build configuration, so both runners keep them.
       - name: Check that every release suite exists
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && github.base_ref != 'main'
         run: |
           set -euo pipefail
           listed=$(swift test -c release --list-tests)
@@ -116,13 +118,13 @@ jobs:
           done
           exit $missing
       - name: Release pass, configuration-sensitive suites
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && github.base_ref != 'main'
         run: |
           set -euo pipefail
           filter=$(printf '%s/|' $RELEASE_SUITES | sed 's/|$//; s/\./\\./g')
           swift test -c release --no-parallel --filter "^(${filter})"
       - name: Release pass, every suite
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' || github.base_ref == 'main'
         run: swift test -c release --no-parallel --skip 'MarsDawnExportTests\.PDFCorpus|MarsDawnKitTests\.Scalar(Escaper|Renderer)Tests'
       - run: swift test -c release --no-parallel --filter 'MarsDawnExportTests\.PDFCorpus'
       # Two groups of tests don't run here, so the CLI covers their ground on the real system:
