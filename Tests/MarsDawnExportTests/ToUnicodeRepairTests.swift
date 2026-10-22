@@ -298,6 +298,52 @@ struct ToUnicodeRepairTests {
         #expect(ToUnicodeRepair.rewriteCMap("1 beginbfchar\n<01> /notahex\nendbfchar\n", keeping: []) == nil)
     }
 
+    // MARK: Size limits
+
+    /// A bfrange whose destination is an array of `count` copies of one non-radical code point,
+    /// covering the codes 0 through `count - 1`. The array form never overflows the destination,
+    /// so only the range-size cap can refuse it.
+    private static func arrayRange(count: Int) -> String {
+        let hi = String(count - 1, radix: 16)
+        let items = String(repeating: "<4e00> ", count: count)
+        return "1 beginbfrange\n<00000000> <\(String(repeating: "0", count: 8 - hi.count) + hi)> [\(items)]\nendbfrange\n"
+    }
+
+    /// A range covers at most 65,536 codes (`hi - lo < 65_536`): 65,536 are rewritten, 65,537
+    /// are refused, whichever form the destination takes (literals, not the source's constant).
+    @Test func aRangeOf65536CodesIsReadAndOneOf65537IsRefused() throws {
+        let (atLimit, atChanges) = try #require(ToUnicodeRepair.rewriteCMap(Self.arrayRange(count: 65_536), keeping: []))
+        #expect(atChanges == 0)
+        #expect(atLimit == Self.arrayRange(count: 65_536))
+        #expect(ToUnicodeRepair.rewriteCMap(Self.arrayRange(count: 65_537), keeping: []) == nil)
+
+        // The same boundary with a single starting destination: codes 0 through 0xFFFF map to
+        // the code points 0 through 0xFFFF, which include the radicals, so it is rewritten.
+        let full = "1 beginbfrange\n<00000000> <0000ffff> <0000>\nendbfrange\n"
+        let (_, changes) = try #require(ToUnicodeRepair.rewriteCMap(full, keeping: []))
+        #expect(changes > 0)
+        let over = "1 beginbfrange\n<00000000> <00010000> <0000>\nendbfrange\n"
+        #expect(ToUnicodeRepair.rewriteCMap(over, keeping: []) == nil)
+    }
+
+    /// The mappings of all blocks together are capped at 200,000: exactly that many are read,
+    /// one more is refused. Ranges starting at <4e00> never reach a radical, so the accepted
+    /// case comes back unchanged and costs no rewrite.
+    @Test func twoHundredThousandMappingsAreReadAndOneMoreIsRefused() throws {
+        // 4 x 40,000 + 39,999 + 1 = 200,000 codes in one block.
+        let ranges = (0..<4).map { block -> String in
+            String(format: "<%08x> <%08x> <4e00>\n", block * 0x10000, block * 0x10000 + 39_999)
+        }.joined() + "<00040000> <00049c3e> <4e00>\n" + "<00050000> <00050000> <4e00>\n"
+        #expect(0x49c3e - 0x40000 + 1 == 39_999)
+        let atLimit = "5 beginbfrange\n" + ranges + "endbfrange\n"
+        let result = try #require(ToUnicodeRepair.rewriteCMap(atLimit, keeping: []))
+        #expect(result.0 == atLimit)
+        #expect(result.1 == 0)
+
+        let overLimit = "6 beginbfrange\n" + ranges + "<00060000> <00060000> <4e00>\nendbfrange\n"
+        #expect(ToUnicodeRepair.rewriteCMap(overLimit, keeping: []) == nil)
+    }
+
     // MARK: Raster
 
     static func raster(_ page: PDFPage) -> [UInt8] {

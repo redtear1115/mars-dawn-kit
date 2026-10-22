@@ -82,6 +82,53 @@ struct DocumentAssetScopeTests {
         #expect(served.body == Data("<svg/>".utf8))
     }
 
+    /// The response headers the handler sets on a served asset (a regular, small image).
+    @Test func aServedAssetCarriesNosniffNoCacheAndItsLength() async throws {
+        let folder = try makeFolder(parent: NSTemporaryDirectory())
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let handler = Handler()
+        handler.baseDirectory = folder.appendingPathComponent("project")
+        let served = try await serve(handler, "marsdawn-asset://doc/img.png")
+        #expect(served.status == 200)
+        #expect(served.header("X-Content-Type-Options") == "nosniff")
+        #expect(served.header("Cache-Control") == "no-cache")
+        #expect(served.header("Content-Length") == "\(RecordingServer.png.count)")
+        #expect(served.header("Content-Type") == "image/png")
+    }
+
+    /// The handler's own cap is 32 MiB, written here as a literal: a file of exactly that size
+    /// is served, one byte more is refused as unreadable. The files are sparse (truncated), so
+    /// they cost no disk.
+    @Test func aFileOver32MiBIsRefusedAndOneAtTheCapIsServed() async throws {
+        #expect(Handler.maximumFileSize == 33_554_432)
+        let folder = try makeFolder(parent: NSTemporaryDirectory())
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let project = folder.appendingPathComponent("project")
+        for (name, size) in [("atcap.png", 33_554_432), ("overcap.png", 33_554_433)] as [(String, UInt64)] {
+            let url = project.appendingPathComponent(name)
+            #expect(FileManager.default.createFile(atPath: url.path, contents: nil))
+            let handle = try FileHandle(forWritingTo: url)
+            try handle.truncate(atOffset: size)
+            try handle.close()
+        }
+        let atCap = URL(string: "marsdawn-asset://doc/atcap.png")!
+        let overCap = URL(string: "marsdawn-asset://doc/overcap.png")!
+        #expect(Handler.fileURL(for: atCap, baseDirectory: project, scopeRoot: nil) != nil)
+        #expect(Handler.fileURL(for: overCap, baseDirectory: project, scopeRoot: nil) == nil)
+        switch Handler.loadImage(for: overCap, baseDirectory: project, scopeRoot: nil) {
+        case .success: Issue.record("a file one byte over the cap was served")
+        case .failure(let error): #expect(error.code == .fileDoesNotExist)
+        }
+        let handler = Handler()
+        handler.baseDirectory = project
+        let refused = try await serve(handler, "marsdawn-asset://doc/overcap.png")
+        #expect(refused.error != nil && refused.response == nil)
+        #expect((refused.error as? URLError)?.code == .fileDoesNotExist)
+        let served = try await serve(handler, "marsdawn-asset://doc/atcap.png")
+        #expect(served.status == 200)
+        #expect(served.header("Content-Length") == "33554432")
+    }
+
     @Test func refusesImageTypesOutsideTheTable() async throws {
         let folder = try makeFolder(parent: NSTemporaryDirectory())
         defer { try? FileManager.default.removeItem(at: folder) }

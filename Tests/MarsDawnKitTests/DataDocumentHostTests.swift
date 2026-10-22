@@ -36,13 +36,16 @@ struct DataDocumentHostTests {
         let limits = DataDocumentPreview.limits
         #expect(limits["maximumJSONBytes"] == 16 * 1024 * 1024)
         #expect(limits["maximumYAMLBytes"] == 384 * 1024)
-        #expect(limits["maximumDepth"] == DataDocumentPreview.maximumDepth)
-        #expect(limits["maximumTreeDepth"] == DataDocumentPreview.maximumDepth)
+        #expect(limits["maximumDepth"] == 1_000)
+        #expect(limits["maximumTreeDepth"] == 1_000)
         #expect(limits["autoExpandDepth"] == 8)
         #expect(limits["maximumRenderedNodes"] == 10_000)
         #expect(limits["autoExpandBudgetMilliseconds"] == 200)
-        #expect(limits["parseBudgetMilliseconds"] == DataDocumentPreview.parseBudgetMilliseconds)
-        #expect(limits["maximumAliases"] == DataDocumentPreview.maximumAliases)
+        #expect(limits["parseBudgetMilliseconds"] == 2_000)
+        #expect(limits["maximumAliases"] == 100_000)
+        #expect(DataDocumentPreview.maximumDepth == 1_000)
+        #expect(DataDocumentPreview.parseBudgetMilliseconds == 2_000)
+        #expect(DataDocumentPreview.maximumAliases == 100_000)
         #expect(DataDocumentPreview.hostWaitMilliseconds == DataDocumentPreview.parseBudgetMilliseconds + DataDocumentPreview.autoExpandBudgetMilliseconds + 3_000)
     }
 
