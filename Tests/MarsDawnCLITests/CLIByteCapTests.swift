@@ -12,10 +12,6 @@ struct CLIByteCapTests {
     init() { HintTesting.installViolationHandler() }
 
     @Test func exportRefusesAnInputOverTheCap() async throws {
-        let original = MarsDawnApp.locate
-        defer { MarsDawnApp.locate = original }
-        MarsDawnApp.locate = { nil }
-
         let root = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
             .appendingPathComponent("marsdawn-cli-bytecap-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

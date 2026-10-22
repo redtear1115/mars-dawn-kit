@@ -31,13 +31,18 @@ struct OutputOptions: ParsableArguments {
     @Flag(help: "Print a JSON result on stdout instead of text.")
     var json = false
 
+    /// Where `report` prints. Tests set it, per task, to read what a command printed without
+    /// redirecting file descriptor 1 for the whole process; nil prints to stdout.
+    @TaskLocal static var sink: (@Sendable (String) -> Void)?
+
     func report(_ fields: [String: Any], text: String) {
+        let emit = Self.sink ?? { print($0) }
         if json {
             var object = fields
             object["ok"] = true
-            printJSON(object)
+            emit(jsonString(object))
         } else {
-            print(text)
+            emit(text)
         }
     }
 }
@@ -628,9 +633,13 @@ extension MarsDawnCommand {
             if let folder = folders.first {
                 let configuration = openConfiguration()
                 let capable = MarsDawnApp.reportsFolderStatus(app)
+                // A test's `opener` stands in for the folder's send too, so none reaches NSWorkspace.
+                let folderOpener = Self.opener.map { stub in
+                    FolderStatusOpener(open: { urls, app, configuration in try await stub(urls, app, configuration) })
+                } ?? FolderStatusEnvironment.opener
                 folderStatus = try await FolderStatusRequest.send(
                     folder: folder, app: app, wait: wait, capable: capable, configuration: configuration,
-                    opener: FolderStatusEnvironment.opener, notifier: FolderStatusEnvironment.notifier
+                    opener: folderOpener, notifier: FolderStatusEnvironment.notifier
                 )
             }
             var fields: [String: Any] = [
