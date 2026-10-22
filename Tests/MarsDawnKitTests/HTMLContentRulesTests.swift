@@ -51,16 +51,28 @@ struct HTMLContentRulesTests {
     }
 
     /// The one type that must never appear in a lift, at any scheme: a running document runs the
-    /// code it arrived with (D-1c).
-    @Test func noPolicyEverLiftsScriptOrWebSockets() {
+    /// code it arrived with (D-1c). The rules are decoded, so each lift's own `resource-type`
+    /// list is read (the JSON is written with sorted keys, which puts `action` before `trigger`,
+    /// so a text search before the action cannot see it).
+    @Test func noPolicyEverLiftsScriptOrWebSockets() throws {
+        let forbidden: Set<String> = ["script", "raw", "websocket", "ping", "popup"]
+        var lifts = 0
         for policy in HTMLContentPolicy.allCases {
-            let json = HTMLContentRules.encodedRules(for: policy)
-            guard let lifted = json.range(of: "ignore-previous-rules") else { continue }
-            let lift = String(json[..<lifted.lowerBound])
-            #expect(!lift.contains("\"script\""), "script lifted in \(policy)")
-            #expect(!lift.contains("websocket"), "websocket lifted in \(policy)")
-            #expect(!json.contains("\"^wss:\""), "wss lifted in \(policy)")
+            let list = try rules(policy)
+            let lifting = list.filter { ($0["action"] as? [String: Any])?["type"] as? String == "ignore-previous-rules" }
+            // The blocked policy has no lift at all; the running one has exactly one.
+            #expect(lifting.count == (policy == .blocked ? 0 : 1), "\(policy) has \(lifting.count) lifts")
+            for rule in lifting {
+                lifts += 1
+                let trigger = try #require(rule["trigger"] as? [String: Any], "\(policy)")
+                let types = try #require(trigger["resource-type"] as? [String], "a lift without a resource-type list lifts every type in \(policy)")
+                #expect(!types.isEmpty)
+                #expect(Set(types).isDisjoint(with: forbidden), "lifted \(Set(types).intersection(forbidden)) in \(policy)")
+                let filter = try #require(trigger["url-filter"] as? String)
+                #expect(!filter.contains("ws"), "a lift reaches web sockets in \(policy): \(filter)")
+            }
         }
+        #expect(lifts == 1, "the instrument must see the running policy's lift")
     }
 
     @Test func noRuleExemptsLoopbackOrLocalhost() {

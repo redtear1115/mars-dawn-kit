@@ -632,4 +632,25 @@ struct FrontMatterUnclosedScanBoundTests {
         // something that scales with its 200,000 lines.
         #expect(result.linesScanned <= FrontMatter.maxUnclosedSearchLines)
     }
+
+    /// The tests above size their documents from the constant, so scaling the constant scales
+    /// them with it. These pin the shipped number itself: a literal, and documents built from
+    /// literal line counts (999 inner lines close, 1,000 do not).
+    @Test func theBoundIsTheShippedOneThousand() throws {
+        #expect(FrontMatter.maxUnclosedSearchLines == 1000)
+
+        let closesAt999 = "---\n" + (0..<999).map { "line \($0)\n" }.joined() + "---\n# Body\n"
+        let found = try #require(FrontMatter.split(closesAt999).frontMatter)
+        #expect(found.lines.count == 999)
+
+        let closesAt1000 = "---\n" + (0..<1000).map { "line \($0)\n" }.joined() + "---\n# Body\n"
+        #expect(FrontMatter.split(closesAt1000).frontMatter == nil)
+
+        // An opening line followed by far more than 1,000 lines that never close: the scan
+        // stops at exactly 1,000 lines, not at the end of the document.
+        let unclosed = "---\n" + String(repeating: "not a delimiter\n", count: 5_000)
+        let result = FrontMatter.search(unclosed)
+        #expect(result.frontMatter == nil)
+        #expect(result.linesScanned == 1000)
+    }
 }

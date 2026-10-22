@@ -528,6 +528,48 @@ struct MathExtractorTests {
         #expect(extract(fewer).expressionCount == 1)
     }
 
+    /// The limit tests above build their fixtures from the constants, so scaling a constant
+    /// scales the test with it. These pin the shipped numbers and the boundary with literals.
+    @Test func theLimitsAreTheShippedNumbers() {
+        #expect(MathExtractor.maxExpressionLength == 10_000)
+        #expect(MathExtractor.maxExpressionCount == 2_000)
+        #expect(MathExtractor.maxBodyBytes == 256_000)
+        #expect(MathExtractor.maxBlocks == 50_000)
+    }
+
+    /// 10,000 scalars between the dollars are extracted; 10,001 stay source (literals).
+    @Test func anExpressionOfTenThousandScalarsIsExtractedAndOneMoreIsSource() {
+        #expect(extract("$" + String(repeating: "a", count: 10_000) + "$").expressionCount == 1)
+        assertUntouched("$" + String(repeating: "a", count: 10_001) + "$")
+        #expect(extract("$" + String(repeating: "é", count: 10_000) + "$").expressionCount == 1)
+        assertUntouched("$" + String(repeating: "é", count: 10_001) + "$")
+    }
+
+    /// 2,000 expressions are extracted, the 2,001st stays source (literals).
+    @Test func twoThousandExpressionsAreExtractedAndTheNextOneIsSource() {
+        let body = Array(repeating: "$x$", count: 2_001).joined(separator: " ")
+        let extraction = extract(body)
+        #expect(extraction.expressionCount == 2_000)
+        #expect(extraction.markdown.hasSuffix(" $x$"))
+        #expect(extract(Array(repeating: "$x$", count: 2_000).joined(separator: " ")).expressionCount == 2_000)
+    }
+
+    /// A body of exactly 256,000 bytes is scanned; one byte more is not (literals).
+    @Test func aBodyOf256000BytesIsScannedAndOneByteMoreIsNot() {
+        let head = "$x$\n"
+        #expect(extract(head + String(repeating: "a", count: 256_000 - head.utf8.count)).expressionCount == 1)
+        assertUntouched(head + String(repeating: "a", count: 256_001 - head.utf8.count))
+    }
+
+    /// 50,000 block nodes are rewritten, 50,001 are left alone (literals). Each paragraph is
+    /// one block, so the last paragraph carries the math.
+    @Test func fiftyThousandBlocksAreRewrittenAndOneMoreIsNot() {
+        let fits = String(repeating: "b\n\n", count: 49_999) + "$x$\n"
+        #expect(extract(fits).expressionCount == 1)
+        let over = String(repeating: "b\n\n", count: 50_000) + "$x$\n"
+        assertUntouched(over)
+    }
+
     /// cmark-gfm pads short rows to the header's width, so a small file can hold a huge
     /// table. That one the parsing worker now refuses outright, before the extractor sees
     /// a tree, and the body comes back unchanged all the same.

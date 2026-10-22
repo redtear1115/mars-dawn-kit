@@ -202,6 +202,23 @@ struct FootnoteTests {
         }
     }
 
+    /// Only the first 2,000 candidate definitions get the extra paragraph that lets cmark tell
+    /// us about an unreferenced one; past that, an orphan is dropped. The literals pin the
+    /// number: 2,000 orphans are all listed, 2,500 list exactly 2,000 (the first 2,000).
+    @Test func onlyTheFirstTwoThousandUnreferencedDefinitionsAreListed() {
+        func listed(_ count: Int) -> [String] {
+            let source = "Body.\n\n" + (0..<count).map { "[^o\($0)]: orphan \($0)" }.joined(separator: "\n\n") + "\n"
+            let html = section(render(source)) ?? ""
+            let list = html.components(separatedBy: "<ul class=\"footnotes-unreferenced\">").dropFirst().first ?? ""
+            return list.matches(of: /<li><p>orphan (\d+)<\/p>/).map { String($0.output.1) }
+        }
+        let exact = listed(2_000)
+        #expect(exact.count == 2_000)
+        let over = listed(2_500)
+        #expect(over.count == 2_000, "listed \(over.count)")
+        #expect(over.first == "0" && over.last == "1999")
+    }
+
     // MARK: Statistics
 
     @Test func statisticsCountNotesOnceAndNotTheMarkers() {

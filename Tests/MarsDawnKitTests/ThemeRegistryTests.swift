@@ -295,6 +295,24 @@ struct ThemeRegistrySecurityTests {
         // Positive fixture: with nothing revoked, all three load.
         #expect(dir.scan().installed.map(\.id) == ["by-author", "by-id", "kept"])
     }
+
+    /// The other half of the case fold: a file that spells `github` with capitals is dropped by
+    /// a revocation written in lower case (the test above has the capitals on the revoked side).
+    @Test func aRevokedAuthorIsMatchedWhateverCaseTheThemeFileSpellsIt() throws {
+        let dir = try InstalledThemes()
+        try dir.add("kept", InstalledThemes.theme("kept") { $0["author"] = ["name": "Someone", "github": "someone"] })
+        try dir.add("caps-author", InstalledThemes.theme("caps-author") { $0["author"] = ["name": "Jane", "github": "JaneDoe"] })
+        // Positive fixture: the file really is valid with the capitals, and loads when nothing is revoked.
+        let data = try Data(contentsOf: dir.folder("caps-author").appendingPathComponent("theme.json"))
+        #expect(String(decoding: data, as: UTF8.self).contains("JaneDoe"))
+        #expect(dir.scan().installed.map(\.id) == ["caps-author", "kept"])
+
+        let scan = dir.scan(revokedAuthors: ["janedoe"])
+        #expect(scan.dropped["caps-author"] == .revokedAuthor)
+        #expect(scan.installed.map(\.id) == ["kept"])
+        // An unrelated revoked author drops nothing.
+        #expect(dir.scan(revokedAuthors: ["nobody"]).installed.map(\.id) == ["caps-author", "kept"])
+    }
 }
 
 // MARK: - L2: file rules and the cap
