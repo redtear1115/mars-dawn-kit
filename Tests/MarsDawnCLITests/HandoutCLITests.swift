@@ -28,10 +28,13 @@ struct HandoutCLITests {
         process.arguments = ["export", input.path, "-o", output.path, "--layout", "handout"]
         process.environment = ["MARSDAWN_APP_PATH": "/nonexistent", "HOME": root.path, "PATH": "/usr/bin:/bin"]
         process.standardOutput = Pipe()
-        process.standardError = Pipe()
+        let errorPipe = Pipe()
+        process.standardError = errorPipe
         try process.run()
+        // Read to the end before waiting, so a chatty child cannot fill the pipe and stall.
+        let errorText = String(decoding: errorPipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
         process.waitUntilExit()
-        try #require(process.terminationStatus == 0, "export exited \(process.terminationStatus)")
+        try #require(process.terminationStatus == 0, "export exited \(process.terminationStatus), stderr: \(errorText)")
         let data = try Data(contentsOf: output)
         let document = try #require(PDFDocument(data: data))
         let text = (0..<document.pageCount).compactMap { document.page(at: $0)?.string }.joined(separator: "\n")
