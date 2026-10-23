@@ -87,9 +87,11 @@ public struct TextStatistics: Sendable, Equatable {
     /// The lines of `markdown` where a `:::` marker line holds a footnote reference (#223). The
     /// renderer leaves a reference as a placeholder in the title, and a title with one in it is not a
     /// marker; this counter removes references before it reads, so it asks the extractor what the
-    /// renderer's source holds. Looked for only when a line has both a `:::` and a `[^`, as the
-    /// extraction costs a parse.
+    /// renderer's source holds. Looked for only when the text has a `:::` and a `[^` (byte scans),
+    /// and then only on lines with both, as the extraction costs a parse.
     private static func footnoteMarkerLines(in markdown: String) -> Set<Int> {
+        // One byte scan each, before any split: most documents have no `:::` or no reference.
+        guard Callouts.mayContainContainers(markdown), markdown.utf8.contains(UInt8(ascii: "^")), markdown.contains("[^") else { return [] }
         let candidates = markdown.split(omittingEmptySubsequences: false, whereSeparator: { $0 == "\n" || $0 == "\r\n" || $0 == "\r" })
             .enumerated().filter { $0.element.contains(":::") && $0.element.contains("[^") }
         guard !candidates.isEmpty else { return [] }
