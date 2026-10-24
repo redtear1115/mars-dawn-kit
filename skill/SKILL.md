@@ -86,7 +86,7 @@ On failure with `--json` it prints `{"ok": false, "error": <kind>, "message": ..
 | 5 | `input_too_large` | The input is larger than 16 MiB (16,777,216 bytes), the most `export` renders. Nothing was written. Only `export` returns this. |
 | 6 | `app_cannot_open_folders` | This MarsDawn can't show a folder, so nothing was opened. Only `open` returns this. |
 | 7 | `skill_install_failed` | `skill --install` couldn't create the folder or write the file, or the final rename failed. An existing SKILL.md is left as it was. Only `skill --install` returns this. |
-| 64 | — | Usage error: a bad option or value. Printed as text on stderr, never as JSON, except `theme preview`'s refused -o (`output_folder_missing`, `output_symlink`, `output_not_a_file`). |
+| 64 | — | Usage error. ArgumentParser's own errors — a bad option or value — print as text on stderr, never as JSON. With --json, the command-checked usage refusals instead print `{"ok": false, "error": <kind>, "message": ...}` on stdout: `open --wait`'s `wait_out_of_range`; `skill --install`'s `skill_differs`, `skill_unsafe_symlink`, `skill_target_not_a_file`, `skill_unreadable`; `theme preview -o`'s `output_folder_missing`, `output_symlink`, `output_not_a_file`. |
 
 ## Review: open what you wrote
 
