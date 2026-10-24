@@ -128,6 +128,55 @@ struct HandoutLayoutTests {
         #expect(run.report?.tables.isEmpty == true)
     }
 
+    // MARK: Where the footer and the rule sit (audit D F4, F5)
+
+    /// The footer is centred on the body, not on the page and not at its margin, and sits in the
+    /// middle of the bottom margin. Both papers, a footer of the two shapes (the CJK name's is
+    /// drawn in two fonts, in separate pieces).
+    @Test(arguments: ["handout-en", "handout-cjk"], DocumentExporter.Paper.allCases)
+    func theFooterIsCentredOnTheBody(_ name: String, _ paper: DocumentExporter.Paper) async throws {
+        let run = try await Self.fixture(name, paper: paper)
+        let margins = ExportLayout.handout.bodyMargins
+        #expect(run.document.pageCount >= 2)
+        for index in 0..<run.document.pageCount {
+            let page = try #require(run.document.page(at: index))
+            let paperWidth = page.bounds(for: .mediaBox).width
+            let box = try #require(HandoutProbe.footerBox(page), "\(name) \(paper) page \(index + 1): no footer line")
+            let bodyCentre = (margins.left + HandoutProbe.bodyMaxX(paperWidth: paperWidth)) / 2
+            #expect(abs(box.midX - bodyCentre) <= 1, "\(name) \(paper) page \(index + 1): footer centre \(box.midX), body centre \(bodyCentre)")
+            #expect(abs(box.midY - margins.bottom / 2) <= 1, "\(name) \(paper) page \(index + 1): footer middle \(box.midY), margin middle \(margins.bottom / 2)")
+        }
+    }
+
+    /// The column's rule is drawn on a page with no spanning table, 12 pt right of the body, top
+    /// margin to bottom margin; and not on a page whose table runs into the column.
+    @Test(arguments: ["handout-en", "handout-cjk"], DocumentExporter.Paper.allCases)
+    func theColumnRuleIsDrawnWhereNoTableSpans(_ name: String, _ paper: DocumentExporter.Paper) async throws {
+        let run = try await Self.fixture(name, paper: paper)
+        let report = try #require(run.report)
+        let spanning = HandoutProbe.column(run.document, tables: report.tables).spanningPages
+        var withRule = 0
+        for index in 0..<run.document.pageCount where !spanning.contains(index + 1) {
+            let coverage = HandoutProbe.ruleCoverage(run.document, page: index)
+            #expect(coverage > 0.95, "\(name) \(paper) page \(index + 1): the rule covers \(coverage) of the body's height")
+            withRule += 1
+        }
+        #expect(withRule > 0, "\(name) \(paper): every page has a spanning table (\(spanning)); the fixture can't show a rule")
+        for page in spanning {
+            let coverage = HandoutProbe.ruleCoverage(run.document, page: page - 1)
+            #expect(coverage < 0.95, "\(name) \(paper) page \(page): a rule is drawn through a spanning table (\(coverage))")
+        }
+    }
+
+    /// Control for the rule probe: the document layout has no rule, and the probe sees none.
+    @Test(arguments: DocumentExporter.Paper.allCases)
+    func controlTheDocumentLayoutHasNoRule(_ paper: DocumentExporter.Paper) async throws {
+        let run = try await Self.export("Short.\n", layout: .document, paper: paper)
+        #expect(HandoutProbe.ruleCoverage(run.document, page: 0) == 0)
+        let handout = try await Self.export("Short.\n", paper: paper)
+        #expect(HandoutProbe.ruleCoverage(handout.document, page: 0) > 0.95)
+    }
+
     // MARK: K1-2: header, no cover, contents or outline
 
     @Test func pageOneStartsWithTheHeaderAndThereIsNoFrontMatterPage() async throws {

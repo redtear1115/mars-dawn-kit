@@ -1,289 +1,365 @@
 OS build: Version 26.6.2 (Build 25G83) | WebKit: 21624.5.1.11.3 | Paper: a4
 Page count: 5
+Lines: minX minY maxX maxY | text, whole points from the page's bottom left, sorted by text; compared within 1 pt
 
 --- Page 1 ---
-Blocks H1MARK01
-Heading Two H2MARK02
-Heading Three H3MARK03
-Heading Four H4MARK04
-Heading Five H5MARK05
-Heading Six H6MARK06
-Paragraph before code languages CODEHEAD07.
-# PYCODE08
-def greet(name):
-return f"Hello, {name}" # PYEND09
-// JSCODE10
-function add(a, b) {
-return a + b; // JSEND11
-}
-// RUSTCODE12
-fn main() {
-println!("RUSTEND13");
-}
-# BASHCODE14
-echo "BASHEND15"
-{
-}
-"JSONCODE16": "JSONEND17"
-let WIDECODE18 = value001 + value002 + value003 + value004 + value005 + value006 + value007 + value008 + value009 +
-value010 + value011 + value012 + value013 + value014 + value015 + value016 + value017 + value018 + value019 + value020 +
-value021 + value022 + value023 + value024 + value025 + value026 + value027 + value028 + value029 + value030 + value031 +
-value032 + value033 + value034 + value035 + value036 + value037 + value038 + value039; // WIDEEND19
-// TALLCODE20
-let line001 = 1 // filler line 1
-let line002 = 2 // filler line 2
-let line003 = 3 // filler line 3
-let line004 = 4 // filler line 4
-let line005 = 5 // filler line 5
-let line006 = 6 // filler line 6
-let line007 = 7 // filler line 7
-let line008 = 8 // filler line 8
-let line009 = 9 // filler line 9
-let line010 = 10 // filler line 10
-let line011 = 11 // filler line 11
-let line012 = 12 // filler line 12
-let line013 = 13 // filler line 13
-let line014 = 14 // filler line 14
-let line015 = 15 // filler line 15
-let line016 = 16 // filler line 16
-let line017 = 17 // filler line 17
-let line018 = 18 // filler line 18
-let line019 = 19 // filler line 19
-let line020 = 20 // filler line 20
-let line021 = 21 // filler line 21
-let line022 = 22 // filler line 22
-let line023 = 23 // filler line 23
-let line024 = 24 // filler line 24
-let line025 = 25 // filler line 25
-let line026 = 26 // filler line 26
-let line027 = 27 // filler line 27
-let line028 = 28 // filler line 28
-let line029 = 29 // filler line 29
-let line030 = 30 // filler line 30
-let line031 = 31 // filler line 31
-let line032 = 32 // filler line 32
-let line033 = 33 // filler line 33
-let line034 = 34 // filler line 34
+61 394 160 401 | "JSONCODE16": "JSONEND17"
+53 438 100 445 | # BASHCODE14
+53 585 92 592 | # PYCODE08
+53 541 96 548 | // JSCODE10
+53 489 104 497 | // RUSTCODE12
+53 306 104 313 | // TALLCODE20
+45 748 172 765 | Blocks H1MARK01
+45 640 126 648 | Heading Five H5MARK05
+45 659 138 668 | Heading Four H4MARK04
+45 623 121 631 | Heading Six H6MARK06
+45 680 164 691 | Heading Three H3MARK03
+45 711 176 724 | Heading Two H2MARK02
+45 608 214 617 | Paragraph before code languages CODEHEAD07.
+53 577 116 585 | def greet(name):
+53 430 116 438 | echo "BASHEND15"
+53 482 96 489 | fn main() {
+53 533 132 541 | function add(a, b) {
+53 357 507 365 | let WIDECODE18 = value001 + value002 + value003 + value004 + value005 + value006 + value007 + value008 + value009 +
+53 298 183 306 | let line001 = 1 // filler line 1
+53 291 183 298 | let line002 = 2 // filler line 2
+53 283 183 291 | let line003 = 3 // filler line 3
+53 276 183 283 | let line004 = 4 // filler line 4
+53 268 183 276 | let line005 = 5 // filler line 5
+53 261 183 268 | let line006 = 6 // filler line 6
+53 253 183 261 | let line007 = 7 // filler line 7
+53 246 183 253 | let line008 = 8 // filler line 8
+53 238 183 246 | let line009 = 9 // filler line 9
+53 231 191 238 | let line010 = 10 // filler line 10
+53 223 191 231 | let line011 = 11 // filler line 11
+53 216 191 223 | let line012 = 12 // filler line 12
+53 208 191 216 | let line013 = 13 // filler line 13
+53 201 191 208 | let line014 = 14 // filler line 14
+53 193 191 201 | let line015 = 15 // filler line 15
+53 186 191 193 | let line016 = 16 // filler line 16
+53 178 191 186 | let line017 = 17 // filler line 17
+53 171 191 178 | let line018 = 18 // filler line 18
+53 163 191 171 | let line019 = 19 // filler line 19
+53 156 191 163 | let line020 = 20 // filler line 20
+53 148 191 156 | let line021 = 21 // filler line 21
+53 141 191 148 | let line022 = 22 // filler line 22
+53 133 191 141 | let line023 = 23 // filler line 23
+53 125 191 133 | let line024 = 24 // filler line 24
+53 118 191 126 | let line025 = 25 // filler line 25
+53 110 191 118 | let line026 = 26 // filler line 26
+53 103 191 110 | let line027 = 27 // filler line 27
+53 95 191 103 | let line028 = 28 // filler line 28
+53 88 191 95 | let line029 = 29 // filler line 29
+53 80 191 88 | let line030 = 30 // filler line 30
+53 73 191 80 | let line031 = 31 // filler line 31
+53 65 191 73 | let line032 = 32 // filler line 32
+53 58 191 65 | let line033 = 33 // filler line 33
+53 50 191 58 | let line034 = 34 // filler line 34
+69 474 156 482 | println!("RUSTEND13");
+61 526 156 533 | return a + b; // JSEND11
+69 570 203 577 | return f"Hello, {name}" # PYEND09
+53 350 526 357 | value010 + value011 + value012 + value013 + value014 + value015 + value016 + value017 + value018 + value019 + value020 +
+53 342 526 350 | value021 + value022 + value023 + value024 + value025 + value026 + value027 + value028 + value029 + value030 + value031 +
+53 335 447 342 | value032 + value033 + value034 + value035 + value036 + value037 + value038 + value039; // WIDEEND19
+53 401 57 409 | {
+53 518 57 526 | }
+53 467 57 474 | }
+53 386 57 394 | }
 
 --- Page 2 ---
-let line035 = 35 // filler line 35
-let line036 = 36 // filler line 36
-let line037 = 37 // filler line 37
-let line038 = 38 // filler line 38
-let line039 = 39 // filler line 39
-let line040 = 40 // filler line 40
-let line041 = 41 // filler line 41
-let line042 = 42 // filler line 42
-let line043 = 43 // filler line 43
-let line044 = 44 // filler line 44
-let line045 = 45 // filler line 45
-let line046 = 46 // filler line 46
-let line047 = 47 // filler line 47
-let line048 = 48 // filler line 48
-let line049 = 49 // filler line 49
-let line050 = 50 // filler line 50
-let line051 = 51 // filler line 51
-let line052 = 52 // filler line 52
-let line053 = 53 // filler line 53
-let line054 = 54 // filler line 54
-let line055 = 55 // filler line 55
-let line056 = 56 // filler line 56
-let line057 = 57 // filler line 57
-let line058 = 58 // filler line 58
-let line059 = 59 // filler line 59
-let line060 = 60 // filler line 60
-let line061 = 61 // filler line 61
-let line062 = 62 // filler line 62
-let line063 = 63 // filler line 63
-let line064 = 64 // filler line 64
-let line065 = 65 // filler line 65
-let line066 = 66 // filler line 66
-let line067 = 67 // filler line 67
-let line068 = 68 // filler line 68
-let line069 = 69 // filler line 69
-let line070 = 70 // filler line 70
-let line071 = 71 // filler line 71
-let line072 = 72 // filler line 72
-let line073 = 73 // filler line 73
-let line074 = 74 // filler line 74
-let line075 = 75 // filler line 75
-let line076 = 76 // filler line 76
-let line077 = 77 // filler line 77
-let line078 = 78 // filler line 78
-let line079 = 79 // filler line 79
-let line080 = 80 // filler line 80
-let line081 = 81 // filler line 81
-let line082 = 82 // filler line 82
-let line083 = 83 // filler line 83
-let line084 = 84 // filler line 84
-let line085 = 85 // filler line 85
-let line086 = 86 // filler line 86
-let line087 = 87 // filler line 87
-let line088 = 88 // filler line 88
-let line089 = 89 // filler line 89
-let line090 = 90 // filler line 90
-let line091 = 91 // filler line 91
-let line092 = 92 // filler line 92
-let line093 = 93 // filler line 93
-let line094 = 94 // filler line 94
-let line095 = 95 // filler line 95
-let line096 = 96 // filler line 96
-let line097 = 97 // filler line 97
-let line098 = 98 // filler line 98
-let line099 = 99 // filler line 99
-let line100 = 100 // filler line 100
-let line101 = 101 // filler line 101
-let line102 = 102 // filler line 102
-let line103 = 103 // filler line 103
-let line104 = 104 // filler line 104
-let line105 = 105 // filler line 105
-let line106 = 106 // filler line 106
-let line107 = 107 // filler line 107
-let line108 = 108 // filler line 108
-let line109 = 109 // filler line 109
-let line110 = 110 // filler line 110
-let line111 = 111 // filler line 111
-let line112 = 112 // filler line 112
-let line113 = 113 // filler line 113
-let line114 = 114 // filler line 114
-let line115 = 115 // filler line 115
-let line116 = 116 // filler line 116
-let line117 = 117 // filler line 117
-let line118 = 118 // filler line 118
-let line119 = 119 // filler line 119
-let line120 = 120 // filler line 120
-let line121 = 121 // filler line 121
-let line122 = 122 // filler line 122
-let line123 = 123 // filler line 123
-let line124 = 124 // filler line 124
-let line125 = 125 // filler line 125
-let line126 = 126 // filler line 126
-let line127 = 127 // filler line 127
-let line128 = 128 // filler line 128
-let line129 = 129 // filler line 129
-let line130 = 130 // filler line 130
-let line131 = 131 // filler line 131
-let line132 = 132 // filler line 132
+53 783 191 790 | let line035 = 35 // filler line 35
+53 775 191 783 | let line036 = 36 // filler line 36
+53 768 191 775 | let line037 = 37 // filler line 37
+53 760 191 768 | let line038 = 38 // filler line 38
+53 753 191 760 | let line039 = 39 // filler line 39
+53 745 191 753 | let line040 = 40 // filler line 40
+53 738 191 745 | let line041 = 41 // filler line 41
+53 730 191 738 | let line042 = 42 // filler line 42
+53 723 191 730 | let line043 = 43 // filler line 43
+53 715 191 723 | let line044 = 44 // filler line 44
+53 708 191 715 | let line045 = 45 // filler line 45
+53 700 191 708 | let line046 = 46 // filler line 46
+53 693 191 700 | let line047 = 47 // filler line 47
+53 685 191 693 | let line048 = 48 // filler line 48
+53 678 191 685 | let line049 = 49 // filler line 49
+53 670 191 678 | let line050 = 50 // filler line 50
+53 663 191 670 | let line051 = 51 // filler line 51
+53 655 191 663 | let line052 = 52 // filler line 52
+53 648 191 655 | let line053 = 53 // filler line 53
+53 640 191 648 | let line054 = 54 // filler line 54
+53 632 191 640 | let line055 = 55 // filler line 55
+53 625 191 633 | let line056 = 56 // filler line 56
+53 617 191 625 | let line057 = 57 // filler line 57
+53 610 191 617 | let line058 = 58 // filler line 58
+53 602 191 610 | let line059 = 59 // filler line 59
+53 595 191 602 | let line060 = 60 // filler line 60
+53 587 191 595 | let line061 = 61 // filler line 61
+53 580 191 587 | let line062 = 62 // filler line 62
+53 572 191 580 | let line063 = 63 // filler line 63
+53 565 191 572 | let line064 = 64 // filler line 64
+53 557 191 565 | let line065 = 65 // filler line 65
+53 550 191 557 | let line066 = 66 // filler line 66
+53 542 191 550 | let line067 = 67 // filler line 67
+53 535 191 542 | let line068 = 68 // filler line 68
+53 527 191 535 | let line069 = 69 // filler line 69
+53 520 191 527 | let line070 = 70 // filler line 70
+53 512 191 520 | let line071 = 71 // filler line 71
+53 505 191 512 | let line072 = 72 // filler line 72
+53 497 191 505 | let line073 = 73 // filler line 73
+53 490 191 497 | let line074 = 74 // filler line 74
+53 482 191 490 | let line075 = 75 // filler line 75
+53 475 191 482 | let line076 = 76 // filler line 76
+53 467 191 475 | let line077 = 77 // filler line 77
+53 460 191 467 | let line078 = 78 // filler line 78
+53 452 191 460 | let line079 = 79 // filler line 79
+53 445 191 452 | let line080 = 80 // filler line 80
+53 437 191 445 | let line081 = 81 // filler line 81
+53 430 191 437 | let line082 = 82 // filler line 82
+53 422 191 430 | let line083 = 83 // filler line 83
+53 415 191 422 | let line084 = 84 // filler line 84
+53 407 191 415 | let line085 = 85 // filler line 85
+53 400 191 407 | let line086 = 86 // filler line 86
+53 392 191 400 | let line087 = 87 // filler line 87
+53 385 191 392 | let line088 = 88 // filler line 88
+53 377 191 385 | let line089 = 89 // filler line 89
+53 370 191 377 | let line090 = 90 // filler line 90
+53 362 191 370 | let line091 = 91 // filler line 91
+53 355 191 362 | let line092 = 92 // filler line 92
+53 347 191 355 | let line093 = 93 // filler line 93
+53 340 191 347 | let line094 = 94 // filler line 94
+53 332 191 340 | let line095 = 95 // filler line 95
+53 325 191 332 | let line096 = 96 // filler line 96
+53 317 191 325 | let line097 = 97 // filler line 97
+53 310 191 317 | let line098 = 98 // filler line 98
+53 302 191 310 | let line099 = 99 // filler line 99
+53 295 199 302 | let line100 = 100 // filler line 100
+53 287 199 295 | let line101 = 101 // filler line 101
+53 280 199 287 | let line102 = 102 // filler line 102
+53 272 199 280 | let line103 = 103 // filler line 103
+53 265 199 272 | let line104 = 104 // filler line 104
+53 257 199 265 | let line105 = 105 // filler line 105
+53 250 199 257 | let line106 = 106 // filler line 106
+53 242 199 250 | let line107 = 107 // filler line 107
+53 235 199 242 | let line108 = 108 // filler line 108
+53 227 199 235 | let line109 = 109 // filler line 109
+53 220 199 227 | let line110 = 110 // filler line 110
+53 212 199 220 | let line111 = 111 // filler line 111
+53 205 199 212 | let line112 = 112 // filler line 112
+53 197 199 205 | let line113 = 113 // filler line 113
+53 190 199 197 | let line114 = 114 // filler line 114
+53 182 199 190 | let line115 = 115 // filler line 115
+53 175 199 182 | let line116 = 116 // filler line 116
+53 167 199 175 | let line117 = 117 // filler line 117
+53 160 199 167 | let line118 = 118 // filler line 118
+53 152 199 160 | let line119 = 119 // filler line 119
+53 145 199 152 | let line120 = 120 // filler line 120
+53 137 199 145 | let line121 = 121 // filler line 121
+53 130 199 137 | let line122 = 122 // filler line 122
+53 122 199 130 | let line123 = 123 // filler line 123
+53 114 199 122 | let line124 = 124 // filler line 124
+53 107 199 114 | let line125 = 125 // filler line 125
+53 99 199 107 | let line126 = 126 // filler line 126
+53 92 199 99 | let line127 = 127 // filler line 127
+53 84 199 92 | let line128 = 128 // filler line 128
+53 77 199 84 | let line129 = 129 // filler line 129
+53 69 199 77 | let line130 = 130 // filler line 130
+53 62 199 69 | let line131 = 131 // filler line 131
+53 54 199 62 | let line132 = 132 // filler line 132
 
 --- Page 3 ---
-let line133 = 133 // filler line 133
-let line134 = 134 // filler line 134
-let line135 = 135 // filler line 135
-let line136 = 136 // filler line 136
-let line137 = 137 // filler line 137
-let line138 = 138 // filler line 138
-let line139 = 139 // filler line 139
-let line140 = 140 // filler line 140
-let line141 = 141 // filler line 141
-let line142 = 142 // filler line 142
-let line143 = 143 // filler line 143
-let line144 = 144 // filler line 144
-let line145 = 145 // filler line 145
-let line146 = 146 // filler line 146
-let line147 = 147 // filler line 147
-let line148 = 148 // filler line 148
-let line149 = 149 // filler line 149
-let line150 = 150 // filler line 150
-let line151 = 151 // filler line 151
-let line152 = 152 // filler line 152
-let line153 = 153 // filler line 153
-let line154 = 154 // filler line 154
-let line155 = 155 // filler line 155
-let line156 = 156 // filler line 156
-let line157 = 157 // filler line 157
-let line158 = 158 // filler line 158
-let line159 = 159 // filler line 159
-let line160 = 160 // filler line 160
-// TALLCODEEND21
-Paragraph before wide table WIDETBLHEAD22.
-WCol01 WCol02 WCol03 WCol04 WCol05 WCol06 WCol07 WCol08 WCol09 WCol10 WCol11 WCol12
-wv01A23 wv02 wv03 wv04 wv05 wv06 wv07 wv08 wv09 wv10 wv11 wv12
-Paragraph before long table LONGTBLHEAD24.
-Idx Value
-1 row001 LONGTBLFIRST25
-2 row002
-3 row003
-4 row004
-5 row005
-6 row006
-7 row007
-8 row008
-9 row009
-10 row010
-11 row011
-12 row012
-13 row013
-14 row014
-15 row015
-16 row016
-17 row017
-18 row018
-19 row019
-20 row020
-21 row021
-22 row022
+53 572 116 580 | // TALLCODEEND21
+52 441 167 450 | 1 row001 LONGTBLFIRST25
+52 274 60 283 | 10
+52 256 59 265 | 11
+52 237 60 246 | 12
+52 219 60 228 | 13
+52 200 60 209 | 14
+52 182 60 191 | 15
+52 163 60 172 | 16
+52 145 60 154 | 17
+52 126 60 135 | 18
+52 108 60 117 | 19
+52 423 103 431 | 2 row002
+52 89 61 98 | 20
+52 71 60 80 | 21
+52 52 61 61 | 22
+52 404 103 413 | 3 row003
+52 386 103 394 | 4 row004
+52 367 103 376 | 5 row005
+52 348 103 357 | 6 row006
+52 330 102 339 | 7 row007
+52 311 103 320 | 8 row008
+52 293 103 302 | 9 row009
+52 460 63 468 | Idx
+45 483 208 491 | Paragraph before long table LONGTBLHEAD24.
+45 547 207 556 | Paragraph before wide table WIDETBLHEAD22.
+112 460 132 468 | Value
+54 524 82 533 | WCol01
+97 524 126 533 | WCol02
+139 524 168 533 | WCol03
+182 524 211 533 | WCol04
+224 524 253 533 | WCol05
+267 524 296 533 | WCol06
+309 524 338 533 | WCol07
+351 524 381 533 | WCol08
+394 524 423 533 | WCol09
+437 524 465 533 | WCol10
+478 524 505 533 | WCol11
+518 524 546 533 | WCol12
+53 783 199 790 | let line133 = 133 // filler line 133
+53 775 199 783 | let line134 = 134 // filler line 134
+53 768 199 775 | let line135 = 135 // filler line 135
+53 760 199 768 | let line136 = 136 // filler line 136
+53 753 199 760 | let line137 = 137 // filler line 137
+53 745 199 753 | let line138 = 138 // filler line 138
+53 738 199 745 | let line139 = 139 // filler line 139
+53 730 199 738 | let line140 = 140 // filler line 140
+53 723 199 730 | let line141 = 141 // filler line 141
+53 715 199 723 | let line142 = 142 // filler line 142
+53 708 199 715 | let line143 = 143 // filler line 143
+53 700 199 708 | let line144 = 144 // filler line 144
+53 693 199 700 | let line145 = 145 // filler line 145
+53 685 199 693 | let line146 = 146 // filler line 146
+53 678 199 685 | let line147 = 147 // filler line 147
+53 670 199 678 | let line148 = 148 // filler line 148
+53 663 199 670 | let line149 = 149 // filler line 149
+53 655 199 663 | let line150 = 150 // filler line 150
+53 648 199 655 | let line151 = 151 // filler line 151
+53 640 199 648 | let line152 = 152 // filler line 152
+53 632 199 640 | let line153 = 153 // filler line 153
+53 625 199 633 | let line154 = 154 // filler line 154
+53 617 199 625 | let line155 = 155 // filler line 155
+53 610 199 617 | let line156 = 156 // filler line 156
+53 602 199 610 | let line157 = 157 // filler line 157
+53 595 199 602 | let line158 = 158 // filler line 158
+53 587 199 595 | let line159 = 159 // filler line 159
+53 580 199 587 | let line160 = 160 // filler line 160
+77 274 102 283 | row010
+77 256 101 265 | row011
+77 237 102 246 | row012
+77 219 102 228 | row013
+77 200 102 209 | row014
+77 182 102 191 | row015
+77 163 102 172 | row016
+77 145 101 154 | row017
+77 126 102 135 | row018
+77 108 102 117 | row019
+77 89 103 98 | row020
+77 71 102 80 | row021
+77 52 103 61 | row022
+52 506 84 514 | wv01A23
+97 506 116 514 | wv02
+139 506 158 514 | wv03
+182 506 201 514 | wv04
+224 506 243 514 | wv05
+267 506 286 514 | wv06
+309 506 328 514 | wv07
+351 506 370 514 | wv08
+394 506 413 514 | wv09
+437 506 454 514 | wv10
+478 506 494 514 | wv11
+518 506 536 514 | wv12
 
 --- Page 4 ---
-23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53 54 55 56 57 58 59 60 row023
-row024
-row025
-row026
-row027
-row028
-row029
-row030
-row031
-row032
-row033
-row034
-row035
-row036
-row037
-row038
-row039
-row040
-row041
-row042
-row043
-row044
-row045
-row046
-row047
-row048
-row049
-row050
-row051
-row052
-row053
-row054
-row055
-row056
-row057
-row058
-row059
-row060 LONGTBLLAST99
-Paragraph before nested block quotes QUOTEHEAD26.
+52 773 61 782 | 23
+52 755 61 764 | 24
+52 736 61 745 | 25
+52 718 61 727 | 26
+52 699 61 708 | 27
+52 681 61 690 | 28
+52 662 61 671 | 29
+52 644 61 653 | 30
+52 625 60 634 | 31
+52 607 61 616 | 32
+52 588 61 597 | 33
+52 570 61 579 | 34
+52 551 61 560 | 35
+52 533 61 542 | 36
+52 514 61 523 | 37
+52 496 61 504 | 38
+52 477 61 486 | 39
+52 459 61 467 | 40
+52 440 60 449 | 41
+52 422 61 430 | 42
+52 403 61 412 | 43
+52 385 62 393 | 44
+52 366 61 375 | 45
+52 347 62 356 | 46
+52 329 61 338 | 47
+52 310 62 319 | 48
+52 292 62 301 | 49
+52 273 61 282 | 50
+52 255 60 264 | 51
+52 236 61 245 | 52
+52 218 61 227 | 53
+52 199 61 208 | 54
+52 181 61 190 | 55
+52 162 61 171 | 56
+52 144 61 153 | 57
+52 125 61 134 | 58
+52 107 61 116 | 59
+52 88 61 97 | 60
+45 65 235 74 | Paragraph before nested block quotes QUOTEHEAD26.
+77 773 103 782 | row023
+77 755 103 764 | row024
+77 736 103 745 | row025
+77 718 103 727 | row026
+77 699 102 708 | row027
+77 681 103 690 | row028
+77 662 103 671 | row029
+77 644 103 653 | row030
+77 625 102 634 | row031
+77 607 103 616 | row032
+77 588 103 597 | row033
+77 570 103 579 | row034
+77 551 103 560 | row035
+77 533 103 542 | row036
+77 514 103 523 | row037
+77 496 103 504 | row038
+77 477 103 486 | row039
+77 459 103 467 | row040
+77 440 102 449 | row041
+77 422 103 430 | row042
+77 403 103 412 | row043
+77 385 103 393 | row044
+77 366 103 375 | row045
+77 347 103 356 | row046
+77 329 103 338 | row047
+77 310 103 319 | row048
+77 292 103 301 | row049
+77 273 103 282 | row050
+77 255 102 264 | row051
+77 236 103 245 | row052
+77 218 103 227 | row053
+77 199 103 208 | row054
+77 181 103 190 | row055
+77 162 103 171 | row056
+77 144 102 153 | row057
+77 125 103 134 | row058
+77 107 103 116 | row059
+77 88 167 97 | row060 LONGTBLLAST99
 
 --- Page 5 ---
-Level one quote QUOTE1MARK27.
-Level two quote QUOTE2MARK28.
-Level three quote QUOTE3MARK29.
-Paragraph before task lists TASKHEAD30.
-Done task TASKDONE31
-Nested open task TASKNESTED32
-Nested done task TASKNESTEDDONE33
-Open task TASKOPEN34
-Paragraph before inline math MATHINLINEBEFORE35. Inline Paragraph before block math MATHBLOCKBEFORE37.
-a +
-2 b=
-2 c2
-MATHINLINEAFTER36 in a sentence.
-∑n
-i=1
-n(n + 1)
-i=
-2
-Paragraph after block math MATHBLOCKAFTER38.
-Paragraph before horizontal rule HRBEFORE39.
-Paragraph after horizontal rule HRAFTER40.
-Last paragraph marker BLOCKSENDMARK99.
+310 589 315 600 | 2
+256 641 288 653 | 2 b=
+275 641 297 653 | 2 c2
+58 701 142 710 | Done task TASKDONE31
+45 488 201 497 | Last paragraph marker BLOCKSENDMARK99.
+54 779 170 788 | Level one quote QUOTE1MARK27.
+72 740 196 749 | Level three quote QUOTE3MARK29.
+63 760 181 769 | Level two quote QUOTE2MARK28.
+300 642 426 651 | MATHINLINEAFTER36 in a sentence.
+69 675 208 684 | Nested done task TASKNESTEDDONE33
+69 689 187 698 | Nested open task TASKNESTED32
+58 661 143 670 | Open task TASKOPEN34
+45 567 220 576 | Paragraph after block math MATHBLOCKAFTER38.
+45 508 196 516 | Paragraph after horizontal rule HRAFTER40.
+45 622 230 631 | Paragraph before block math MATHBLOCKBEFORE37.
+45 547 207 556 | Paragraph before horizontal rule HRBEFORE39.
+45 642 249 651 | Paragraph before inline math MATHINLINEBEFORE35. Inline
+45 721 188 730 | Paragraph before task lists TASKHEAD30.
+251 641 269 652 | a +
+279 595 292 606 | i=
+266 585 276 593 | i=1
+296 601 329 612 | n(n + 1)
+265 590 274 613 | ∑n

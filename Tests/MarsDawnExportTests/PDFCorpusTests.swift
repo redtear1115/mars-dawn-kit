@@ -127,11 +127,17 @@ struct PDFCorpus {
 
     nonisolated static var goldenFixtureNames: [String] { folderFixtureNames + ["long"] }
 
-    /// Runs only under `MARSDAWN_PDF_GOLDENS=1` (the `pdf-goldens` CI job). Recording is a
-    /// separate opt-in (`MARSDAWN_UPDATE_GOLDENS=1`); otherwise a mismatch fails the test.
-    @Test(arguments: PDFCorpus.goldenFixtureNames)
+    /// Runs only under `MARSDAWN_PDF_GOLDENS=1` (the `pdf-goldens` CI job); without it Swift Testing
+    /// reports each case as skipped, not passed. Recording is a separate opt-in
+    /// (`MARSDAWN_UPDATE_GOLDENS=1`); otherwise a mismatch fails the test.
+    @Test(
+        .enabled(
+            if: ProcessInfo.processInfo.environment["MARSDAWN_PDF_GOLDENS"] == "1",
+            "the goldens are per OS build: set MARSDAWN_PDF_GOLDENS=1 to compare (the pdf-goldens CI job does)"
+        ),
+        arguments: PDFCorpus.goldenFixtureNames
+    )
     func golden(_ name: String) async throws {
-        guard ProcessInfo.processInfo.environment["MARSDAWN_PDF_GOLDENS"] == "1" else { return }
         let fixture = name == "long" ? Self.makeLongFixture() : try CorpusLoader.load(name)
         defer { fixture.cleanUp() }
         try await Self.assertGolden(fixture)
@@ -143,11 +149,13 @@ struct PDFCorpus {
             allowRemoteImages: fixture.expectation.allowRemoteImages, layout: fixture.expectation.layout,
             displayName: fixture.expectation.displayName, measureInk: false
         )
+        let document = try #require(PDFDocument(data: outcome.data))
+        let current = GoldenStore.pageLines(of: document)
         let currentHeader = GoldenHeader.current(paper: "a4")
         let url = GoldenStore.url(for: fixture.name)
 
         if ProcessInfo.processInfo.environment["MARSDAWN_UPDATE_GOLDENS"] == "1" {
-            let content = GoldenStore.render(header: currentHeader, pageTexts: outcome.pageTexts)
+            let content = GoldenStore.render(header: currentHeader, pages: current)
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
             try content.write(to: url, atomically: true, encoding: .utf8)
             return
@@ -172,19 +180,9 @@ struct PDFCorpus {
             return
         }
 
-        let expectedContent = GoldenStore.render(header: recordedHeader, pageTexts: outcome.pageTexts)
-        guard expectedContent != recorded else { return }
-
-        let recordedPages = GoldenStore.pages(from: recorded)
-        let currentPages = outcome.pageTexts.map(GoldenStore.normalize)
-        var diffs: [String] = []
-        if recordedPages.count != currentPages.count {
-            diffs.append("page count \(recordedPages.count) -> \(currentPages.count)")
-        }
-        for index in 0..<min(recordedPages.count, currentPages.count) where recordedPages[index] != currentPages[index] {
-            diffs.append("page \(index + 1) differs")
-        }
-        Issue.record("\(fixture.name): golden mismatch: \(diffs.isEmpty ? "text differs" : diffs.joined(separator: ", "))")
+        let diffs = GoldenStore.differences(recorded: GoldenStore.pages(from: recorded), current: current)
+        guard !diffs.isEmpty else { return }
+        Issue.record("\(fixture.name): golden mismatch: \(diffs.prefix(12).joined(separator: "; "))\(diffs.count > 12 ? "; and \(diffs.count - 12) more" : "")")
     }
 
     // MARK: Shared assertion pipeline (tiers 1, 2, 3, 5)
@@ -552,7 +550,39 @@ struct GoldenHeader: Equatable {
     }
 }
 
+/// One line of a page as PDFKit selects it: its text and its box in PDF points (origin bottom
+/// left), rounded to whole points.
+struct GoldenLine: Equatable {
+    var text: String
+    var minX: Int, minY: Int, maxX: Int, maxY: Int
+
+    var coordinates: [Int] { [minX, minY, maxX, maxY] }
+    var render: String { "\(minX) \(minY) \(maxX) \(maxY) | \(text)" }
+
+    static func parse(_ line: String) -> GoldenLine? {
+        guard let separator = line.range(of: " | ") else { return nil }
+        let numbers = line[..<separator.lowerBound].split(separator: " ").compactMap { Int($0) }
+        guard numbers.count == 4 else { return nil }
+        return GoldenLine(
+            text: String(line[separator.upperBound...]),
+            minX: numbers[0], minY: numbers[1], maxX: numbers[2], maxY: numbers[3]
+        )
+    }
+}
+
+/// The golden is a page's text lines with their boxes, not `PDFPage.string`: the string's order
+/// is PDFKit's to choose (a KaTeX fraction's "1" came before or after its neighbours across two
+/// runs of the same build, mars-dawn-kit audit D F6), and it holds no position at all.
+///
+/// - Each page is a multiset of lines, written sorted by text, then top to bottom, then left to
+///   right; extraction order is not recorded.
+/// - A box is rounded to whole points, y up from the bottom of the page.
+/// - Comparing is exact on text and on the number of times each text occurs, and
+///   `coordinateTolerance` whole points on each of the four coordinates. Rounding alone moves a
+///   coordinate by one, so a box that sits on a .5 may flip between runs; two points is a move.
 enum GoldenStore {
+    static let coordinateTolerance = 1
+
     static func url(for name: String) -> URL {
         URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()  // MarsDawnExportTests
@@ -560,36 +590,90 @@ enum GoldenStore {
             .appendingPathComponent("\(name).txt")
     }
 
-    /// NFKC composition only — unlike the marker-matching `corpusNormalize`, whitespace and
-    /// line breaks are kept, so the file stays readable and a PR diff shows the changed page.
+    /// NFKC composition only; whitespace inside a line is kept, so the file stays readable and
+    /// a PR diff shows the changed lines.
     static func normalize(_ text: String) -> String {
         text.precomposedStringWithCompatibilityMapping
     }
 
-    static func render(header: GoldenHeader, pageTexts: [String]) -> String {
-        var lines = [header.line, "Page count: \(pageTexts.count)"]
-        for (index, text) in pageTexts.enumerated() {
+    /// Every page's lines, in the golden's order.
+    static func pageLines(of document: PDFDocument) -> [[GoldenLine]] {
+        (0..<document.pageCount).map { index in
+            guard let page = document.page(at: index) else { return [] }
+            let lines = page.selection(for: page.bounds(for: .mediaBox))?.selectionsByLine() ?? []
+            return sorted(lines.compactMap { selection -> GoldenLine? in
+                let box = selection.bounds(for: page)
+                let text = normalize(selection.string ?? "")
+                    .components(separatedBy: .newlines).joined(separator: " ")
+                    .trimmingCharacters(in: .whitespaces)
+                guard !box.isEmpty, !text.isEmpty else { return nil }
+                return GoldenLine(
+                    text: text, minX: Int(box.minX.rounded()), minY: Int(box.minY.rounded()),
+                    maxX: Int(box.maxX.rounded()), maxY: Int(box.maxY.rounded())
+                )
+            })
+        }
+    }
+
+    static func sorted(_ lines: [GoldenLine]) -> [GoldenLine] {
+        lines.sorted { a, b in
+            if a.text != b.text { return a.text.unicodeScalars.lexicographicallyPrecedes(b.text.unicodeScalars) }
+            if a.maxY != b.maxY { return a.maxY > b.maxY }
+            return a.minX < b.minX
+        }
+    }
+
+    static func render(header: GoldenHeader, pages: [[GoldenLine]]) -> String {
+        var lines = [
+            header.line, "Page count: \(pages.count)",
+            "Lines: minX minY maxX maxY | text, whole points from the page's bottom left, sorted by text; "
+                + "compared within \(coordinateTolerance) pt",
+        ]
+        for (index, page) in pages.enumerated() {
             lines.append("")
             lines.append("--- Page \(index + 1) ---")
-            lines.append(normalize(text))
+            lines.append(contentsOf: page.map(\.render))
         }
         return lines.joined(separator: "\n") + "\n"
     }
 
-    /// Splits a rendered golden's body back into per-page text, for a page-level diff message.
-    static func pages(from content: String) -> [String] {
-        var pages: [String] = []
-        var current: [String]?
-        for line in content.components(separatedBy: "\n").dropFirst(2) {
+    /// Splits a rendered golden's body back into per-page lines.
+    static func pages(from content: String) -> [[GoldenLine]] {
+        var pages: [[GoldenLine]] = []
+        var current: [GoldenLine]?
+        for line in content.components(separatedBy: "\n").dropFirst(3) {
             if line.hasPrefix("--- Page ") {
-                if let current { pages.append(current.joined(separator: "\n")) }
+                if let current { pages.append(current) }
                 current = []
-            } else {
-                current?.append(line)
+            } else if let parsed = GoldenLine.parse(line) {
+                current?.append(parsed)
             }
         }
-        if let current { pages.append(current.joined(separator: "\n")) }
-        return pages.map { $0.trimmingCharacters(in: .newlines) }
+        if let current { pages.append(current) }
+        return pages
+    }
+
+    /// What differs, in words: the page count, lines present on one side only, and lines that
+    /// moved by more than `coordinateTolerance`. Empty when the pages match.
+    static func differences(recorded: [[GoldenLine]], current: [[GoldenLine]]) -> [String] {
+        var found: [String] = []
+        if recorded.count != current.count { found.append("page count \(recorded.count) -> \(current.count)") }
+        for page in 0..<min(recorded.count, current.count) {
+            let before = Dictionary(grouping: recorded[page], by: \.text)
+            let after = Dictionary(grouping: current[page], by: \.text)
+            for text in Set(before.keys).union(after.keys).sorted() {
+                let was = sorted(before[text] ?? []), now = sorted(after[text] ?? [])
+                if was.count != now.count {
+                    found.append("page \(page + 1): \"\(text)\" \(was.count)x -> \(now.count)x")
+                    continue
+                }
+                for (old, new) in zip(was, now)
+                where zip(old.coordinates, new.coordinates).contains(where: { abs($0 - $1) > coordinateTolerance }) {
+                    found.append("page \(page + 1): \"\(text)\" moved \(old.coordinates) -> \(new.coordinates)")
+                }
+            }
+        }
+        return found
     }
 }
 #endif

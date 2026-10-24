@@ -134,6 +134,49 @@ enum HandoutProbe {
         return found
     }
 
+    /// The box of a page's footer line (PDF points): the lowest line whose text reads like a footer.
+    static func footerBox(_ page: PDFPage) -> CGRect? {
+        let lines = page.selection(for: page.bounds(for: .mediaBox))?.selectionsByLine() ?? []
+        return lines
+            .filter { ($0.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines).wholeMatch(of: footerPattern) != nil }
+            .map { $0.bounds(for: page) }
+            .min { $0.minY < $1.minY }
+    }
+
+    /// Where the notes column's rule is drawn: 12 pt right of the body's edge (read here from the
+    /// margins, not from `HandoutLayout.Footers`, whose position this checks).
+    static func ruleX(paperWidth width: CGFloat) -> CGFloat { bodyMaxX(paperWidth: width) + 12 }
+
+    /// The share of rows between the top and bottom margins that have a painted pixel within
+    /// 1.5 pt of the rule's x on page `index`, rendered at 2x on white: 1 for a rule that runs the
+    /// whole height, 0 where nothing is drawn there.
+    static func ruleCoverage(_ document: PDFDocument, page index: Int) -> Double {
+        guard let page = document.page(at: index) else { return 0 }
+        let box = page.bounds(for: .mediaBox)
+        let scale: CGFloat = 2
+        let width = Int(box.width * scale), height = Int(box.height * scale)
+        guard let context = CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return 0 }
+        context.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        context.scaleBy(x: scale, y: scale)
+        page.draw(with: .mediaBox, to: context)
+        guard let pixels = context.data?.assumingMemoryBound(to: UInt8.self) else { return 0 }
+        let x = ruleX(paperWidth: box.width)
+        let columns = Int((x - 1.5) * scale)...Int((x + 1.5) * scale)
+        let margins = ExportLayout.handout.bodyMargins
+        let rows = Int(margins.top * scale)..<(height - Int(margins.bottom * scale))
+        let painted = rows.filter { row in
+            columns.contains { column in
+                let offset = (row * width + column) * 4
+                return pixels[offset] < 245 || pixels[offset + 1] < 245 || pixels[offset + 2] < 245
+            }
+        }
+        return Double(painted.count) / Double(rows.count)
+    }
+
     /// How many font dictionaries name each base font (subset tag removed).
     static func fontCounts(_ data: Data) -> [String: Int] {
         ManualProbe.fontDictionaries(data).reduce(into: [:]) { $0[$1.baseFont, default: 0] += 1 }
