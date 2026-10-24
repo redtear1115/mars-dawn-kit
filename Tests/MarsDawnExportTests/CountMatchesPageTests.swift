@@ -113,13 +113,32 @@ struct CountMatchesPageTests {
         "\\:::info\nescaped words\n:::\n",
         "&#58;&#58;&#58;info\nentity words\n:::\n",
         ":::info\nopen words\n\\:::\n",
+        // A marker line whose title holds a footnote reference is text on the page, not a container
+        // (kit #221), and the count follows (kit #223). The last is the control.
+        ":::info Title[^1]\nbody words\n:::\n\n[^1]: note words\n",
+        ":::spoiler Title[^1]\nbody words\n:::\n\n[^1]: note words\n",
+        ":::info Title words\nbody words\n:::\n",
     ]
 
     @Test(arguments: probes)
     func theCountMatchesThePage(markdown: String) async throws {
         let page = try await pageWords(markdown)
         #expect(page > 0, "precondition: the page shows words")
-        #expect(TextStatistics(markdownBody: markdown).words == page, "counted vs shown")
+        let counted = TextStatistics(markdownBody: markdown).words
+        #expect(counted == page, "counted vs shown: \(counted) vs \(page)")
+    }
+
+    /// A title with math and a footnote reference (kit #223). Math alone already differs from the page
+    /// by a constant in this harness (the page lays the expression out; the counter reads its TeX), so
+    /// the probe is the footnote's own part: what the reference and its note add must be what the page
+    /// adds.
+    @Test func aFootnoteOnAMathTitleAddsWhatThePageAdds() async throws {
+        let plain = ":::warning Title $x^2$ and\nbody words\n:::\n"
+        let noted = ":::warning Title $x^2$ and[^1]\nbody words\n:::\n\n[^1]: note words\n"
+        let page = try await pageWords(noted) - pageWords(plain)
+        let counted = TextStatistics(markdownBody: noted).words - TextStatistics(markdownBody: plain).words
+        #expect(page > 0, "precondition: the note shows words")
+        #expect(counted == page, "footnote adds, counted vs shown: \(counted) vs \(page)")
     }
 
     /// An opened spoiler adds exactly its body's words to the closed one's count, on the page.

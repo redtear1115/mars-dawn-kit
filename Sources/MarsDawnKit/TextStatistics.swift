@@ -50,7 +50,7 @@ public struct TextStatistics: Sendable, Equatable {
     public init(markdownBody: String) {
         var generator = SystemRandomNumberGenerator()
         let footnotes = FootnoteExtractor.extract(from: markdownBody, using: &generator, placeholders: false)
-        guard let body = Self.readableText(footnotes.markdown) else {
+        guard let body = Self.readableText(footnotes.markdown, textLines: Self.footnoteMarkerLines(in: markdownBody)) else {
             self.init(readableText: markdownBody, sourceLines: markdownBody)
             return
         }
@@ -59,11 +59,12 @@ public struct TextStatistics: Sendable, Equatable {
     }
 
     /// What a page shows of `markdown`, or nil when the parsing worker refuses it.
-    private static func readableText(_ markdown: String) -> String? {
+    /// `textLines`: lines of `markdown` the page leaves as text although they read as a marker.
+    private static func readableText(_ markdown: String, textLines: Set<Int> = []) -> String? {
         MarkdownParsing.withDocument(markdown) { outcome -> String? in
             guard case .document(let document) = outcome else { return nil }
             let containers = Callouts.mayContainContainers(markdown)
-            var visitor = ReadableTextVisitor(containers: containers ? Callouts.Source(markdown, mathLines: mathMarkerLines(in: markdown)) : nil)
+            var visitor = ReadableTextVisitor(containers: containers ? Callouts.Source(markdown, mathLines: mathMarkerLines(in: markdown).union(textLines)) : nil)
             visitor.visit(document)
             return visitor.output
         }
@@ -80,6 +81,23 @@ public struct TextStatistics: Sendable, Equatable {
         let lines = MathExtractor.extract(from: markdown).markdown
             .split(omittingEmptySubsequences: false, whereSeparator: { $0 == "\n" || $0 == "\r\n" || $0 == "\r" })
         let placeholder = Character(MathExtractor.placeholderStart)
+        return Set(candidates.map(\.offset).filter { $0 < lines.count && lines[$0].contains(placeholder) }.map { $0 + 1 })
+    }
+
+    /// The lines of `markdown` where a `:::` marker line holds a footnote reference (#223). The
+    /// renderer leaves a reference as a placeholder in the title, and a title with one in it is not a
+    /// marker; this counter removes references before it reads, so it asks the extractor what the
+    /// renderer's source holds. Looked for only when the text has a `:::` and a `[^` (byte scans),
+    /// and then only on lines with both, as the extraction costs a parse.
+    private static func footnoteMarkerLines(in markdown: String) -> Set<Int> {
+        // One byte scan each, before any split: most documents have no `:::` or no reference.
+        guard Callouts.mayContainContainers(markdown), markdown.utf8.contains(UInt8(ascii: "^")), markdown.contains("[^") else { return [] }
+        let candidates = markdown.split(omittingEmptySubsequences: false, whereSeparator: { $0 == "\n" || $0 == "\r\n" || $0 == "\r" })
+            .enumerated().filter { $0.element.contains(":::") && $0.element.contains("[^") }
+        guard !candidates.isEmpty else { return [] }
+        let lines = FootnoteExtractor.extract(from: markdown).markdown
+            .split(omittingEmptySubsequences: false, whereSeparator: { $0 == "\n" || $0 == "\r\n" || $0 == "\r" })
+        let placeholder = Character(FootnoteExtractor.placeholderStart)
         return Set(candidates.map(\.offset).filter { $0 < lines.count && lines[$0].contains(placeholder) }.map { $0 + 1 })
     }
 
