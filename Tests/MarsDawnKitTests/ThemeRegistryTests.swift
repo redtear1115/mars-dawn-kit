@@ -373,6 +373,78 @@ struct ThemeRegistryFileTests {
         #expect(scan.dropped == ["t200": .overLimit], "the one over the limit is ignored and recorded for the log line")
         #expect(!registry.snapshot.variablesCSS.contains(#""t200""#))
     }
+
+    /// #138 / PR #220 audit rule: a limit is pinned to its literal, never only to its own constant.
+    @Test func theScanAndInstallCapsAreTheirPinnedNumbers() {
+        #expect(ThemeRegistry.maxScannedFolders == 400)
+        #expect(ThemeRegistry.maxInstalled == 200)
+    }
+
+    /// #138: only the first `maxScannedFolders` (400) candidate folders, in byte order of name, are
+    /// read; the rest are recorded as `.overFolderLimit` without being opened, while valid themes
+    /// inside the cap still load up to `maxInstalled` (200). The overflow folders here are byte-for-
+    /// byte identical to the within-cap empty folders dropped `.unreadable`, so the different drop
+    /// reason is the proof they were never read.
+    @Test func foldersPastTheScanCapAreRecordedUnreadWhileThoseInsideItLoadUpToTheInstallCap() throws {
+        let dir = try InstalledThemes()
+        // 200 valid themes, named to sort first (digits and `a` precede `z` in byte order).
+        let validIDs = (0..<200).map { String(format: "a%03d", $0) }
+        for id in validIDs { try dir.add(id, InstalledThemes.theme(id)) }
+        // 205 empty, unreadable folders that all sort after the valid ones: 200 fall inside the
+        // scan cap (slots 201...400) and 5 fall past it.
+        let emptyIDs = (0..<205).map { String(format: "z%03d", $0) }
+        for id in emptyIDs { try FileManager.default.createDirectory(at: dir.folder(id), withIntermediateDirectories: true) }
+
+        let scan = dir.scan()
+        // The 200 valid themes, all inside the cap, load in byte order up to `maxInstalled`.
+        #expect(scan.installed.map(\.id) == validIDs)
+        #expect(scan.installed.count == 200)
+        #expect(scan.dropped.values.filter { $0 == .overLimit }.isEmpty, "the install cap wasn't the one reached")
+        // Slots 201...400 are the first 200 empty folders: they were read, and found unreadable.
+        #expect(scan.dropped["z000"] == .unreadable)
+        #expect(scan.dropped["z199"] == .unreadable)
+        #expect(scan.dropped.values.filter { $0 == .unreadable }.count == 200)
+        // The last 5 empty folders fall past the scan cap: recorded, never opened.
+        for id in emptyIDs.suffix(5) { #expect(scan.dropped[id] == .overFolderLimit, "\(id)") }
+        #expect(scan.dropped.values.filter { $0 == .overFolderLimit }.count == 5)
+        #expect(scan.dropped.count == 205)
+    }
+
+    /// #138: the 401st folder isn't opened at all -- its `theme.json` is a FIFO, which `scan` drops
+    /// as `.unreadable` the moment it's stat'd (see `aFIFOOrAnOversizedFileIsDroppedWithoutBlocking`).
+    /// Here it's `.overFolderLimit` instead, and the 402nd folder is a valid theme that still
+    /// doesn't load -- both proofs that nothing past the cap was touched.
+    @Test func the401stFolderIsNeverOpenedEvenWithAFIFOOrAValidThemePastTheCap() throws {
+        let dir = try InstalledThemes()
+        // 400 empty folders sorting first (t000...t399), filling the whole scan cap.
+        for i in 0..<400 { try FileManager.default.createDirectory(at: dir.folder(String(format: "t%03d", i)), withIntermediateDirectories: true) }
+        // 401st folder: a FIFO theme.json, which must never be opened.
+        let fifoDir = dir.folder("t400")
+        try FileManager.default.createDirectory(at: fifoDir, withIntermediateDirectories: true)
+        #expect(mkfifo(fifoDir.appendingPathComponent("theme.json").path, 0o600) == 0)
+        // 402nd folder: a valid theme that must not load.
+        try dir.add("t401", InstalledThemes.theme("t401"))
+
+        let start = ContinuousClock.now
+        let scan = dir.scan()
+        #expect(ContinuousClock.now - start < .seconds(5))
+        #expect(scan.dropped["t400"] == .overFolderLimit, "the FIFO past the cap is recorded, not opened")
+        #expect(scan.dropped["t401"] == .overFolderLimit, "a valid theme past the cap is recorded, not read")
+        #expect(scan.installed.isEmpty)
+        #expect(scan.dropped.values.filter { $0 == .overFolderLimit }.count == 2)
+        // The 400 folders inside the cap were read and found unreadable (no theme.json).
+        #expect(scan.dropped["t000"] == .unreadable)
+        #expect(scan.dropped["t399"] == .unreadable)
+        #expect(scan.dropped.values.filter { $0 == .unreadable }.count == 400)
+
+        // Positive fixture: the identical FIFO folder, were it inside the cap, is read and dropped
+        // `.unreadable` -- so `.overFolderLimit` above proves `t400` was never opened.
+        let small = try InstalledThemes()
+        let smallFIFO = small.folder("t400")
+        try FileManager.default.createDirectory(at: smallFIFO, withIntermediateDirectories: true)
+        #expect(mkfifo(smallFIFO.appendingPathComponent("theme.json").path, 0o600) == 0)
+        #expect(small.scan().dropped["t400"] == .unreadable)
+    }
 }
 
 // MARK: - L4: one read, one snapshot per page load
