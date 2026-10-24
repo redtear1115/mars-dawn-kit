@@ -138,31 +138,41 @@ struct DataDocumentBombTests {
 
     /// Kit #198: the parse and construct of the same shape, timed in the page with the page's own
     /// js-yaml calls and nothing drawn. Two guards: the 20k parse is under 500 ms (observed
-    /// about 7 ms locally), and doubling the input costs under 3x (linear is 2x,
-    /// quadratic 4x), taking the best of three runs of each size so one slow run on a loaded
-    /// runner cannot fail it.
+    /// about 7 ms locally), and growing the input 8x (20k to 160k) costs under 24x. Linear is 8x
+    /// and quadratic 64x, so 24x sits between them on a log scale.
+    ///
+    /// No wall-clock number decides the growth (kit #220: a loaded hosted runner took 65 ms for
+    /// the 40k parse against a bound of 60 ms). Only the ratio does, from the best of seven runs
+    /// of each size taken alternately, so a load that slows both sizes alike cancels, and a spike
+    /// on one run falls away. The two sizes are 8x apart so that the small one is several
+    /// milliseconds, far above the timer's resolution of about 1 ms.
     @Test func parsingEmptyMergesGrowsLinearly() async throws {
         let page = try await DataPage.load()
-        func parseMilliseconds(_ count: Int) async throws -> Double {
-            let text = Self.emptyMerges(count)
-            let result = try await page.callAsyncJavaScript("""
-            let best = Infinity;
-            for (let run = 0; run < 3; run++) {
-              const start = performance.now();
-              const events = jsyaml.parseEvents(text, { maxDepth: 1000 });
-              jsyaml.constructFromEvents(events, { source: text, schema: jsyaml.CORE_SCHEMA, json: false, maxAliases: 1000000 });
-              best = Math.min(best, performance.now() - start);
-            }
-            return best;
-            """, arguments: ["text": text], contentWorld: .page)
-            return result as? Double ?? -1
-        }
-        let small = try await parseMilliseconds(20_000)
-        let large = try await parseMilliseconds(40_000)
+        let (small, large) = try await Self.bestParseMilliseconds(Self.emptyMerges(20_000), Self.emptyMerges(160_000), in: page)
         #expect(small > 0 && large > 0, "\(small) \(large)")
         #expect(small < 500, "20k parse took \(small) ms")
-        // Timer resolution is about 1 ms and the parse about 7 ms, so the floor keeps the ratio honest.
-        #expect(large < max(small, 20) * 3, "20k \(small) ms, 40k \(large) ms: not linear")
+        #expect(large < max(small, 2) * 24, "20k \(small) ms, 160k \(large) ms: \(large / max(small, 2))x for 8x the input, not linear")
+    }
+
+    /// The best of `runs` timings of each text's parse and construct, runs of the two alternating.
+    static func bestParseMilliseconds(_ small: String, _ large: String, runs: Int = 7, in page: WKWebView) async throws -> (small: Double, large: Double) {
+        let result = try await page.callAsyncJavaScript("""
+        const time = (text) => {
+          const start = performance.now();
+          const events = jsyaml.parseEvents(text, { maxDepth: 1000 });
+          jsyaml.constructFromEvents(events, { source: text, schema: jsyaml.CORE_SCHEMA, json: false, maxAliases: 1000000 });
+          return performance.now() - start;
+        };
+        let bestSmall = Infinity, bestLarge = Infinity;
+        for (let run = 0; run < runs; run++) {
+          bestSmall = Math.min(bestSmall, time(small));
+          bestLarge = Math.min(bestLarge, time(large));
+        }
+        return [bestSmall, bestLarge];
+        """, arguments: ["small": small, "large": large, "runs": runs], contentWorld: .page)
+        let pair = result as? [Double] ?? []
+        guard pair.count == 2 else { return (-1, -1) }
+        return (pair[0], pair[1])
     }
 
     @Test func aLargeOmapIsAnUnknownTagWithItsLine() async throws {
