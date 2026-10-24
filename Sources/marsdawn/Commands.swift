@@ -18,7 +18,7 @@ struct MarsDawnCommand: AsyncParsableCommand {
         \(CLIFailure.Code.inputNotFound.rawValue) input not found, \
         \(CLIFailure.Code.appNotInstalled.rawValue) MarsDawn not installed (open only), \(CLIFailure.Code.outputExists.rawValue) output exists \
         (use --force), \(CLIFailure.Code.exportFailed.rawValue) export failed or input too large, \(CLIFailure.Code.appCannotOpenFolders.rawValue) this MarsDawn \
-        can't show a folder (open only), \(CLIFailure.Code.skillInstallFailed.rawValue) skill --install couldn't write the file, 64 usage error (including theme preview's refused -o).
+        can't show a folder (open only), \(CLIFailure.Code.skillInstallFailed.rawValue) skill --install couldn't write the file, 64 usage error (a bad option or value is plain text; with --json, command-checked refusals carry a kind, like open --wait's wait_out_of_range, skill --install's skill_differs, and theme preview's refused -o).
         """,
         version: MarsDawnCLI.version,
         subcommands: [Open.self, Export.self, Skill.self, Theme.self]
@@ -184,7 +184,7 @@ struct WaitRangeFailure: Error, CustomStringConvertible {
 /// usage error like `WaitRangeFailure` (#120): it exits `64`, not one of `CLIFailure.Code`'s
 /// runtime codes, and carries its own machine-readable `kind` for `--json`.
 struct SkillInstallFailure: Error, CustomStringConvertible {
-    enum Kind: String {
+    enum Kind: String, CaseIterable {
         /// A `SKILL.md` is already at the target and its bytes differ from this version's.
         case differs = "skill_differs"
         /// The target path is a symlink whose resolved destination is outside the target folder.
@@ -1115,7 +1115,7 @@ extension ThemePreviewRenderer.Appearance: ExpressibleByArgument {}
 /// `theme preview -o` refused a path it will not write to (kit #139): a usage error like
 /// `SkillInstallFailure`, exit 64, with its own machine-readable kind for `--json`.
 struct OutputPathFailure: Error, CustomStringConvertible {
-    enum Kind: String {
+    enum Kind: String, CaseIterable {
         /// The folder the file would go in isn't there (or isn't a folder).
         case folderMissing = "output_folder_missing"
         /// A symlink is at the path. Never followed and never replaced, `--force` included.
