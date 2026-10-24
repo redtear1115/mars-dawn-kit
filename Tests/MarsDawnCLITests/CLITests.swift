@@ -2,6 +2,7 @@
 import AppKit
 import ArgumentParser
 import Foundation
+import MarsDawnExport
 import MarsDawnKit
 import MarsDawnThemes
 import Testing
@@ -30,6 +31,57 @@ struct CLITests {
         let help = MarsDawnCommand.Export.helpMessage()
         #expect(help.contains("--breaks"))
         #expect(help.contains("HackMD"))
+    }
+
+    /// `--layout` (mars-dawn#432): the document layout is the default, and only the two layouts parse.
+    @Test func exportLayoutDefaultsToDocumentAndRejectsOthers() throws {
+        #expect(try MarsDawnCommand.Export.parse(["plan.md"]).layout == .document)
+        #expect(try MarsDawnCommand.Export.parse(["plan.md", "--layout", "document"]).layout == .document)
+        #expect(try MarsDawnCommand.Export.parse(["plan.md", "--layout", "manual"]).layout == .manual) // deprecated alias
+        #expect(try MarsDawnCommand.Export.parse(["plan.md", "--layout", "handbook"]).layout == .manual)
+        #expect(throws: (any Error).self) { try MarsDawnCommand.Export.parse(["plan.md", "--layout", "bogus"]) }
+        #expect(try MarsDawnCommand.Export.parse(["plan.md", "--layout", "handout"]).layout == .handout)
+        #expect(throws: (any Error).self) { try MarsDawnCommand.Export.parse(["plan.md", "--layout"]) }
+        let help = MarsDawnCommand.Export.helpMessage()
+        #expect(help.contains("--layout") && help.contains("handbook") && help.contains("handout") && help.contains("deprecated") && help.contains("Handbook") && help.contains("<!--BREAK-->"))
+    }
+
+    /// kit #211: completion and help list `document`, `handbook` and (mars-dawn#432 S3) `handout`;
+    /// the deprecated `manual` still parses.
+    @Test func layoutCompletionListsDocumentHandbookAndHandoutOnly() {
+        #expect(ExportLayout.allValueStrings == ["document", "handbook", "handout"])
+        #expect(LayoutArgument.allValueStrings == ["document", "handbook", "handout"])
+        #expect(!MarsDawnCommand.Export.helpMessage().contains("alias"))
+        // What the shells are actually given: the generated completion scripts.
+        for shell in [CompletionShell.bash, .zsh, .fish] {
+            let script = MarsDawnCommand.completionScript(for: shell)
+            // The value lists: bash -W 'document'$'\n''handbook', zsh ('document' 'handbook'),
+            // fish -fka 'document handbook'. The --layout help text also says "manual is deprecated",
+            // so look for manual as a quoted value, not as a word.
+            let lines = script.split(separator: "\n")
+            #expect(lines.contains { $0.contains("document") && ($0.contains("'handbook'") || $0.contains(" handbook ")) }, "\(shell): document and handbook are offered")
+            #expect(lines.contains { $0.contains("document") && ($0.contains("'handout'") || $0.contains(" handout'")) }, "\(shell): handout is offered")
+            #expect(!lines.contains { $0.contains("'manual'") || $0.contains(" manual'") }, "\(shell): manual is not offered")
+        }
+        #expect(LayoutArgument(argument: "manual")?.typedManual == true)
+        #expect(LayoutArgument(argument: "handbook")?.typedManual == false)
+    }
+
+    /// `--toc-title` (mars-dawn#432 S2): "Contents" unless given.
+    @Test func exportTOCTitleDefaultsToContents() throws {
+        #expect(try MarsDawnCommand.Export.parse(["plan.md"]).tocTitle == "Contents")
+        #expect(try MarsDawnCommand.Export.parse(["plan.md", "--layout", "handbook", "--toc-title", "目錄"]).tocTitle == "目錄")
+        #expect(MarsDawnCommand.Export.helpMessage().contains("--toc-title"))
+    }
+
+    /// `export --json` keeps to the published export.v1 schema (marsdawn-mcp, mars-dawn-website),
+    /// which has `additionalProperties: false`: exactly its fields, so no `layout` (S2 of
+    /// mars-dawn#432 removed the one S1 added).
+    @Test func exportJSONHasExactlyTheExportV1Fields() throws {
+        let fields = MarsDawnCommand.Export.jsonFields(
+            output: "/tmp/a.pdf", pages: 3, theme: "dawn", paper: .a4, diagramErrors: [], diagramErrorDetails: []
+        )
+        #expect(Set(fields.keys) == ["output", "pages", "theme", "paper", "diagramErrors", "diagramErrorDetails"])
     }
 
     @Test func exportParsesEveryOption() throws {
@@ -98,14 +150,15 @@ struct CLITests {
 @MainActor
 @Suite(.timeLimit(.minutes(1)))
 struct StandaloneToolTests {
+    /// Any success path in this suite that forgot its hint stub fails loudly (H5b).
+    init() { HintTesting.installViolationHandler() }
+
     /// `export` must not need MarsDawn.app: it is the same rendering the app does, it ships in
     /// this package, and Homebrew builds and tests the tool on machines that have no app at all.
     /// Before C0 this threw `app_not_installed` and wrote nothing.
     @Test func exportRendersAPDFWithNoAppInstalled() async throws {
-        let original = MarsDawnApp.locate
-        defer { MarsDawnApp.locate = original }
-        MarsDawnApp.locate = { nil }
-
+        // No `locate` stub: export never asks where the app is, and a stub would only make this
+        // look like it checked that.
         let root = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
             .appendingPathComponent("marsdawn-export-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -114,7 +167,9 @@ struct StandaloneToolTests {
         try Data("# Title\n\nA paragraph.\n".utf8).write(to: input)
         let output = root.appendingPathComponent("out.pdf")
 
-        try await MarsDawnCommand.Export.parse([input.path, "-o", output.path]).run()
+        try await HintTesting.withQuietHint {
+            try await MarsDawnCommand.Export.parse([input.path, "-o", output.path]).run()
+        }
 
         let pdf = try Data(contentsOf: output)
         #expect(pdf.prefix(5) == Data("%PDF-".utf8))
@@ -123,12 +178,11 @@ struct StandaloneToolTests {
 
     /// `open` keeps the check; that is deliberate, and exit code 3 is its alone now.
     @Test func openStillNeedsTheApp() {
-        let original = MarsDawnApp.locate
-        defer { MarsDawnApp.locate = original }
-        MarsDawnApp.locate = { nil }
-        #expect {
-            _ = try MarsDawnApp.require()
-        } throws: { ($0 as? CLIFailure)?.code == .appNotInstalled }
+        MarsDawnApp.$locateOverride.withValue({ nil }) {
+            #expect {
+                _ = try MarsDawnApp.require()
+            } throws: { ($0 as? CLIFailure)?.code == .appNotInstalled }
+        }
     }
 
     /// `open`'s help and its not-installed error send people to the real listing, and the README
@@ -156,8 +210,8 @@ struct StandaloneToolTests {
 
 /// `resolveOverride` is a pure function of its arguments (no `ProcessInfo`/`MarsDawnApp.locate`
 /// mutation, no `setenv`, no `dup2` of a real file descriptor), so these tests call it directly
-/// with fixed inputs and can run safely alongside every other suite, including the ones that swap
-/// `MarsDawnApp.locate` itself (`StandaloneToolTests`, `FolderCapabilityTests`).
+/// with fixed inputs and can run safely alongside every other suite. Tests that need a located
+/// app use the task-local `MarsDawnApp.locateOverride`; none assigns `MarsDawnApp.locate`.
 ///
 /// The override is spoofable by anyone who can already fake `marsdawn` on `PATH`, so this isn't a
 /// security boundary — it only catches an override left pointing at a deleted test copy or another
@@ -708,14 +762,26 @@ struct FolderCapabilityTests {
     @Test func openStopsBeforeSendingAnything() async throws {
         let incapable = try fakeApp(key: nil), dir = try folder()
         defer { [incapable, dir].forEach { try? FileManager.default.removeItem(at: $0) } }
-        let original = MarsDawnApp.locate
-        defer { MarsDawnApp.locate = original }
-        MarsDawnApp.locate = { incapable }
-        for arguments in [["--folder", dir.path], [dir.path]] {
-            await #expect {
-                try await MarsDawnCommand.Open.parse(arguments).run()
-            } throws: { ($0 as? CLIFailure)?.code == .appCannotOpenFolders }
+        let sent = OpenRecorder()
+        try await MarsDawnApp.$locateOverride.withValue({ incapable }) {
+            try await MarsDawnCommand.Open.$opener.withValue(sent.opener) {
+                for arguments in [["--folder", dir.path], [dir.path]] {
+                    await #expect {
+                        try await MarsDawnCommand.Open.parse(arguments).run()
+                    } throws: { ($0 as? CLIFailure)?.code == .appCannotOpenFolders }
+                }
+                // Positive control: the same recorder does see a folder sent to an app that can take one.
+                let capable = try fakeApp(key: true)
+                defer { try? FileManager.default.removeItem(at: capable) }
+                try await MarsDawnApp.$locateOverride.withValue({ capable }) {
+                    try await OutputOptions.$sink.withValue({ _ in }) {
+                        try await MarsDawnCommand.Open.parse(["--folder", dir.path, "--wait", "0", "--json"]).run()
+                    }
+                }
+            }
         }
+        #expect(sent.calls.map { $0.urls.map(\.path) } == [[dir.standardizedFileURL.path]],
+                "only the control's folder was sent; the two refusals sent nothing: \(sent.calls)")
     }
 }
 #endif

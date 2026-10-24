@@ -1,0 +1,89 @@
+OS build: Version 26.6.2 (Build 25G83) | WebKit: 21624.5.1.11.3 | Paper: a4
+Page count: 5
+Lines: minX minY maxX maxY | text, whole points from the page's bottom left, sorted by text; compared within 1 pt
+
+--- Page 1 ---
+45 683 540 697 | DBAP01 A reader who skips ahead will find that each section repeats the vocabulary of the
+45 594 505 608 | DBAP02 Measurements were taken at the start and at the end of the period, and the
+45 505 538 519 | DBAP03 Where the instructions say to wait, wait until the indicator stops flashing and only
+45 416 529 430 | DBAP04 The appendix lists every part by number so that an order can be placed without
+45 249 540 263 | DBBP01 A reader who skips ahead will find that each section repeats the vocabulary of the
+45 160 505 174 | DBBP02 Measurements were taken at the start and at the end of the period, and the
+45 723 266 751 | DOC TITLE DBTITLE
+45 289 231 317 | Second H1 DBH1
+45 467 526 481 | can be placed without opening the drawings again. The committee reviewed the revised
+45 575 548 589 | difference between them is reported below. Where the instructions say to wait, wait until the
+45 141 548 155 | difference between them is reported below. Where the instructions say to wait, wait until the
+45 378 531 392 | every milestone depends on the delivery of the earlier one. A reader who skips ahead will
+45 358 472 373 | find that each section repeats the vocabulary of the one before it, on purpose.
+45 555 541 570 | indicator stops flashing and only then continue with the next step. The appendix lists every
+45 122 541 136 | indicator stops flashing and only then continue with the next step. The appendix lists every
+45 663 514 678 | one before it, on purpose. Measurements were taken at the start and at the end of the
+45 230 514 244 | one before it, on purpose. Measurements were taken at the start and at the end of the
+45 397 538 411 | opening the drawings again. The committee reviewed the revised schedule and noted that
+45 536 501 550 | part by number so that an order can be placed without opening the drawings again.
+45 102 501 117 | part by number so that an order can be placed without opening the drawings again.
+45 644 533 658 | period, and the difference between them is reported below. Where the instructions say to
+45 210 533 225 | period, and the difference between them is reported below. Where the instructions say to
+45 447 502 461 | schedule and noted that every milestone depends on the delivery of the earlier one.
+45 486 538 500 | then continue with the next step. The appendix lists every part by number so that an order
+45 625 507 639 | wait, wait until the indicator stops flashing and only then continue with the next step.
+45 191 507 205 | wait, wait until the indicator stops flashing and only then continue with the next step.
+
+--- Page 2 ---
+45 773 537 787 | DBBP03 Where the instructions say to wait, wait until the indicator stops flashing and only
+45 735 526 749 | can be placed without opening the drawings again. The committee reviewed the revised
+45 715 502 730 | schedule and noted that every milestone depends on the delivery of the earlier one.
+45 754 538 768 | then continue with the next step. The appendix lists every part by number so that an order
+
+--- Page 3 ---
+58 438 134 450 | <!--BREAK-->
+45 773 526 787 | DBAFTER The committee reviewed the revised schedule and noted that every milestone
+58 426 127 438 | DBCODEAFTER
+58 450 134 462 | DBCODEBEFORE
+45 723 541 737 | DBCP01 A reader who skips ahead will find that each section repeats the vocabulary of the
+45 634 506 648 | DBCP02 Measurements were taken at the start and at the end of the period, and the
+45 545 538 559 | DBCP03 Where the instructions say to wait, wait until the indicator stops flashing and only
+45 354 541 369 | DBDP01 A reader who skips ahead will find that each section repeats the vocabulary of the
+45 266 506 280 | DBDP02 Measurements were taken at the start and at the end of the period, and the
+45 177 538 191 | DBDP03 Where the instructions say to wait, wait until the indicator stops flashing and only
+45 386 306 400 | Inline <!--BREAK--> code DBINLINE then text.
+45 507 526 521 | can be placed without opening the drawings again. The committee reviewed the revised
+45 138 526 153 | can be placed without opening the drawings again. The committee reviewed the revised
+45 754 276 768 | depends on the delivery of the earlier one.
+45 615 548 629 | difference between them is reported below. Where the instructions say to wait, wait until the
+45 246 548 261 | difference between them is reported below. Where the instructions say to wait, wait until the
+45 595 541 610 | indicator stops flashing and only then continue with the next step. The appendix lists every
+45 227 541 241 | indicator stops flashing and only then continue with the next step. The appendix lists every
+45 703 514 718 | one before it, on purpose. Measurements were taken at the start and at the end of the
+45 335 514 349 | one before it, on purpose. Measurements were taken at the start and at the end of the
+45 576 501 590 | part by number so that an order can be placed without opening the drawings again.
+45 208 501 222 | part by number so that an order can be placed without opening the drawings again.
+45 684 533 698 | period, and the difference between them is reported below. Where the instructions say to
+45 316 533 330 | period, and the difference between them is reported below. Where the instructions say to
+45 487 502 501 | schedule and noted that every milestone depends on the delivery of the earlier one.
+45 119 502 133 | schedule and noted that every milestone depends on the delivery of the earlier one.
+45 526 538 540 | then continue with the next step. The appendix lists every part by number so that an order
+45 158 538 172 | then continue with the next step. The appendix lists every part by number so that an order
+45 665 507 679 | wait, wait until the indicator stops flashing and only then continue with the next step.
+45 297 507 311 | wait, wait until the indicator stops flashing and only then continue with the next step.
+
+--- Page 4 ---
+45 721 539 735 | DBEP01 A reader who skips ahead will find that each section repeats the vocabulary of the
+45 632 504 646 | DBEP02 Measurements were taken at the start and at the end of the period, and the
+45 543 537 558 | DBEP03 Where the instructions say to wait, wait until the indicator stops flashing and only
+45 761 207 789 | Third H1 DBH2
+45 505 526 519 | can be placed without opening the drawings again. The committee reviewed the revised
+45 613 548 627 | difference between them is reported below. Where the instructions say to wait, wait until the
+45 594 541 608 | indicator stops flashing and only then continue with the next step. The appendix lists every
+45 702 514 716 | one before it, on purpose. Measurements were taken at the start and at the end of the
+45 575 501 589 | part by number so that an order can be placed without opening the drawings again.
+45 683 533 697 | period, and the difference between them is reported below. Where the instructions say to
+45 486 502 500 | schedule and noted that every milestone depends on the delivery of the earlier one.
+45 524 538 538 | then continue with the next step. The appendix lists every part by number so that an order
+45 663 507 678 | wait, wait until the indicator stops flashing and only then continue with the next step.
+
+--- Page 5 ---
+45 723 101 737 | DBEND99
+45 773 524 787 | DBPAIR The appendix lists every part by number so that an order can be placed without
+45 754 199 768 | opening the drawings again.

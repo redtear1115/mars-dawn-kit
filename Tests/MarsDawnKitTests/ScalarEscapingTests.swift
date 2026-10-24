@@ -152,14 +152,22 @@ enum MarkupCheck {
     static let allowedTags: Set<String> = [
         "p", "h1", "h2", "h3", "h4", "h5", "h6", "hr", "blockquote", "pre", "code", "div", "ul", "ol", "li",
         "input", "table", "thead", "tbody", "tr", "th", "td", "em", "strong", "del", "br", "a", "img",
+        "mark", "sup", "sub",  // HackMD inline marks (#155)
     ]
     static let allowedAttributes: Set<String> = [
         "data-line", "id", "class", "start", "type", "disabled", "checked", "style", "href", "title", "src", "alt",
+        "width", "height",  // HackMD image sizes (#152)
     ]
 
     /// Nil if `html` consists only of renderer-owned tags with well-formed, fully escaped
     /// attribute values, and text with no '>' and only known entities; else what went wrong.
     static func problem(in html: String) -> String? {
+        // The language marker (kit #164) is renderer-owned only as the very first node, in exactly
+        // this shape; anywhere else, or in any other shape, it is a tag the renderer doesn't write.
+        var html = Substring(html)
+        if let marker = html.prefixMatch(of: /<md-content-lang data-lang="[A-Za-z0-9-]{2,35}"><\/md-content-lang>/) {
+            html = html[marker.range.upperBound...]
+        }
         let bytes = Array(html.utf8)
         guard ampersandsAreEntities(bytes) else { return "unknown entity" }
         var i = 0
@@ -405,7 +413,9 @@ struct ScalarRendererTests {
         return document
     }
 
-    @Test(arguments: [UInt64(0x5EED), UInt64.random(in: 1...UInt64.max)])
+    // 11267054678755217302 once made a legitimate <mark> (0.7.0's ==mark==, #155) that the tag list didn't know
+    // yet; it stays as a fixed case so the list keeps up with what the renderer writes.
+    @Test(arguments: [UInt64(0x5EED), UInt64(11267054678755217302), UInt64.random(in: 1...UInt64.max)])
     func fuzzedDocumentsStayWellFormed(seed: UInt64) {
         var rng = SplitMix64(state: seed)
         for iteration in 0..<3000 {

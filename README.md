@@ -4,7 +4,7 @@ The rendering core of [MarsDawn](https://marsdawn.southern-light.dev), a Markdow
 
 | Product | Platforms | What it does |
 |---|---|---|
-| `MarsDawnKit` | macOS 15, iOS 17 | Markdown → HTML renderer, preview page (Mermaid diagrams, code highlighting, KaTeX math), preview themes |
+| `MarsDawnKit` | macOS 15, iOS 17 | Markdown → HTML renderer, preview page (Mermaid diagrams, code highlighting, KaTeX math, GitHub alerts and HackMD `:::` callouts), preview themes |
 | `MarsDawnExport` | macOS 15 | Paginated PDF export of the preview, the same exporter the app uses |
 | `marsdawn` | macOS 15 | Command-line tool: open documents in MarsDawn, export them to PDF |
 
@@ -34,12 +34,12 @@ Two things that have caught people out when writing tests here:
 1. Every expected marker, placeholder and diagram/image count is present, so nothing disappears silently. The printed page is also laid out for print, and any word of three or more letters or digits it shows that is missing from the PDF's text fails.
 2. Every page has ink: no blank page, trailing or otherwise.
 3. A second export in the same run gives the same page count and text.
-4. The exported text matches a committed golden recorded on a specific macOS build (below).
+4. Each page's text lines and their boxes match a committed golden recorded on a specific macOS build (below).
 5. The HTML the exporter pushed matches what `MarkdownRenderer` gives the preview for the same document (`MarkdownRenderer.Options.preview(baseDirectory:)`), so the two can't quietly drift apart.
 
 A marker matches when it's a substring of the page text after both sides are NFKC-normalised and have all Unicode whitespace removed, so line wraps and compatibility ideographs can't hide a missing marker. `boundary-under` and `boundary-over` sit either side of the renderer's node budget; a binary search finds the boundary at test time, so they follow `ParseLimits.defaultMaxNodes`. The Mermaid diagram types have their own corpus (`MermaidCorpusTests`); the PDF corpus has one mixed document with a diagram.
 
-The golden files (tier 4, `Tests/MarsDawnExportTests/Goldens/<name>.txt`) are per OS build: each one's first line names the OS build and WebKit version it was recorded on. That tier only runs with `MARSDAWN_PDF_GOLDENS=1` (the `pdf-goldens` CI job), so the `test` matrix on other OS builds never fails on it. If the runner's OS build differs from the one recorded, the test fails with one distinct message (`goldens were recorded on build A, this runner is build B: re-record with the Record PDF goldens workflow`) instead of a text diff; the same build with different text fails with the differing page(s). To re-record, run the "Record PDF goldens" GitHub Actions workflow (`workflow_dispatch`, macOS 26) and commit its `pdf-goldens` artifact, or locally with `MARSDAWN_PDF_GOLDENS=1 MARSDAWN_UPDATE_GOLDENS=1 swift test --filter PDFCorpus/golden` (the committed goldens should come from CI's build).
+The golden files (tier 4, `Tests/MarsDawnExportTests/Goldens/<name>.txt`) are per OS build: each one's first line names the OS build and WebKit version it was recorded on. A golden is each page's text lines with their boxes (`minX minY maxX maxY | text`, whole points from the page's bottom left), written sorted by text: a page is a multiset of lines, so the order PDFKit extracts them in doesn't matter, but a line that moves, or text that appears, disappears or repeats, does. Text and how often each text occurs must match exactly; each coordinate may differ by 1 pt. That tier only runs with `MARSDAWN_PDF_GOLDENS=1` (the `pdf-goldens` CI job); without it `golden` shows as skipped, and the `test` matrix on other OS builds never fails on it. If the runner's OS build differs from the one recorded, the test fails with one distinct message (`goldens were recorded on build A, this runner is build B: re-record with the Record PDF goldens workflow`) instead of a text diff; the same build with different lines fails with the lines that changed or moved. To re-record, run the "Record PDF goldens" GitHub Actions workflow (`workflow_dispatch`, macOS 26) and commit its `pdf-goldens` artifact, or locally with `MARSDAWN_PDF_GOLDENS=1 MARSDAWN_UPDATE_GOLDENS=1 swift test --filter PDFCorpus/golden` (the committed goldens should come from CI's build).
 
 ## Command line
 
@@ -69,9 +69,11 @@ swift run marsdawn export notes.md -o notes.pdf --theme classic --paper a4
   - **An app that also reports back tells you what happened to the folder.** With an app that declares `MarsDawnReportsFolderStatus` in its Info.plist, and `--wait` greater than 0, `open --folder` waits for the app's own answer instead of only reporting that it asked. `--wait N` sets how long to wait, in seconds, `0`–`30` (default `2`); a value ArgumentParser can parse as a number but outside that range is a usage error, exit `64`, with `error: "wait_out_of_range"` in `--json`. Write a negative value as `--wait=-1`, not `--wait -1`: with a space, ArgumentParser reads it as another flag and gives its own plain usage error instead — still exit `64`, but no `wait_out_of_range`; a value too large to be a number at all gets the same plain error. `--wait 0`, or an app that doesn't report back, skips waiting entirely and sends exactly what `open --folder` always has — no extra network or Apple Event traffic, byte-identical to before this existed.
   - `--background` opens without bringing MarsDawn to the front, for an agent that opens files while you work elsewhere. Without it, MarsDawn comes to the front, as before. The `--json` result is the same either way.
   - `--json` prints `ok`, `app` and `opened`: one object per file, `{"path": …}`, carrying `"line"` when one was asked for. With an app that takes folders, a folder adds `"folder": {"path": …, "requested": true}` — **`requested`, not `attached`**: whether the sidebar ends up showing it, or the app has to ask you for access first, is decided inside the app. With an app that reports back and a `--wait` that asks for it, the same object also carries `"status"` (`"attached"`, `"needsUser"`, `"declined"`, `"failed"`, `"attachedDifferentFolder"`, `"full"`, `"unavailable"` or `"unknown"`) once the wait ends, and, only alongside `"needsUser"`, `"waitingFor"` (`"confirmation"` or `"folderChoice"`).
-- `export <file> [-o out.pdf] [--theme dawn|classic|modern|vivid] [--paper a4|letter] [--allow-remote-images] [--breaks] [--force] [--json]` renders a PDF without opening a window.
+- `export <file> [-o out.pdf] [--theme dawn|classic|modern|vivid] [--paper a4|letter] [--allow-remote-images] [--breaks] [--layout document|handbook|handout] [--toc-title <text>] [--force] [--json]` renders a PDF without opening a window.
   - `--breaks` renders every newline inside a paragraph as a line break, as HackMD does. Without it a newline is a space, as CommonMark has it, except between two CJK characters (Han, kana, CJK punctuation and fullwidth forms; not Korean, which spaces its words), where nothing is emitted so the lines read as one. A newline between a CJK and a Latin character keeps its space. The `--json` result is the same either way.
   - The theme defaults to `$MARSDAWN_THEME`, then `dawn`.
+  - `--layout document|handbook|handout` (default `document`; `manual`, the 0.7.1 name, still works but is deprecated) picks the page layout. `handbook` is the app's Handbook layout: wider margins with a 25 mm binding side, every top-level heading on a new page, a table of contents of the level 1 and 2 headings, "n / N" page numbers and PDF bookmarks, and a cover when the front matter has a `title` (it also shows `subtitle`, `version`, `date`, `author` and `logo`). `handout` leaves a blank notes column on the right of every page (a table too wide for the body may run into it), with the front matter's `title` (or the file name) and `date` at the top of page 1 and a "file name · date · n / N" footer; without a front-matter `date` it is the day of the export. `<!--BREAK-->` on a line of its own starts a new page in every layout. The `--json` result does not report the layout.
+  - `--toc-title <text>` sets the Handbook layout's contents heading (default `Contents`); the document layout ignores it.
   - Existing files are only overwritten with `--force`.
   - `--json` prints `ok`, `output`, `pages`, `diagramErrors` and `diagramErrorDetails` (the same
     failures as `diagramErrors`, in the same order, each as `{message, fenceLine, line}`:
@@ -121,6 +123,11 @@ swift run marsdawn export notes.md -o notes.pdf --theme classic --paper a4
     another agent's skill folder. Only applies with `--install`.
   - `--json` (only with `--install`) prints `ok`, `path` and `action`
     (`"installed"`, `"unchanged"` or `"replaced"`).
+- After a successful `export` or `open` (not with `--json`), when stderr is a terminal and
+  `~/.claude/skills/marsdawn/SKILL.md` is missing or differs from this version's skill, `marsdawn`
+  prints one `Tip:` line on **stderr** pointing at `marsdawn skill --install`. It shows once per
+  `marsdawn` version and state, remembered in `~/Library/Caches/marsdawn/skill-hint`; stdout and
+  `--json` output never change. Set `MARSDAWN_NO_SKILL_HINT=1` to turn it off.
 - `--version` prints the release number and nothing else, so a package manager can compare it against its own. Bumping it is part of cutting a release; see [RELEASING.md](RELEASING.md).
 - `--generate-completion-script bash|zsh|fish` writes a shell completion script to stdout.
 - Exit codes: 1 invalid theme (`theme` commands only), 2 input not found, 3 MarsDawn not installed (`open` only), 4 output exists, 5 export failed, 6 this MarsDawn can't take a folder (`open` only), 7 `skill --install` couldn't write the skill (`skill_install_failed`), 64 usage error (including `skill --install`'s `skill_differs` and `skill_unsafe_symlink`, `skill_target_not_a_file` (refused even with `--force`) and `skill_unreadable` (refused without `--force`), `open --wait`'s `wait_out_of_range`, and `theme preview`'s `output_folder_missing`, `output_symlink` and `output_not_a_file`).
@@ -132,7 +139,7 @@ swift run marsdawn export notes.md -o notes.pdf --theme classic --paper a4
 ## Use as a package
 
 ```swift
-.package(url: "https://github.com/redtear1115/mars-dawn-kit.git", exact: "0.7.0"),
+.package(url: "https://github.com/redtear1115/mars-dawn-kit.git", exact: "0.7.3"),
 ```
 
 ### Checking a theme before installing it

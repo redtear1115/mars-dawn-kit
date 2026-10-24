@@ -1,0 +1,470 @@
+OS build: Version 26.6.2 (Build 25G83) | WebKit: 21624.5.1.11.3 | Paper: a4
+Page count: 18
+Lines: minX minY maxX maxY | text, whole points from the page's bottom left, sorted by text; compared within 1 pt
+
+--- Page 1 ---
+71 703 539 717 | Chapter 1 ENCH1 2
+71 656 539 671 | Chapter 2 ENCH2 6
+71 609 538 623 | Chapter 3 ENCH3 10
+71 563 538 577 | Chapter 4 ENCH4 13
+71 516 538 530 | Chapter 5 ENCH5 16
+71 491 538 505 | Chapter 6 ENCH6 17
+71 761 153 784 | Contents
+71 729 539 743 | Field Manual ENTITLE 1
+89 681 538 695 | Section 1.1 ENS1 3
+89 635 538 649 | Section 2.1 ENS2 7
+89 588 538 602 | Section 3.1 ENS3 11
+89 541 538 555 | Section 4.1 ENS4 14
+
+--- Page 2 ---
+293 22 316 34 | 1 / 17
+71 677 531 691 | ENAP01 A reader who skips ahead will find that each section repeats the vocabulary
+71 569 531 583 | ENAP02 Measurements were taken at the start and at the end of the period, and the
+71 461 537 475 | ENAP03 Where the instructions say to wait, wait until the indicator stops flashing and
+71 717 310 745 | Field Manual ENTITLE
+71 512 529 526 | appendix lists every part by number so that an order can be placed without opening
+71 384 214 398 | delivery of the earlier one.
+71 550 527 564 | difference between them is reported below. Where the instructions say to wait, wait
+71 639 514 653 | end of the period, and the difference between them is reported below. Where the
+71 620 532 634 | instructions say to wait, wait until the indicator stops flashing and only then continue
+71 658 517 672 | of the one before it, on purpose. Measurements were taken at the start and at the
+71 442 516 456 | only then continue with the next step. The appendix lists every part by number so
+71 404 499 418 | reviewed the revised schedule and noted that every milestone depends on the
+71 423 509 437 | that an order can be placed without opening the drawings again. The committee
+71 492 178 507 | the drawings again.
+71 531 503 545 | until the indicator stops flashing and only then continue with the next step. The
+71 600 172 615 | with the next step.
+
+--- Page 3 ---
+293 22 316 34 | 2 / 17
+71 756 260 784 | Chapter 1 ENCH1
+71 716 480 730 | ENC1xP01 A reader who skips ahead will find that each section repeats the
+71 608 522 622 | ENC1xP02 Measurements were taken at the start and at the end of the period, and
+71 500 525 514 | ENC1xP03 Where the instructions say to wait, wait until the indicator stops flashing
+71 392 522 406 | ENC1xP04 The appendix lists every part by number so that an order can be placed
+71 284 500 298 | ENC1xP05 The committee reviewed the revised schedule and noted that every
+71 226 482 240 | Measurements were taken at the start and at the end of the period, and the
+71 658 514 672 | Where the instructions say to wait, wait until the indicator stops flashing and only
+71 677 513 691 | and at the end of the period, and the difference between them is reported below.
+71 353 525 367 | and noted that every milestone depends on the delivery of the earlier one. A reader
+71 480 524 495 | and only then continue with the next step. The appendix lists every part by number
+71 550 529 564 | appendix lists every part by number so that an order can be placed without opening
+71 423 214 437 | delivery of the earlier one.
+71 207 309 221 | difference between them is reported below.
+71 245 498 259 | find that each section repeats the vocabulary of the one before it, on purpose.
+71 315 150 329 | it, on purpose.
+71 264 524 278 | milestone depends on the delivery of the earlier one. A reader who skips ahead will
+71 442 499 456 | reviewed the revised schedule and noted that every milestone depends on the
+71 461 525 475 | so that an order can be placed without opening the drawings again. The committee
+71 588 522 603 | the difference between them is reported below. Where the instructions say to wait,
+71 531 178 545 | the drawings again.
+71 639 250 653 | then continue with the next step.
+71 697 521 711 | vocabulary of the one before it, on purpose. Measurements were taken at the start
+71 569 528 583 | wait until the indicator stops flashing and only then continue with the next step. The
+71 334 531 348 | who skips ahead will find that each section repeats the vocabulary of the one before
+71 372 524 386 | without opening the drawings again. The committee reviewed the revised schedule
+
+--- Page 4 ---
+293 22 316 34 | 3 / 17
+71 729 480 743 | ENC1yP01 A reader who skips ahead will find that each section repeats the
+71 620 522 635 | ENC1yP02 Measurements were taken at the start and at the end of the period, and
+71 512 526 527 | ENC1yP03 Where the instructions say to wait, wait until the indicator stops flashing
+71 404 523 419 | ENC1yP04 The appendix lists every part by number so that an order can be placed
+71 296 501 310 | ENC1yP05 The committee reviewed the revised schedule and noted that every
+71 188 482 202 | ENC1yP06 A reader who skips ahead will find that each section repeats the
+71 239 482 253 | Measurements were taken at the start and at the end of the period, and the
+71 763 207 784 | Section 1.1 ENS1
+71 671 514 685 | Where the instructions say to wait, wait until the indicator stops flashing and only
+71 131 514 145 | Where the instructions say to wait, wait until the indicator stops flashing and only
+71 690 513 704 | and at the end of the period, and the difference between them is reported below.
+71 150 513 164 | and at the end of the period, and the difference between them is reported below.
+71 366 525 380 | and noted that every milestone depends on the delivery of the earlier one. A reader
+71 493 524 507 | and only then continue with the next step. The appendix lists every part by number
+71 563 529 577 | appendix lists every part by number so that an order can be placed without opening
+71 436 214 450 | delivery of the earlier one.
+71 219 309 234 | difference between them is reported below.
+71 258 498 272 | find that each section repeats the vocabulary of the one before it, on purpose.
+71 328 150 342 | it, on purpose.
+71 277 524 291 | milestone depends on the delivery of the earlier one. A reader who skips ahead will
+71 455 499 469 | reviewed the revised schedule and noted that every milestone depends on the
+71 474 525 488 | so that an order can be placed without opening the drawings again. The committee
+71 601 522 615 | the difference between them is reported below. Where the instructions say to wait,
+71 544 178 558 | the drawings again.
+71 652 250 666 | then continue with the next step.
+71 111 250 126 | then continue with the next step.
+71 709 521 723 | vocabulary of the one before it, on purpose. Measurements were taken at the start
+71 169 521 183 | vocabulary of the one before it, on purpose. Measurements were taken at the start
+71 582 528 596 | wait until the indicator stops flashing and only then continue with the next step. The
+71 347 531 361 | who skips ahead will find that each section repeats the vocabulary of the one before
+71 385 524 399 | without opening the drawings again. The committee reviewed the revised schedule
+
+--- Page 5 ---
+293 22 316 34 | 4 / 17
+71 768 521 782 | ENC1yP07 Measurements were taken at the start and at the end of the period, and
+71 660 526 674 | ENC1yP08 Where the instructions say to wait, wait until the indicator stops flashing
+82 546 108 560 | Item
+130 546 162 560 | Value
+82 516 135 531 | a 1
+71 640 524 655 | and only then continue with the next step. The appendix lists every part by number
+71 710 529 724 | appendix lists every part by number so that an order can be placed without opening
+82 487 137 501 | b 2
+71 583 214 597 | delivery of the earlier one.
+71 602 499 616 | reviewed the revised schedule and noted that every milestone depends on the
+71 621 525 635 | so that an order can be placed without opening the drawings again. The committee
+71 749 522 763 | the difference between them is reported below. Where the instructions say to wait,
+71 691 178 705 | the drawings again.
+71 729 528 743 | wait until the indicator stops flashing and only then continue with the next step. The
+
+--- Page 6 ---
+293 22 316 34 | 5 / 17
+71 768 533 782 | ENAFTERBREAK The committee reviewed the revised schedule and noted that every
+71 749 359 763 | milestone depends on the delivery of the earlier one.
+
+--- Page 7 ---
+293 22 316 34 | 6 / 17
+71 756 266 784 | Chapter 2 ENCH2
+71 716 481 730 | ENC2xP01 A reader who skips ahead will find that each section repeats the
+71 608 524 622 | ENC2xP02 Measurements were taken at the start and at the end of the period, and
+71 500 527 514 | ENC2xP03 Where the instructions say to wait, wait until the indicator stops flashing
+71 392 524 406 | ENC2xP04 The appendix lists every part by number so that an order can be placed
+71 284 502 298 | ENC2xP05 The committee reviewed the revised schedule and noted that every
+71 226 482 240 | Measurements were taken at the start and at the end of the period, and the
+71 658 514 672 | Where the instructions say to wait, wait until the indicator stops flashing and only
+71 677 513 691 | and at the end of the period, and the difference between them is reported below.
+71 353 525 367 | and noted that every milestone depends on the delivery of the earlier one. A reader
+71 480 524 495 | and only then continue with the next step. The appendix lists every part by number
+71 550 529 564 | appendix lists every part by number so that an order can be placed without opening
+71 423 214 437 | delivery of the earlier one.
+71 207 309 221 | difference between them is reported below.
+71 245 498 259 | find that each section repeats the vocabulary of the one before it, on purpose.
+71 315 150 329 | it, on purpose.
+71 264 524 278 | milestone depends on the delivery of the earlier one. A reader who skips ahead will
+71 442 499 456 | reviewed the revised schedule and noted that every milestone depends on the
+71 461 525 475 | so that an order can be placed without opening the drawings again. The committee
+71 588 522 603 | the difference between them is reported below. Where the instructions say to wait,
+71 531 178 545 | the drawings again.
+71 639 250 653 | then continue with the next step.
+71 697 521 711 | vocabulary of the one before it, on purpose. Measurements were taken at the start
+71 569 528 583 | wait until the indicator stops flashing and only then continue with the next step. The
+71 334 531 348 | who skips ahead will find that each section repeats the vocabulary of the one before
+71 372 524 386 | without opening the drawings again. The committee reviewed the revised schedule
+
+--- Page 8 ---
+293 22 316 34 | 7 / 17
+71 729 481 743 | ENC2yP01 A reader who skips ahead will find that each section repeats the
+71 620 524 635 | ENC2yP02 Measurements were taken at the start and at the end of the period, and
+71 512 527 527 | ENC2yP03 Where the instructions say to wait, wait until the indicator stops flashing
+71 404 524 419 | ENC2yP04 The appendix lists every part by number so that an order can be placed
+71 296 502 310 | ENC2yP05 The committee reviewed the revised schedule and noted that every
+71 188 483 202 | ENC2yP06 A reader who skips ahead will find that each section repeats the
+71 239 482 253 | Measurements were taken at the start and at the end of the period, and the
+71 763 211 784 | Section 2.1 ENS2
+71 671 514 685 | Where the instructions say to wait, wait until the indicator stops flashing and only
+71 131 514 145 | Where the instructions say to wait, wait until the indicator stops flashing and only
+71 690 513 704 | and at the end of the period, and the difference between them is reported below.
+71 150 513 164 | and at the end of the period, and the difference between them is reported below.
+71 366 525 380 | and noted that every milestone depends on the delivery of the earlier one. A reader
+71 493 524 507 | and only then continue with the next step. The appendix lists every part by number
+71 563 529 577 | appendix lists every part by number so that an order can be placed without opening
+71 436 214 450 | delivery of the earlier one.
+71 219 309 234 | difference between them is reported below.
+71 258 498 272 | find that each section repeats the vocabulary of the one before it, on purpose.
+71 328 150 342 | it, on purpose.
+71 277 524 291 | milestone depends on the delivery of the earlier one. A reader who skips ahead will
+71 455 499 469 | reviewed the revised schedule and noted that every milestone depends on the
+71 474 525 488 | so that an order can be placed without opening the drawings again. The committee
+71 601 522 615 | the difference between them is reported below. Where the instructions say to wait,
+71 544 178 558 | the drawings again.
+71 652 250 666 | then continue with the next step.
+71 111 250 126 | then continue with the next step.
+71 709 521 723 | vocabulary of the one before it, on purpose. Measurements were taken at the start
+71 169 521 183 | vocabulary of the one before it, on purpose. Measurements were taken at the start
+71 582 528 596 | wait until the indicator stops flashing and only then continue with the next step. The
+71 347 531 361 | who skips ahead will find that each section repeats the vocabulary of the one before
+71 385 524 399 | without opening the drawings again. The committee reviewed the revised schedule
+
+--- Page 9 ---
+293 22 316 34 | 8 / 17
+84 534 159 546 | <!--BREAK-->
+107 481 186 495 | <!--BREAK-->
+71 768 523 782 | ENC2yP07 Measurements were taken at the start and at the end of the period, and
+71 660 527 674 | ENC2yP08 Where the instructions say to wait, wait until the indicator stops flashing
+71 431 481 445 | ENC2zP01 A reader who skips ahead will find that each section repeats the
+71 323 524 337 | ENC2zP02 Measurements were taken at the start and at the end of the period, and
+71 215 527 229 | ENC2zP03 Where the instructions say to wait, wait until the indicator stops flashing
+71 107 524 121 | ENC2zP04 The appendix lists every part by number so that an order can be placed
+84 522 153 534 | ENCODEAFTER
+84 546 159 558 | ENCODEBEFORE
+71 481 100 495 | Inline
+71 373 514 387 | Where the instructions say to wait, wait until the indicator stops flashing and only
+71 392 513 407 | and at the end of the period, and the difference between them is reported below.
+71 68 525 82 | and noted that every milestone depends on the delivery of the earlier one. A reader
+71 640 524 655 | and only then continue with the next step. The appendix lists every part by number
+71 195 524 210 | and only then continue with the next step. The appendix lists every part by number
+71 710 529 724 | appendix lists every part by number so that an order can be placed without opening
+71 265 529 279 | appendix lists every part by number so that an order can be placed without opening
+193 481 521 495 | code ENINLINE then text. A reader who skips ahead will find
+71 583 214 597 | delivery of the earlier one.
+71 138 214 152 | delivery of the earlier one.
+71 602 499 616 | reviewed the revised schedule and noted that every milestone depends on the
+71 157 499 171 | reviewed the revised schedule and noted that every milestone depends on the
+71 621 525 635 | so that an order can be placed without opening the drawings again. The committee
+71 176 525 190 | so that an order can be placed without opening the drawings again. The committee
+71 462 474 476 | that each section repeats the vocabulary of the one before it, on purpose.
+71 749 522 763 | the difference between them is reported below. Where the instructions say to wait,
+71 304 522 318 | the difference between them is reported below. Where the instructions say to wait,
+71 691 178 705 | the drawings again.
+71 246 178 260 | the drawings again.
+71 354 250 368 | then continue with the next step.
+71 412 521 426 | vocabulary of the one before it, on purpose. Measurements were taken at the start
+71 729 528 743 | wait until the indicator stops flashing and only then continue with the next step. The
+71 284 528 298 | wait until the indicator stops flashing and only then continue with the next step. The
+71 87 524 102 | without opening the drawings again. The committee reviewed the revised schedule
+
+--- Page 10 ---
+293 22 316 34 | 9 / 17
+71 717 502 731 | ENC2zP05 The committee reviewed the revised schedule and noted that every
+71 609 483 623 | ENC2zP06 A reader who skips ahead will find that each section repeats the
+71 660 482 674 | Measurements were taken at the start and at the end of the period, and the
+71 552 514 566 | Where the instructions say to wait, wait until the indicator stops flashing and only
+71 571 513 585 | and at the end of the period, and the difference between them is reported below.
+71 640 309 655 | difference between them is reported below.
+71 679 498 693 | find that each section repeats the vocabulary of the one before it, on purpose.
+71 749 150 763 | it, on purpose.
+71 698 524 712 | milestone depends on the delivery of the earlier one. A reader who skips ahead will
+71 532 250 547 | then continue with the next step.
+71 590 521 604 | vocabulary of the one before it, on purpose. Measurements were taken at the start
+71 768 531 782 | who skips ahead will find that each section repeats the vocabulary of the one before
+
+--- Page 11 ---
+290 22 319 34 | 10 / 17
+71 756 268 784 | Chapter 3 ENCH3
+71 716 481 730 | ENC3xP01 A reader who skips ahead will find that each section repeats the
+71 608 524 622 | ENC3xP02 Measurements were taken at the start and at the end of the period, and
+71 500 527 514 | ENC3xP03 Where the instructions say to wait, wait until the indicator stops flashing
+71 392 524 406 | ENC3xP04 The appendix lists every part by number so that an order can be placed
+71 284 502 298 | ENC3xP05 The committee reviewed the revised schedule and noted that every
+71 226 482 240 | Measurements were taken at the start and at the end of the period, and the
+71 658 514 672 | Where the instructions say to wait, wait until the indicator stops flashing and only
+71 677 513 691 | and at the end of the period, and the difference between them is reported below.
+71 353 525 367 | and noted that every milestone depends on the delivery of the earlier one. A reader
+71 480 524 495 | and only then continue with the next step. The appendix lists every part by number
+71 550 529 564 | appendix lists every part by number so that an order can be placed without opening
+71 423 214 437 | delivery of the earlier one.
+71 207 309 221 | difference between them is reported below.
+71 245 498 259 | find that each section repeats the vocabulary of the one before it, on purpose.
+71 315 150 329 | it, on purpose.
+71 264 524 278 | milestone depends on the delivery of the earlier one. A reader who skips ahead will
+71 442 499 456 | reviewed the revised schedule and noted that every milestone depends on the
+71 461 525 475 | so that an order can be placed without opening the drawings again. The committee
+71 588 522 603 | the difference between them is reported below. Where the instructions say to wait,
+71 531 178 545 | the drawings again.
+71 639 250 653 | then continue with the next step.
+71 697 521 711 | vocabulary of the one before it, on purpose. Measurements were taken at the start
+71 569 528 583 | wait until the indicator stops flashing and only then continue with the next step. The
+71 334 531 348 | who skips ahead will find that each section repeats the vocabulary of the one before
+71 372 524 386 | without opening the drawings again. The committee reviewed the revised schedule
+
+--- Page 12 ---
+290 22 319 34 | 11 / 17
+71 729 482 743 | ENC3yP01 A reader who skips ahead will find that each section repeats the
+71 620 524 635 | ENC3yP02 Measurements were taken at the start and at the end of the period, and
+71 512 528 527 | ENC3yP03 Where the instructions say to wait, wait until the indicator stops flashing
+71 404 525 419 | ENC3yP04 The appendix lists every part by number so that an order can be placed
+71 296 503 310 | ENC3yP05 The committee reviewed the revised schedule and noted that every
+71 188 484 202 | ENC3yP06 A reader who skips ahead will find that each section repeats the
+71 239 482 253 | Measurements were taken at the start and at the end of the period, and the
+71 763 212 784 | Section 3.1 ENS3
+71 671 514 685 | Where the instructions say to wait, wait until the indicator stops flashing and only
+71 131 514 145 | Where the instructions say to wait, wait until the indicator stops flashing and only
+71 690 513 704 | and at the end of the period, and the difference between them is reported below.
+71 150 513 164 | and at the end of the period, and the difference between them is reported below.
+71 366 525 380 | and noted that every milestone depends on the delivery of the earlier one. A reader
+71 493 524 507 | and only then continue with the next step. The appendix lists every part by number
+71 563 529 577 | appendix lists every part by number so that an order can be placed without opening
+71 436 214 450 | delivery of the earlier one.
+71 219 309 234 | difference between them is reported below.
+71 258 498 272 | find that each section repeats the vocabulary of the one before it, on purpose.
+71 328 150 342 | it, on purpose.
+71 277 524 291 | milestone depends on the delivery of the earlier one. A reader who skips ahead will
+71 455 499 469 | reviewed the revised schedule and noted that every milestone depends on the
+71 474 525 488 | so that an order can be placed without opening the drawings again. The committee
+71 601 522 615 | the difference between them is reported below. Where the instructions say to wait,
+71 544 178 558 | the drawings again.
+71 652 250 666 | then continue with the next step.
+71 111 250 126 | then continue with the next step.
+71 709 521 723 | vocabulary of the one before it, on purpose. Measurements were taken at the start
+71 169 521 183 | vocabulary of the one before it, on purpose. Measurements were taken at the start
+71 582 528 596 | wait until the indicator stops flashing and only then continue with the next step. The
+71 347 531 361 | who skips ahead will find that each section repeats the vocabulary of the one before
+71 385 524 399 | without opening the drawings again. The committee reviewed the revised schedule
+
+--- Page 13 ---
+290 22 319 34 | 12 / 17
+71 768 523 782 | ENC3yP07 Measurements were taken at the start and at the end of the period, and
+71 660 528 674 | ENC3yP08 Where the instructions say to wait, wait until the indicator stops flashing
+71 640 524 655 | and only then continue with the next step. The appendix lists every part by number
+71 710 529 724 | appendix lists every part by number so that an order can be placed without opening
+71 583 214 597 | delivery of the earlier one.
+71 602 499 616 | reviewed the revised schedule and noted that every milestone depends on the
+71 621 525 635 | so that an order can be placed without opening the drawings again. The committee
+71 749 522 763 | the difference between them is reported below. Where the instructions say to wait,
+71 691 178 705 | the drawings again.
+71 729 528 743 | wait until the indicator stops flashing and only then continue with the next step. The
+
+--- Page 14 ---
+290 22 319 34 | 13 / 17
+71 756 268 784 | Chapter 4 ENCH4
+71 716 482 730 | ENC4xP01 A reader who skips ahead will find that each section repeats the
+71 608 524 622 | ENC4xP02 Measurements were taken at the start and at the end of the period, and
+71 500 527 514 | ENC4xP03 Where the instructions say to wait, wait until the indicator stops flashing
+71 392 525 406 | ENC4xP04 The appendix lists every part by number so that an order can be placed
+71 284 503 298 | ENC4xP05 The committee reviewed the revised schedule and noted that every
+71 226 482 240 | Measurements were taken at the start and at the end of the period, and the
+71 658 514 672 | Where the instructions say to wait, wait until the indicator stops flashing and only
+71 677 513 691 | and at the end of the period, and the difference between them is reported below.
+71 353 525 367 | and noted that every milestone depends on the delivery of the earlier one. A reader
+71 480 524 495 | and only then continue with the next step. The appendix lists every part by number
+71 550 529 564 | appendix lists every part by number so that an order can be placed without opening
+71 423 214 437 | delivery of the earlier one.
+71 207 309 221 | difference between them is reported below.
+71 245 498 259 | find that each section repeats the vocabulary of the one before it, on purpose.
+71 315 150 329 | it, on purpose.
+71 264 524 278 | milestone depends on the delivery of the earlier one. A reader who skips ahead will
+71 442 499 456 | reviewed the revised schedule and noted that every milestone depends on the
+71 461 525 475 | so that an order can be placed without opening the drawings again. The committee
+71 588 522 603 | the difference between them is reported below. Where the instructions say to wait,
+71 531 178 545 | the drawings again.
+71 639 250 653 | then continue with the next step.
+71 697 521 711 | vocabulary of the one before it, on purpose. Measurements were taken at the start
+71 569 528 583 | wait until the indicator stops flashing and only then continue with the next step. The
+71 334 531 348 | who skips ahead will find that each section repeats the vocabulary of the one before
+71 372 524 386 | without opening the drawings again. The committee reviewed the revised schedule
+
+--- Page 15 ---
+290 22 319 34 | 14 / 17
+71 729 482 743 | ENC4yP01 A reader who skips ahead will find that each section repeats the
+71 620 524 635 | ENC4yP02 Measurements were taken at the start and at the end of the period, and
+71 512 528 527 | ENC4yP03 Where the instructions say to wait, wait until the indicator stops flashing
+71 404 525 419 | ENC4yP04 The appendix lists every part by number so that an order can be placed
+71 296 503 310 | ENC4yP05 The committee reviewed the revised schedule and noted that every
+71 188 484 202 | ENC4yP06 A reader who skips ahead will find that each section repeats the
+71 239 482 253 | Measurements were taken at the start and at the end of the period, and the
+71 763 213 784 | Section 4.1 ENS4
+71 671 514 685 | Where the instructions say to wait, wait until the indicator stops flashing and only
+71 131 514 145 | Where the instructions say to wait, wait until the indicator stops flashing and only
+71 690 513 704 | and at the end of the period, and the difference between them is reported below.
+71 150 513 164 | and at the end of the period, and the difference between them is reported below.
+71 366 525 380 | and noted that every milestone depends on the delivery of the earlier one. A reader
+71 493 524 507 | and only then continue with the next step. The appendix lists every part by number
+71 563 529 577 | appendix lists every part by number so that an order can be placed without opening
+71 436 214 450 | delivery of the earlier one.
+71 219 309 234 | difference between them is reported below.
+71 258 498 272 | find that each section repeats the vocabulary of the one before it, on purpose.
+71 328 150 342 | it, on purpose.
+71 277 524 291 | milestone depends on the delivery of the earlier one. A reader who skips ahead will
+71 455 499 469 | reviewed the revised schedule and noted that every milestone depends on the
+71 474 525 488 | so that an order can be placed without opening the drawings again. The committee
+71 601 522 615 | the difference between them is reported below. Where the instructions say to wait,
+71 544 178 558 | the drawings again.
+71 652 250 666 | then continue with the next step.
+71 111 250 126 | then continue with the next step.
+71 709 521 723 | vocabulary of the one before it, on purpose. Measurements were taken at the start
+71 169 521 183 | vocabulary of the one before it, on purpose. Measurements were taken at the start
+71 582 528 596 | wait until the indicator stops flashing and only then continue with the next step. The
+71 347 531 361 | who skips ahead will find that each section repeats the vocabulary of the one before
+71 385 524 399 | without opening the drawings again. The committee reviewed the revised schedule
+
+--- Page 16 ---
+290 22 319 34 | 15 / 17
+71 768 523 782 | ENC4yP07 Measurements were taken at the start and at the end of the period, and
+71 660 528 674 | ENC4yP08 Where the instructions say to wait, wait until the indicator stops flashing
+71 640 524 655 | and only then continue with the next step. The appendix lists every part by number
+71 710 529 724 | appendix lists every part by number so that an order can be placed without opening
+71 583 214 597 | delivery of the earlier one.
+71 602 499 616 | reviewed the revised schedule and noted that every milestone depends on the
+71 621 525 635 | so that an order can be placed without opening the drawings again. The committee
+71 749 522 763 | the difference between them is reported below. Where the instructions say to wait,
+71 691 178 705 | the drawings again.
+71 729 528 743 | wait until the indicator stops flashing and only then continue with the next step. The
+
+--- Page 17 ---
+290 22 319 34 | 16 / 17
+71 756 267 784 | Chapter 5 ENCH5
+84 710 153 722 | ENNATURAL01
+84 698 153 710 | ENNATURAL02
+84 686 153 698 | ENNATURAL03
+84 674 153 686 | ENNATURAL04
+84 662 153 674 | ENNATURAL05
+84 650 153 662 | ENNATURAL06
+84 638 153 650 | ENNATURAL07
+84 626 153 638 | ENNATURAL08
+84 614 153 626 | ENNATURAL09
+84 602 153 614 | ENNATURAL10
+84 590 153 602 | ENNATURAL11
+84 578 153 590 | ENNATURAL12
+84 566 153 578 | ENNATURAL13
+84 554 153 566 | ENNATURAL14
+84 542 153 554 | ENNATURAL15
+84 530 153 542 | ENNATURAL16
+84 518 153 530 | ENNATURAL17
+84 506 153 518 | ENNATURAL18
+84 494 153 506 | ENNATURAL19
+84 482 153 494 | ENNATURAL20
+84 470 153 482 | ENNATURAL21
+84 458 153 470 | ENNATURAL22
+84 446 153 458 | ENNATURAL23
+84 434 153 446 | ENNATURAL24
+84 422 153 434 | ENNATURAL25
+84 410 153 422 | ENNATURAL26
+84 398 153 410 | ENNATURAL27
+84 386 153 398 | ENNATURAL28
+84 374 153 386 | ENNATURAL29
+84 362 153 374 | ENNATURAL30
+84 350 153 362 | ENNATURAL31
+84 338 153 350 | ENNATURAL32
+84 326 153 338 | ENNATURAL33
+84 313 153 326 | ENNATURAL34
+84 301 153 314 | ENNATURAL35
+84 289 153 302 | ENNATURAL36
+84 277 153 290 | ENNATURAL37
+84 265 153 277 | ENNATURAL38
+84 253 153 265 | ENNATURAL39
+84 241 153 253 | ENNATURAL40
+84 229 153 241 | ENNATURAL41
+84 217 153 229 | ENNATURAL42
+84 205 153 217 | ENNATURAL43
+84 193 153 205 | ENNATURAL44
+84 181 153 193 | ENNATURAL45
+84 169 153 181 | ENNATURAL46
+84 157 153 169 | ENNATURAL47
+84 145 153 157 | ENNATURAL48
+84 133 153 145 | ENNATURAL49
+84 121 153 133 | ENNATURAL50
+84 109 153 121 | ENNATURAL51
+84 97 153 109 | ENNATURAL52
+
+--- Page 18 ---
+290 22 319 34 | 17 / 17
+71 756 269 784 | Chapter 6 ENCH6
+71 716 482 730 | ENC6xP01 A reader who skips ahead will find that each section repeats the
+71 608 524 622 | ENC6xP02 Measurements were taken at the start and at the end of the period, and
+71 500 527 514 | ENC6xP03 Where the instructions say to wait, wait until the indicator stops flashing
+71 392 524 406 | ENC6xP04 The appendix lists every part by number so that an order can be placed
+71 284 126 298 | ENEND99
+71 658 514 672 | Where the instructions say to wait, wait until the indicator stops flashing and only
+71 677 513 691 | and at the end of the period, and the difference between them is reported below.
+71 353 525 367 | and noted that every milestone depends on the delivery of the earlier one. A reader
+71 480 524 495 | and only then continue with the next step. The appendix lists every part by number
+71 550 529 564 | appendix lists every part by number so that an order can be placed without opening
+71 423 214 437 | delivery of the earlier one.
+71 315 150 329 | it, on purpose.
+71 442 499 456 | reviewed the revised schedule and noted that every milestone depends on the
+71 461 525 475 | so that an order can be placed without opening the drawings again. The committee
+71 588 522 603 | the difference between them is reported below. Where the instructions say to wait,
+71 531 178 545 | the drawings again.
+71 639 250 653 | then continue with the next step.
+71 697 521 711 | vocabulary of the one before it, on purpose. Measurements were taken at the start
+71 569 528 583 | wait until the indicator stops flashing and only then continue with the next step. The
+71 334 531 348 | who skips ahead will find that each section repeats the vocabulary of the one before
+71 372 524 386 | without opening the drawings again. The committee reviewed the revised schedule

@@ -126,3 +126,34 @@ gh workflow run install-check.yml --repo redtear1115/homebrew-tap     # runs it 
 - Update the website's `/cli/` install section and `llms.txt`, in en and zh-Hant, if anything
   about installing changed.
 - If the release changes what the tool does, update the tap README's description of the commands.
+
+## Bumping swift-cmark
+
+The node-budget pre-scan (`CMarkDepthScan` in `Sources/MarsDawnKit/MarkdownParsing.swift`) reads
+one cmark-gfm internal, `cmark_parser.root`, and stops a document early on a lower bound whose
+proof was made by reading swift-cmark 0.8.0's `blocks.c` and `extensions/table.c` (kit #150). A
+different swift-cmark is a different proof: `CMarkVersionPinTests` fails when `Package.resolved`
+moves off 0.8.0, and at run time `CMarkInternals.isAudited` turns the early stop off for a
+cmark-gfm whose version string, `cmark_parser` layout or probe counts differ. Bumping the pin
+(Dependabot opens such PRs) means redoing that audit against the new sources, then updating the
+pin test and `CMarkInternals.Fingerprint.audited` in the same change.
+
+## Checking js-yaml advisories before each release
+
+The JSON and YAML tree page (`data.html`, kit #128) runs a vendored js-yaml
+(`Sources/MarsDawnKit/Resources/Preview/vendor/js-yaml.umd.min.js`; the version, tarball
+integrity and digests are recorded in `LICENSE-js-yaml.txt`). Before every kit release, look the
+vendored version up again in both advisory sources, and record the date and result in the
+release PR:
+
+```sh
+VERSION=5.5.0   # the version in LICENSE-js-yaml.txt
+curl -fsS -X POST -H 'Content-Type: application/json' \
+  https://registry.npmjs.org/-/npm/v1/security/advisories/bulk -d "{\"js-yaml\":[\"$VERSION\"]}"
+curl -fsS "https://api.github.com/advisories?ecosystem=npm&affects=js-yaml@$VERSION&per_page=100"
+```
+
+Both must come back empty (`{}` and `[]`). An advisory for the vendored version stops the release
+until the owner decides. A newer js-yaml is a new vendoring: download the tarball, check it against
+the registry's `dist.integrity`, redo the record, and re-run the direct probes
+(`DataDocumentJSYAMLProbeTests`) and `VendoredJSYAMLTests`.

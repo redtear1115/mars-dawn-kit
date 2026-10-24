@@ -17,7 +17,7 @@ struct MarsDawnCommand: AsyncParsableCommand {
         Pass --json for machine-readable results. Exit codes: 0 success, 1 invalid theme (theme commands only), \
         \(CLIFailure.Code.inputNotFound.rawValue) input not found, \
         \(CLIFailure.Code.appNotInstalled.rawValue) MarsDawn not installed (open only), \(CLIFailure.Code.outputExists.rawValue) output exists \
-        (use --force), \(CLIFailure.Code.exportFailed.rawValue) export failed, \(CLIFailure.Code.appCannotOpenFolders.rawValue) this MarsDawn \
+        (use --force), \(CLIFailure.Code.exportFailed.rawValue) export failed or input too large, \(CLIFailure.Code.appCannotOpenFolders.rawValue) this MarsDawn \
         can't show a folder (open only), \(CLIFailure.Code.skillInstallFailed.rawValue) skill --install couldn't write the file, 64 usage error (including theme preview's refused -o).
         """,
         version: MarsDawnCLI.version,
@@ -31,13 +31,18 @@ struct OutputOptions: ParsableArguments {
     @Flag(help: "Print a JSON result on stdout instead of text.")
     var json = false
 
+    /// Where `report` prints. Tests set it, per task, to read what a command printed without
+    /// redirecting file descriptor 1 for the whole process; nil prints to stdout.
+    @TaskLocal static var sink: (@Sendable (String) -> Void)?
+
     func report(_ fields: [String: Any], text: String) {
+        let emit = Self.sink ?? { print($0) }
         if json {
             var object = fields
             object["ok"] = true
-            printJSON(object)
+            emit(jsonString(object))
         } else {
-            print(text)
+            emit(text)
         }
     }
 }
@@ -51,8 +56,17 @@ func printJSON(_ object: [String: Any]) {
     print(jsonString(object))
 }
 
+/// What `--json` prints for a `CLIFailure`.
+func failureJSONObject(_ failure: CLIFailure) -> [String: Any] {
+    ["ok": false, "error": failure.kind, "message": failure.message]
+}
+
 /// A failure with a stable exit code and a machine-readable kind.
+///
+/// The kind is its own value, not derived from the code alone: two kinds can share an exit code
+/// (`export_failed` and `input_too_large` both exit 5).
 struct CLIFailure: Error, CustomStringConvertible {
+    /// The exit code, and the kind each code reports unless a failure names another.
     enum Code: Int32 {
         case inputNotFound = 2
         case appNotInstalled = 3
@@ -73,9 +87,45 @@ struct CLIFailure: Error, CustomStringConvertible {
         }
     }
 
+    /// Kinds that share another kind's exit code.
+    enum SharedKind: String, CaseIterable {
+        /// The input is over the renderer's byte cap (`ParseLimits.defaultMaxBytes`); nothing was
+        /// rendered or written. Exits 5, like `export_failed`.
+        case inputTooLarge = "input_too_large"
+
+        var code: Code {
+            switch self {
+            case .inputTooLarge: .exportFailed
+            }
+        }
+    }
+
     let code: Code
+    /// The machine-readable kind `--json` prints as `error`.
+    let kind: String
     let message: String
     var description: String { message }
+
+    init(code: Code, message: String) {
+        self.code = code
+        self.kind = code.kind
+        self.message = message
+    }
+
+    init(_ shared: SharedKind, message: String) {
+        self.code = shared.code
+        self.kind = shared.rawValue
+        self.message = message
+    }
+
+    /// `export` refused an input over the byte cap.
+    static func inputTooLarge(_ input: URL, limit: Int) -> CLIFailure {
+        CLIFailure(
+            .inputTooLarge,
+            message: "\(input.path) is larger than \(limit.formatted(.number.grouping(.never))) bytes "
+                + "(\(limit.formatted(.byteCount(style: .memory)))), the most marsdawn renders. Nothing was written."
+        )
+    }
 
     /// Wording approved by the owner (#165).
     static func appCannotOpenFolders(app: URL) -> CLIFailure {
@@ -220,8 +270,12 @@ enum MarsDawnApp {
         }
     }
 
+    /// Like `locate`, but per task: a test that sets it never changes what another running test
+    /// sees. Nil outside tests.
+    @TaskLocal static var locateOverride: (@Sendable () throws -> URL?)?
+
     static func require() throws -> URL {
-        guard let url = try locate() else { throw CLIFailure.appNotInstalled() }
+        guard let url = try (locateOverride ?? locate)() else { throw CLIFailure.appNotInstalled() }
         return url
     }
 
@@ -293,6 +347,49 @@ extension PreviewTheme: ExpressibleByArgument {
 }
 
 extension DocumentExporter.Paper: ExpressibleByArgument {}
+extension ExportLayout: ExpressibleByArgument {
+    /// `handbook` is the CLI value for the Handbook layout; `manual` is a deprecated alias kept for
+    /// scripts that already pass it. Both give `.manual`, so the export and its `--json` result are
+    /// the same.
+    public init?(argument: String) {
+        switch argument {
+        case "document": self = .document
+        case "handbook", "manual": self = .manual
+        case "handout": self = .handout
+        default: return nil
+        }
+    }
+
+    public static var allValueStrings: [String] { ["document", "handbook", "handout"] }
+}
+
+/// What `--layout` parses to, remembering whether the user typed the deprecated `manual` (both
+/// spellings give `.manual`, so the layout alone can't say).
+struct LayoutArgument: ExpressibleByArgument {
+    var layout: ExportLayout
+    var typedManual = false
+
+    static let deprecationWarning = "warning: --layout manual is deprecated; use --layout handbook"
+
+    init(_ layout: ExportLayout) { self.layout = layout }
+
+    init?(argument: String) {
+        guard let layout = ExportLayout(argument: argument) else { return nil }
+        self.layout = layout
+        typedManual = argument == "manual"
+    }
+
+    static var allValueStrings: [String] { ExportLayout.allValueStrings }
+    /// Without this the completion scripts offer no values: the default kind is built from CaseIterable.
+    static var defaultCompletionKind: CompletionKind { .list(allValueStrings) }
+    var defaultValueDescription: String {
+        switch layout {
+        case .document: "document"
+        case .manual: "handbook"
+        case .handout: "handout"
+        }
+    }
+}
 
 // MARK: - open
 
@@ -522,7 +619,11 @@ extension MarsDawnCommand {
             for group in RevealEvent.groups(for: targets) {
                 let configuration = openConfiguration()
                 configuration.appleEvent = RevealEvent.openDocuments(urls: group.urls, line: group.line)
-                _ = try await NSWorkspace.shared.open(group.urls, withApplicationAt: app, configuration: configuration)
+                if let opener = Self.opener {
+                    try await opener(group.urls, app, configuration)
+                } else {
+                    _ = try await NSWorkspace.shared.open(group.urls, withApplicationAt: app, configuration: configuration)
+                }
             }
             // Folders travel on their own, with no reveal line: a folder has no line to land on.
             // PLAN #69 slice B: with an app that reports back and --wait > 0, a one-time token
@@ -532,9 +633,13 @@ extension MarsDawnCommand {
             if let folder = folders.first {
                 let configuration = openConfiguration()
                 let capable = MarsDawnApp.reportsFolderStatus(app)
+                // A test's `opener` stands in for the folder's send too, so none reaches NSWorkspace.
+                let folderOpener = Self.opener.map { stub in
+                    FolderStatusOpener(open: { urls, app, configuration in try await stub(urls, app, configuration) })
+                } ?? FolderStatusEnvironment.opener
                 folderStatus = try await FolderStatusRequest.send(
                     folder: folder, app: app, wait: wait, capable: capable, configuration: configuration,
-                    opener: FolderStatusEnvironment.opener, notifier: FolderStatusEnvironment.notifier
+                    opener: folderOpener, notifier: FolderStatusEnvironment.notifier
                 )
             }
             var fields: [String: Any] = [
@@ -560,7 +665,12 @@ extension MarsDawnCommand {
                 lines.append(Open.folderLine(path: folder.path, result: folderStatus))
             }
             output.report(fields, text: lines.joined(separator: "\n"))
+            SkillHint.emitAfterSuccess(json: output.json)
         }
+
+        /// Hands document URLs to the app. Tests set it, per task, so they never reach an
+        /// installed MarsDawn; nil sends them through `NSWorkspace`.
+        @TaskLocal static var opener: (@MainActor @Sendable ([URL], URL, NSWorkspace.OpenConfiguration) async throws -> Void)?
 
         /// The `"folder"` object in `--json`: always `path` and `requested: true`; `status` (and,
         /// for `needsUser`, `waitingFor`) only when `result` carries one. Shared by `run()` and by
@@ -619,6 +729,14 @@ extension MarsDawnCommand {
         @Option(help: "Paper size.")
         var paper: DocumentExporter.Paper = .a4
 
+        @Option(name: .customLong("layout"), help: "Page layout: document (the default); handbook, the Handbook layout, with wider margins, a 25 mm binding side and every top-level heading on a new page, plus a cover (from the front matter's title, subtitle, version, date, author and logo), a table of contents of the level 1 and 2 headings, \"n / N\" page numbers and PDF bookmarks. handout: a blank notes column on the right of every page (a table too wide for the body may run into it), the front matter's title (or the file name) and date at the top of page 1, and a \"file name · date · n / N\" footer; the date is the front matter's date, else today's. <!--BREAK--> on its own line starts a new page in every layout. manual is deprecated: use handbook.")
+        var layoutArgument = LayoutArgument(.document)
+
+        var layout: ExportLayout { layoutArgument.layout }
+
+        @Option(help: "Title of the Handbook layout's table of contents.")
+        var tocTitle: String = "Contents"
+
         @Flag(help: "Load images from the web while rendering.")
         var allowRemoteImages = false
 
@@ -646,6 +764,9 @@ extension MarsDawnCommand {
             // No MarsDawnApp.require() here: export is the same rendering the app does, and it
             // ships in this package, so it must work with nothing else installed (Homebrew builds
             // and tests the tool on machines that have no MarsDawn.app). `open` still needs it.
+            if layoutArgument.typedManual {
+                FileHandle.standardError.write(Data((LayoutArgument.deprecationWarning + "\n").utf8))
+            }
             let input = try existingFile(file)
             let destination = outputURL(for: input)
             if FileManager.default.fileExists(atPath: destination.path), !force {
@@ -671,13 +792,20 @@ extension MarsDawnCommand {
                     baseDirectory: input.deletingLastPathComponent(),
                     allowRemoteImages: allowRemoteImages,
                     paper: paper,
-                    softBreaksAsLineBreaks: breaks
+                    softBreaksAsLineBreaks: breaks,
+                    layout: layout,
+                    tocTitle: tocTitle,
+                    // The file's name without its extension, never its folders (S3 of mars-dawn#432).
+                    displayName: input.deletingPathExtension().lastPathComponent,
+                    calloutTitles: .preferred()
                 )
                 if FileManager.default.fileExists(atPath: destination.path) {
                     _ = try FileManager.default.replaceItemAt(destination, withItemAt: temporary)
                 } else {
                     try FileManager.default.moveItem(at: temporary, to: destination)
                 }
+            } catch DocumentExporter.ExportError.inputTooLarge(let limit) {
+                throw CLIFailure.inputTooLarge(input, limit: limit)
             } catch {
                 throw CLIFailure(code: .exportFailed, message: "Export failed: \(error.localizedDescription)")
             }
@@ -687,21 +815,35 @@ extension MarsDawnCommand {
                 text += "\nwarning: Mermaid diagram failed to render: \(message)"
             }
             options.report(
-                [
-                    "output": destination.path,
-                    "pages": result.pageCount,
-                    "theme": resolvedTheme().id,
-                    "paper": paper.rawValue,
-                    "diagramErrors": result.diagramErrors,
-                    "diagramErrorDetails": result.diagramErrorDetails.map { error -> [String: Any] in
-                        var entry: [String: Any] = ["message": error.message]
-                        if let fenceLine = error.fenceLine { entry["fenceLine"] = fenceLine }
-                        if let line = error.line { entry["line"] = line }
-                        return entry
-                    },
-                ],
+                Self.jsonFields(
+                    output: destination.path, pages: result.pageCount, theme: resolvedTheme().id, paper: paper,
+                    diagramErrors: result.diagramErrors, diagramErrorDetails: result.diagramErrorDetails
+                ),
                 text: text
             )
+            SkillHint.emitAfterSuccess(json: options.json)
+        }
+
+        /// The `--json` result's fields (`report` adds `ok`). This is the published export.v1
+        /// schema (marsdawn-mcp, mars-dawn-website), which has `additionalProperties: false`, so
+        /// a new field here breaks its readers: the layout, for one, is not reported.
+        static func jsonFields(
+            output: String, pages: Int, theme: String, paper: DocumentExporter.Paper,
+            diagramErrors: [String], diagramErrorDetails: [DocumentExporter.DiagramError]
+        ) -> [String: Any] {
+            [
+                "output": output,
+                "pages": pages,
+                "theme": theme,
+                "paper": paper.rawValue,
+                "diagramErrors": diagramErrors,
+                "diagramErrorDetails": diagramErrorDetails.map { error -> [String: Any] in
+                    var entry: [String: Any] = ["message": error.message]
+                    if let fenceLine = error.fenceLine { entry["fenceLine"] = fenceLine }
+                    if let line = error.line { entry["line"] = line }
+                    return entry
+                },
+            ]
         }
     }
 }

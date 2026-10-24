@@ -1,0 +1,34 @@
+{
+  "layout": "manual",
+  "cover": true,
+  "logo": true,
+  "tocEntries": 49,
+  "minTocPages": 2,
+  "repair": "unchanged",
+  "minPages": 30,
+  "textOnEveryPage": true,
+  "markers": [
+    "MLTITLE",
+    "MLSUB",
+    "MLC1INTRO",
+    "MLC6S4P1",
+    "MLC8S5P5",
+    "MLEND99",
+    "MLFN1",
+    "MLFN8"
+  ],
+  "markersOnLastPage": [
+    "MLFN8"
+  ],
+  "startsPage": [
+    "Chapter 1 MLCH1",
+    "Chapter 2 MLCH2",
+    "Chapter 3 MLCH3",
+    "Chapter 4 MLCH4",
+    "Chapter 5 MLCH5",
+    "Chapter 6 MLCH6",
+    "Chapter 7 MLCH7",
+    "Chapter 8 MLCH8"
+  ],
+  "notes": "Manual layout S2 (mars-dawn#432), English, more than 30 pages so contents numbers reach two digits. Cover from the front matter (title, subtitle, version, date, author) with a logo (img/logo.png, one flat colour). The contents lists 8 h1 and 41 h2 and spans two pages or more. Heading texts repeat on purpose (Overview and Checklist in every chapter), so only per-heading markers can place them. Chapter 6 has the calibrated entry ('Calibrating the contents line ... iiii'): with an auto-width number slot and a one-digit placeholder its contents line ends within one 'i' of the line end, and with the two-digit number of pass B it wraps; the fixed-width slot keeps both passes alike (the M2 control). 24 external links and 8 footnotes (fewer than 10: a two-digit footnote number's list marker sits in the left margin, in every layout, which the margin check would report)."
+}

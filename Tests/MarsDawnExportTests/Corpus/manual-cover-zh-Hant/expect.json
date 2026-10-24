@@ -1,0 +1,12 @@
+{
+  "layout": "manual",
+  "cover": true,
+  "logo": false,
+  "tocEntries": 10,
+  "repair": "repaired",
+  "textOnEveryPage": true,
+  "markers": ["ZHTITLE", "ZHSUB", "ZHLEAD", "ZHC2S3P6", "ZHEND99"],
+  "markersOnLastPage": ["ZHEND99"],
+  "startsPage": ["ZHLEAD", "第一章 準備工作", "第二章 檢查程序", "第三章 維修與回報"],
+  "notes": "Manual layout S2 (mars-dawn#432), Traditional Chinese. The front matter has a tags: list as well as the cover keys, so the block is not a simple table, and the cover is still made from its simple lines. The body starts with a paragraph, not a heading. Body ideographs with radical twins (目 文 示 言) and one radical in the source (U+2FB4 ⾴), so the final file's repair is .repaired and the source radical is kept. The heading 目視檢查 occurs twice."
+}

@@ -1,52 +1,53 @@
 OS build: Version 26.6.2 (Build 25G83) | WebKit: 21624.5.1.11.3 | Paper: a4
 Page count: 2
+Lines: minX minY maxX maxY | text, whole points from the page's bottom left, sorted by text; compared within 1 pt
 
 --- Page 1 ---
-Blank Page Repro BLANKHEAD01
-Paragraph 001.
-Paragraph 002.
-Paragraph 003.
-Paragraph 004.
-Paragraph 005.
-Paragraph 006.
-Paragraph 007.
-Paragraph 008.
-Paragraph 009.
-Paragraph 010.
-Paragraph 011.
-Paragraph 012.
-Paragraph 013.
-Paragraph 014.
-Paragraph 015.
-Paragraph 016.
-Paragraph 017.
-Paragraph 018.
-Paragraph 019.
-Paragraph 020.
-Paragraph 021.
+45 723 414 751 | Blank Page Repro BLANKHEAD01
+45 683 128 697 | Paragraph 001.
+45 651 130 666 | Paragraph 002.
+45 620 130 634 | Paragraph 003.
+45 589 130 603 | Paragraph 004.
+45 558 130 572 | Paragraph 005.
+45 527 130 541 | Paragraph 006.
+45 495 128 509 | Paragraph 007.
+45 464 130 478 | Paragraph 008.
+45 433 130 447 | Paragraph 009.
+45 402 128 416 | Paragraph 010.
+45 371 126 385 | Paragraph 011.
+45 339 128 353 | Paragraph 012.
+45 308 128 322 | Paragraph 013.
+45 277 128 291 | Paragraph 014.
+45 246 128 260 | Paragraph 015.
+45 214 128 229 | Paragraph 016.
+45 183 126 197 | Paragraph 017.
+45 152 128 166 | Paragraph 018.
+45 121 128 135 | Paragraph 019.
+45 90 130 104 | Paragraph 020.
+45 58 128 73 | Paragraph 021.
 
 --- Page 2 ---
-Paragraph 022.
-Paragraph 023.
-Paragraph 024.
-Paragraph 025.
-Paragraph 026.
-Paragraph 027.
-Paragraph 028.
-Paragraph 029.
-Paragraph 030.
-Paragraph 031.
-Paragraph 032.
-Paragraph 033.
-Paragraph 034.
-Paragraph 035.
-Paragraph 036.
-Paragraph 037.
-Paragraph 038.
-Paragraph 039.
-Paragraph 040.
-Paragraph 041.
-Paragraph 042.
-Paragraph 043.
-Paragraph 044.
-Paragraph 045.
+45 773 130 787 | Paragraph 022.
+45 742 130 756 | Paragraph 023.
+45 711 130 725 | Paragraph 024.
+45 679 129 694 | Paragraph 025.
+45 648 130 662 | Paragraph 026.
+45 617 128 631 | Paragraph 027.
+45 586 130 600 | Paragraph 028.
+45 555 130 569 | Paragraph 029.
+45 523 130 538 | Paragraph 030.
+45 492 128 506 | Paragraph 031.
+45 461 130 475 | Paragraph 032.
+45 430 130 444 | Paragraph 033.
+45 399 130 413 | Paragraph 034.
+45 367 130 381 | Paragraph 035.
+45 336 130 350 | Paragraph 036.
+45 305 128 319 | Paragraph 037.
+45 274 130 288 | Paragraph 038.
+45 242 130 257 | Paragraph 039.
+45 211 130 225 | Paragraph 040.
+45 180 128 194 | Paragraph 041.
+45 149 130 163 | Paragraph 042.
+45 118 130 132 | Paragraph 043.
+45 86 130 101 | Paragraph 044.
+45 55 130 69 | Paragraph 045.

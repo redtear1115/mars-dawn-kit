@@ -1,0 +1,44 @@
+{
+  "layout": "manual",
+  "minPages": 10,
+  "textOnEveryPage": true,
+  "markers": [
+    "ENTITLE",
+    "ENAP02",
+    "ENNATURAL01",
+    "ENNATURAL52",
+    "ENAFTERBREAK",
+    "ENCODEBEFORE",
+    "ENCODEAFTER",
+    "ENINLINE",
+    "ENEND99"
+  ],
+  "markersOnLastPage": [
+    "ENEND99"
+  ],
+  "startsPage": [
+    "Field Manual ENTITLE",
+    "Chapter 1 ENCH1",
+    "ENAFTERBREAK",
+    "Chapter 2 ENCH2",
+    "Chapter 3 ENCH3",
+    "Chapter 4 ENCH4",
+    "Chapter 5 ENCH5",
+    "Chapter 6 ENCH6"
+  ],
+  "samePage": [
+    [
+      "ENCODEBEFORE",
+      "ENCODEAFTER"
+    ],
+    [
+      "ENINLINE",
+      "then text"
+    ],
+    [
+      "ENNATURAL01",
+      "ENNATURAL52"
+    ]
+  ],
+  "notes": "Manual layout (S1 of mars-dawn#432), English. The first block is an H1 (no blank first page). Every H1 starts a page. A <!--BREAK--> on its own line starts a page (ENAFTERBREAK); a <!--BREAK--> immediately followed by an H1 (before Chapter 4) is one break; a <!--BREAK--> inside a code fence and in inline code is text and breaks nothing."
+}

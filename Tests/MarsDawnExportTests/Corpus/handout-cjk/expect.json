@@ -1,0 +1,12 @@
+{
+  "layout": "handout",
+  "displayName": "會議講義⾴頁",
+  "minPages": 2,
+  "textOnEveryPage": true,
+  "repair": "repaired",
+  "diagrams": { "rendered": 1, "failed": 0 },
+  "markers": ["ZHTITLE", "ZHH1", "ZHP01", "JAP01", "ZHTBL", "ZHCELL1", "ZHCELL2", "ZHMER", "ZHMATH", "ZHEND99"],
+  "markersOnLastPage": ["ZHEND99"],
+  "startsPage": ["第三季會議講義 ZHTITLE 2026年10月01日 第一章 頁面設計 ZHH1"],
+  "notes": "Handout layout (S3 of mars-dawn#432), zh-Hant and Japanese, front-matter title and a non-ISO date. The display name 會議講義⾴頁 holds a CJK radical and its ideograph twin, which share one glyph: the footer must extract both exactly. The body's radicals are repaired."
+}

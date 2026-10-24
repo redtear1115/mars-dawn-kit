@@ -50,7 +50,7 @@ public struct TextStatistics: Sendable, Equatable {
     public init(markdownBody: String) {
         var generator = SystemRandomNumberGenerator()
         let footnotes = FootnoteExtractor.extract(from: markdownBody, using: &generator, placeholders: false)
-        guard let body = Self.readableText(footnotes.markdown) else {
+        guard let body = Self.readableText(footnotes.markdown, textLines: Self.footnoteMarkerLines(in: markdownBody)) else {
             self.init(readableText: markdownBody, sourceLines: markdownBody)
             return
         }
@@ -59,13 +59,46 @@ public struct TextStatistics: Sendable, Equatable {
     }
 
     /// What a page shows of `markdown`, or nil when the parsing worker refuses it.
-    private static func readableText(_ markdown: String) -> String? {
+    /// `textLines`: lines of `markdown` the page leaves as text although they read as a marker.
+    private static func readableText(_ markdown: String, textLines: Set<Int> = []) -> String? {
         MarkdownParsing.withDocument(markdown) { outcome -> String? in
             guard case .document(let document) = outcome else { return nil }
-            var visitor = ReadableTextVisitor()
+            let containers = Callouts.mayContainContainers(markdown)
+            var visitor = ReadableTextVisitor(containers: containers ? Callouts.Source(markdown, mathLines: mathMarkerLines(in: markdown).union(textLines)) : nil)
             visitor.visit(document)
             return visitor.output
         }
+    }
+
+    /// The lines of `markdown` where a `:::` marker line holds math. The page leaves such a line
+    /// as text (the renderer reads its marker lines with the math already taken out, and a title
+    /// with math in it is not one), so the counter must not read it as a marker either. Looked
+    /// for only when a line has both a `:::` and a `$`, as the extraction costs several parses.
+    private static func mathMarkerLines(in markdown: String) -> Set<Int> {
+        let candidates = markdown.split(omittingEmptySubsequences: false, whereSeparator: { $0 == "\n" || $0 == "\r\n" || $0 == "\r" })
+            .enumerated().filter { $0.element.contains(":::") && $0.element.contains("$") }
+        guard !candidates.isEmpty else { return [] }
+        let lines = MathExtractor.extract(from: markdown).markdown
+            .split(omittingEmptySubsequences: false, whereSeparator: { $0 == "\n" || $0 == "\r\n" || $0 == "\r" })
+        let placeholder = Character(MathExtractor.placeholderStart)
+        return Set(candidates.map(\.offset).filter { $0 < lines.count && lines[$0].contains(placeholder) }.map { $0 + 1 })
+    }
+
+    /// The lines of `markdown` where a `:::` marker line holds a footnote reference (#223). The
+    /// renderer leaves a reference as a placeholder in the title, and a title with one in it is not a
+    /// marker; this counter removes references before it reads, so it asks the extractor what the
+    /// renderer's source holds. Looked for only when the text has a `:::` and a `[^` (byte scans),
+    /// and then only on lines with both, as the extraction costs a parse.
+    private static func footnoteMarkerLines(in markdown: String) -> Set<Int> {
+        // One byte scan each, before any split: most documents have no `:::` or no reference.
+        guard Callouts.mayContainContainers(markdown), markdown.utf8.contains(UInt8(ascii: "^")), markdown.contains("[^") else { return [] }
+        let candidates = markdown.split(omittingEmptySubsequences: false, whereSeparator: { $0 == "\n" || $0 == "\r\n" || $0 == "\r" })
+            .enumerated().filter { $0.element.contains(":::") && $0.element.contains("[^") }
+        guard !candidates.isEmpty else { return [] }
+        let lines = FootnoteExtractor.extract(from: markdown).markdown
+            .split(omittingEmptySubsequences: false, whereSeparator: { $0 == "\n" || $0 == "\r\n" || $0 == "\r" })
+        let placeholder = Character(FootnoteExtractor.placeholderStart)
+        return Set(candidates.map(\.offset).filter { $0 < lines.count && lines[$0].contains(placeholder) }.map { $0 + 1 })
     }
 
     private init(readableText: String, sourceLines: String) {
@@ -172,6 +205,14 @@ private struct ReadableTextVisitor: MarkupWalker {
     /// document is inside a `script`, `style` or `template` from one piece of HTML to the next,
     /// so the text nodes between an inline `<script>` and its `</script>` aren't counted either.
     private var html = VisibleHTMLText()
+    /// The source, when the Markdown has `:::` in it anywhere: only then are containers looked for (#135).
+    private let containers: Callouts.Source?
+    /// Paragraphs that end in a `:::` closer a list absorbed: how many inline children to keep.
+    private var trims: [Callouts.Position: Int] = [:]
+
+    init(containers: Callouts.Source?) {
+        self.containers = containers
+    }
 
     mutating func visitText(_ text: Text) {
         guard !html.isHiding else { return }
@@ -212,22 +253,89 @@ private struct ReadableTextVisitor: MarkupWalker {
     }
 
     mutating func visitParagraph(_ paragraph: Paragraph) {
-        descendInto(paragraph)
+        if !trims.isEmpty, let position = Callouts.Position(paragraph), let keep = trims[position] {
+            for child in Array(paragraph.children)[..<keep] { visit(child) }
+        } else {
+            descendInto(paragraph)
+        }
+        output += " "
+    }
+
+    // MARK: Callouts (#135)
+    //
+    // The page shows no marker line (`[!NOTE]`, `:::info`, `:::`), and no default title: that is
+    // generated content, which `innerText` leaves out, so the count does not depend on the page's
+    // language. An author title is text on the page and is counted. A `:::spoiler` is a closed
+    // `<details>`: its title is counted and its body is not, as for a collapsed `<details>` below.
+
+    mutating func visitDocument(_ document: Document) {
+        walkChildren(of: document)
+    }
+
+    mutating func visitBlockQuote(_ blockQuote: BlockQuote) {
+        if let alert = Callouts.alert(in: blockQuote) {
+            walkBlocks(alert.blocks)
+        } else {
+            walkChildren(of: blockQuote)
+        }
+        output += " "
+    }
+
+    mutating func visitListItem(_ listItem: ListItem) {
+        walkChildren(of: listItem)
+        output += " "
+    }
+
+    private mutating func walkChildren(of container: any Markup) {
+        guard containers != nil else {
+            descendInto(container)
+            return
+        }
+        walkBlocks(container.children.map { Callouts.Block($0) })
+    }
+
+    /// The text of a container's blocks, with the markers of `:::` containers applied.
+    private mutating func walkBlocks(_ blocks: [Callouts.Block]) {
+        guard let events = Callouts.events(for: blocks, source: containers) else {
+            for block in blocks { walk(block, trim: nil) }
+            return
+        }
+        // Inside a spoiler: how many containers have opened since, so its closer is known.
+        var hidden = 0
+        for event in events {
+            switch event {
+            case .content(let block, let trim):
+                if hidden == 0 { walk(block, trim: trim) }
+            case .open(let opening):
+                if hidden > 0 {
+                    hidden += 1
+                    continue
+                }
+                switch opening {
+                case .callout(_, let title, _):
+                    if let title { output += title + " " }
+                case .spoiler(let title, _):
+                    output += title + " "
+                    hidden = 1
+                }
+            case .close:
+                if hidden > 0 { hidden -= 1 }
+            }
+        }
+    }
+
+    private mutating func walk(_ block: Callouts.Block, trim: Callouts.Trim?) {
+        if let trim { trims[trim.position] = trim.keep }
+        guard let range = block.inline else {
+            visit(block.node)
+            return
+        }
+        for child in block.inlines[range] { visit(child) }
         output += " "
     }
 
     mutating func visitHeading(_ heading: Heading) {
         descendInto(heading)
-        output += " "
-    }
-
-    mutating func visitListItem(_ listItem: ListItem) {
-        descendInto(listItem)
-        output += " "
-    }
-
-    mutating func visitBlockQuote(_ blockQuote: BlockQuote) {
-        descendInto(blockQuote)
         output += " "
     }
 

@@ -300,6 +300,20 @@ struct WaitOptionTests {
         }
     }
 
+    /// `Open.run()` with no app that can be found and an opener that records, so that if the range
+    /// guard ever regressed and `/tmp/x.md` existed, the run would end at "not installed" or in the
+    /// recorder, never in the installed MarsDawn.
+    private func exitCodeOfRun(_ arguments: [String]) async -> Int32? {
+        let recorder = OpenRecorder()
+        let code = await MarsDawnApp.$locateOverride.withValue({ nil }) {
+            await MarsDawnCommand.Open.$opener.withValue(recorder.opener) {
+                await exitCode { _ = try await MarsDawnCommand.Open.parse(arguments).run() }
+            }
+        }
+        #expect(recorder.calls.isEmpty, "\(arguments): nothing may be sent")
+        return code
+    }
+
     @Test func defaultsToTwoAndAcceptsTheFullRange() throws {
         let a = try MarsDawnCommand.Open.parse(["/tmp/whatever.md"])
         #expect(a.wait == 2)
@@ -315,7 +329,7 @@ struct WaitOptionTests {
     /// text-only formatting. See the comment on the `--wait` check in `Commands.swift`.)
     @Test func outOfRangeIsExitCode64() async throws {
         for value in [31, 100] {
-            let code = await exitCode { _ = try await MarsDawnCommand.Open.parse(["--wait", "\(value)", "/tmp/x.md"]).run() }
+            let code = await exitCodeOfRun(["--wait", "\(value)", "/tmp/x.md"])
             #expect(code == WaitRangeFailure.exitCode, "value \(value)")
         }
         #expect(WaitRangeFailure.exitCode == 64)
@@ -335,7 +349,10 @@ struct WaitOptionTests {
             Issue.record("expected a usage error")
         } catch {
             #expect(MarsDawnCommand.exitCode(for: error).rawValue == 64)
-            #expect(!MarsDawnCommand.fullMessage(for: error).contains("wait_out_of_range"))
+            // ArgumentParser's own failure, not ours: a `WaitRangeFailure` would be the thing that
+            // carries the `wait_out_of_range` kind, and this one cannot.
+            #expect(!(error is WaitRangeFailure))
+            #expect(MarsDawnCommand.fullMessage(for: error).contains("Missing value for '--wait <seconds>'"))
         }
     }
 
@@ -344,7 +361,7 @@ struct WaitOptionTests {
     @Test func aNegativeWaitWrittenWithEqualsReachesWaitRangeFailure() async throws {
         let parsed = try MarsDawnCommand.Open.parse(["--wait=-1", "/tmp/x.md"])
         #expect(parsed.wait == -1)
-        let code = await exitCode { _ = try await MarsDawnCommand.Open.parse(["--wait=-1", "/tmp/x.md"]).run() }
+        let code = await exitCodeOfRun(["--wait=-1", "/tmp/x.md"])
         #expect(code == 64)
     }
 
@@ -357,7 +374,8 @@ struct WaitOptionTests {
             Issue.record("expected a usage error")
         } catch {
             #expect(MarsDawnCommand.exitCode(for: error).rawValue == 64)
-            #expect(!MarsDawnCommand.fullMessage(for: error).contains("wait_out_of_range"))
+            #expect(!(error is WaitRangeFailure))
+            #expect(MarsDawnCommand.fullMessage(for: error).contains("The value '99999999999999999999' is invalid for '--wait <seconds>'"))
         }
     }
 

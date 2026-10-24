@@ -369,6 +369,10 @@
     const cached = svgCache.get(source);
     if (cached) {
       target.innerHTML = cached;
+      // The SVG a render produced, kept on the block itself (kit #157). Redraw paths read this,
+      // never .mermaid-output's current markup, so a diagram's output is always something this
+      // code produced and never markup a document supplied.
+      block._mdSVG = cached;
       block.classList.add("rendered");
       matchSequenceBands(target);
       return;
@@ -376,6 +380,9 @@
     // Keep the previous diagram on screen while the edited one renders (no flicker).
     if (placeholderSVG) {
       target.innerHTML = placeholderSVG;
+      // Only ever another block's `_mdSVG`, so it stays this code's own output; keeping it means a
+      // second failing edit or a theme change still has the last good drawing to show.
+      block._mdSVG = placeholderSVG;
       block.classList.add("rendered", "stale");
     }
     const id = `mermaid-${++renderCounter}`;
@@ -386,6 +393,7 @@
       if (svgCache.size > 64) svgCache.delete(svgCache.keys().next().value);
       if (!block.isConnected) return;
       target.innerHTML = svg;
+      block._mdSVG = svg;  // kit #157: see the cached path above.
       block.classList.add("rendered");
       matchSequenceBands(target);
       block.classList.remove("stale", "error");
@@ -777,8 +785,30 @@
   }
 
   // Every tag in RawHTMLSafety.swift's `neutralizedRawHTMLTags`, plus `meta` (a refresh navigates)
-  // and `base` (changes how relative URLs resolve).
-  const blockedElements = "link, meta, base, iframe, frame, object, embed, portal, fencedframe";
+  // and `base` (changes how relative URLs resolve). `script` and `noscript` are dropped as well
+  // (kit #157, owner decision 2026-10-19 D-157): rendered document output never needs either, and
+  // neither should reach the page even though the CSP and template parsing already keep a script
+  // inert.
+  const blockedElements = "link, meta, base, iframe, frame, object, embed, portal, fencedframe, script, noscript";
+
+  // The document's language (kit #164). The renderer writes one `<md-content-lang data-lang="…">`
+  // as the fragment's very first node when a document is Japanese, and nowhere else; a document
+  // can put elements at the top level only after a node the renderer wrote, so an element of that
+  // name anywhere but first is the document's own and is left alone as content. The value is
+  // checked again (ASCII BCP 47 shape, primary subtag `ja`, at most 35 characters) and only ever
+  // set as a property, so it can't become markup. JavaScript's `$` without the `m` flag matches
+  // only at the very end.
+  const languageTagPattern = /^[A-Za-z]{2,3}(-[A-Za-z0-9]{1,8})*$/;
+  function takeContentLanguage(fragment) {
+    const first = fragment.firstChild;
+    if (!first || first.nodeType !== Node.ELEMENT_NODE || first.localName !== "md-content-lang"
+        || first.attributes.length !== 1 || !first.hasAttribute("data-lang") || first.hasChildNodes()) {
+      return null;
+    }
+    first.remove();
+    const tag = first.getAttribute("data-lang");
+    return tag.length <= 35 && languageTagPattern.test(tag) && /^ja(-|$)/i.test(tag) ? tag : null;
+  }
 
   function update(html, lines) {
     if (lines) lineCount = lines;
@@ -786,6 +816,11 @@
     const root = content();
     const template = document.createElement("template");
     template.innerHTML = html;
+    // First, before the filter and the pool see the fragment, so its children are exactly those
+    // of the same document without a marker. Every update sets or clears it.
+    const language = takeContentLanguage(template.content);
+    if (language) root.lang = language;
+    else root.removeAttribute("lang");
     // Defence in depth for RawHTMLSafety.swift: drop every element that can open a connection or
     // a nested document before anything reaches the page. Template content is inert, so none of
     // these has loaded anything yet.
@@ -825,7 +860,7 @@
     for (const leftovers of pool.values()) {
       for (const el of leftovers) {
         if (el.classList.contains("mermaid-block")) {
-          const svg = el.querySelector(".mermaid-output")?.innerHTML;
+          const svg = el._mdSVG;  // kit #157: the SVG this code produced, not .mermaid-output's markup.
           if (svg) staleSVGs.push(svg);
         }
       }
@@ -859,7 +894,7 @@
     const all = [...content().querySelectorAll(".mermaid-block")].map((block) => {
       clearMermaidSkip(block);
       const output = block.querySelector(".mermaid-output");
-      const previous = output?.innerHTML;
+      const previous = block._mdSVG;  // kit #157: the SVG this code produced, not .mermaid-output's markup.
       output?.remove();
       return [block, previous];
     });
@@ -909,8 +944,29 @@
     window.scrollTo(0, y);
   }
 
+  // A callout's default title is CSS generated content (#135): the host's wording reaches the
+  // stylesheet only as a custom property holding a quoted string, built here. Every character
+  // outside [A-Za-z0-9 ] is written as a six-digit hex escape, so no label can end the string,
+  // open a block or start a rule; there is no other path from label text to CSS.
+  function cssString(text) {
+    let out = '"';
+    for (const ch of String(text)) {
+      out += /^[A-Za-z0-9 ]$/.test(ch) ? ch : "\\" + ch.codePointAt(0).toString(16).padStart(6, "0") + " ";
+    }
+    return out + '"';
+  }
+  const calloutTypes = ["note", "tip", "important", "warning", "caution"];
+
   function setLabels(labels) {
     if (labels && typeof labels.diagramLimitNote === "string") diagramLimitNote = labels.diagramLimitNote;
+    const titles = labels && labels.calloutTitles;
+    if (titles && typeof titles === "object") {
+      for (const type of calloutTypes) {
+        if (typeof titles[type] === "string") {
+          document.documentElement.style.setProperty("--callout-title-" + type, cssString(titles[type]));
+        }
+      }
+    }
   }
 
   window.MarsDawn = { update, setLabels, setTheme, setThemes, scrollToLine, setAssetState, setRemoteImageState, restoreScroll, idle };

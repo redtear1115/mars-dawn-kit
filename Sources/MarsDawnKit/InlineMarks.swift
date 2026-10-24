@@ -49,6 +49,21 @@ struct SourceBytes: Sendable {
         return offset <= bytes.count ? offset : nil
     }
 
+    /// The bytes of source line `number` (1-based), without its line ending, or nil.
+    func line(_ number: Int) -> ArraySlice<UInt8>? {
+        guard number >= 1, number <= lineStarts.count else { return nil }
+        let start = lineStarts[number - 1]
+        var end = number < lineStarts.count ? lineStarts[number] : bytes.count
+        while end > start, bytes[end - 1] == 0x0A || bytes[end - 1] == 0x0D { end -= 1 }
+        return bytes[start..<end]
+    }
+
+    /// Up to `count` bytes from `location`, or nil when it is not in the source.
+    func prefix(at location: SourceLocation, count: Int) -> ArraySlice<UInt8>? {
+        guard let start = offset(of: location), start < bytes.count else { return nil }
+        return bytes[start..<min(start + count, bytes.count)]
+    }
+
     /// The bytes a one-line range covers (its end column is exclusive), or nil. Only for a check
     /// that refuses what doesn't match (`ImageSizes.isVerbatim`): cmark's ranges can be wrong.
     func slice(_ range: SourceRange?) -> ArraySlice<UInt8>? {
@@ -176,7 +191,7 @@ struct EscapeMap: Sendable {
 
     /// Every node in depth-first order: its type and child count, and a text's string (the
     /// stand-ins read back as `=` and `^` when `restoringStandIns`).
-    private static func signature(of document: Document, restoringStandIns: Bool) -> [String] {
+    static func signature(of document: Document, restoringStandIns: Bool) -> [String] {
         var result: [String] = []
         var stack: [any Markup] = [document]
         while let node = stack.popLast() {
@@ -243,8 +258,8 @@ struct EscapeMap: Sendable {
                 continue
             }
             if byte == UInt8(ascii: "&"), let (decoded, length) = VisibleHTMLText.entity(bytes, at: index),
-               decoded == [UInt8(ascii: "=")] || decoded == [UInt8(ascii: "^")] {
-                out.append(contentsOf: String(decoded == [UInt8(ascii: "=")] ? escapedEquals : escapedCaret).utf8)
+               let replacement = entityStandIn(decoded) {
+                out.append(contentsOf: replacement.utf8)
                 changed = true
                 index += length
                 continue
@@ -253,6 +268,30 @@ struct EscapeMap: Sendable {
             index += 1
         }
         return changed ? String(decoding: out, as: UTF8.self) : nil
+    }
+
+    /// What stands in for an entity whose decoding `decoded` contains `=` or `^` (`&equals;`,
+    /// `&Hat;`, `&#61;`, and `&bne;`, which is `=` and U+20E5); nil when it has neither.
+    ///
+    /// Each `=` and `^` becomes its stand-in, and every other scalar a numeric character
+    /// reference, so nothing the entity produced can be read as syntax in the second parse: the
+    /// stand-in source differs from the original only by stand-ins for escaped or entity `=`
+    /// and `^`, and by numeric references for an entity's other scalars, which cmark reads as
+    /// literal text. The second tree therefore has the first one's shape as `signature(of:)`
+    /// compares it (node types, child counts, text), and if it ever did not, the signature check
+    /// fails closed. The entity's `=` must not stay a real `=` (`=&bne;x=&bne;` would pair).
+    private static func entityStandIn(_ decoded: [UInt8]) -> String? {
+        let scalars = String(decoding: decoded, as: UTF8.self).unicodeScalars
+        guard scalars.contains(where: { $0 == "=" || $0 == "^" }) else { return nil }
+        var result = ""
+        for scalar in scalars {
+            switch scalar {
+            case "=": result.unicodeScalars.append(escapedEquals)
+            case "^": result.unicodeScalars.append(escapedCaret)
+            default: result += "&#x" + String(scalar.value, radix: 16, uppercase: true) + ";"
+            }
+        }
+        return result
     }
 
     private static func isASCIIPunctuation(_ byte: UInt8) -> Bool {

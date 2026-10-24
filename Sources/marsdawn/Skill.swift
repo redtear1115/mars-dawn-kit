@@ -48,6 +48,19 @@ Options: `-o out.pdf` (default: beside the input), `--theme dawn|classic|modern|
 a newline is a space, except between two Chinese or Japanese characters, where it is
 dropped.
 
+`--layout document|handbook|handout` picks the page layout (default `document`; `manual`, the 0.7.1 name,
+still works but is deprecated). `handbook` is the Handbook layout: wider margins with a 25 mm binding side, every
+top-level heading on a new page, a table of contents of the level 1 and 2 headings, "n / N" page
+numbers and PDF bookmarks. A cover comes first when the front matter has a `title`; it also shows
+`subtitle`, `version`, `date`, `author` and `logo` (an image path) when present.
+`--toc-title "<text>"` sets the contents heading (default `Contents`) and only applies to
+`handbook`. `handout` leaves a blank notes column on the right of every page (a table too
+wide for the body may run into it), puts the front matter's `title` (or the file name) and `date`
+at the top of page 1, and ends every page with
+"file name · date · n / N"; without a front-matter `date` it is the day of the export.
+A line holding only `<!--BREAK-->` starts a new page, in every layout. The JSON result
+doesn't say which layout was used.
+
 On success it exits 0 and prints one JSON line:
 
 - `ok`: always true
@@ -85,7 +98,8 @@ On failure with `--json` it prints `{"ok": false, "error": <kind>, "message": ..
 | 2 | `input_not_found` | The input file isn't there. |
 | 3 | `app_not_installed` | MarsDawn isn't installed. Only `open` returns this. |
 | 4 | `output_exists` | The PDF (or `theme preview`'s PNG) already exists. Pass --force to replace it, or -o to write elsewhere. |
-| 5 | `export_failed` | Rendering failed. |
+| 5 | `export_failed` | Rendering failed. With `--layout handbook` that includes a document whose page numbers couldn't be worked out; nothing is written, so retry with the `document` layout. |
+| 5 | `input_too_large` | The input is larger than 16 MiB (16,777,216 bytes), the most `export` renders. Nothing was written. Only `export` returns this. |
 | 6 | `app_cannot_open_folders` | This MarsDawn can't show a folder, so nothing was opened. Only `open` returns this. |
 | 7 | `skill_install_failed` | `skill --install` couldn't create the folder or write the file, or the final rename failed. An existing SKILL.md is left as it was. Only `skill --install` returns this. |
 | 64 | — | Usage error: a bad option or value. Printed as text on stderr, never as JSON, except `theme preview`'s refused -o (`output_folder_missing`, `output_symlink`, `output_not_a_file`). |

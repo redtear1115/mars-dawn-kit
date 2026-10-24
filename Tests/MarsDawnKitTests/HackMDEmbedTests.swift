@@ -54,6 +54,8 @@ struct HackMDEmbedTests {
             "{%pdf https://user:pw@example.com/a.pdf %}", "{%pdf https://example.com:8080/a.pdf %}",
             "{%pdf https://example.com/a\".pdf %}", "{%pdf https://exa<mple.com/a.pdf %}",
             "{%slideshare https://evil.example/u/deck %}", "{%speakerdeck https://speakerdeck.com.evil.example/x %}",
+            // A host that merely ends with the service's name is not a subdomain of it.
+            "{%slideshare https://notslideshare.net/x %}", "{%speakerdeck https://evilspeakerdeck.com/x %}",
             "{%youtube https://evil.example/watch?v=dQw4w9WgXcQ %}", "{%vimeo http://vimeo.com/1 %}",
             "text {%vimeo 1 %}", "{%vimeo 1 %} text", "{%vimeo 1 %}\nother line",
         ]

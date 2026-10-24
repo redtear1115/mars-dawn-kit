@@ -1,23 +1,24 @@
 OS build: Version 26.6.2 (Build 25G83) | WebKit: 21624.5.1.11.3 | Paper: a4
 Page count: 2
+Lines: minX minY maxX maxY | text, whole points from the page's bottom left, sorted by text; compared within 1 pt
 
 --- Page 1 ---
-Images IMGHEAD01
-Paragraph before relative image REL01.
-Paragraph before dot-relative image REL02.
-Paragraph before absolute image ABS03.
-Paragraph before dotdot-normalized image NORM04.
-Paragraph before out-of-scope parent image OOS05.
-Image not available: ../outside.png
-Paragraph before nonexistent absolute path NOABS06.
-Image not available: /nonexistent-marsdawn/outside.png
-Paragraph before missing relative file MISS07.
-Image not available: missing.png
-Paragraph before blocked remote image REMOTE08.
-Web image: example.com
+57 325 220 337 | Image not available: ../outside.png
+57 248 326 260 | Image not available: /nonexistent-marsdawn/outside.png
+57 170 212 182 | Image not available: missing.png
+45 723 269 751 | Images IMGHEAD01
+45 523 271 537 | Paragraph before absolute image ABS03.
+45 130 334 144 | Paragraph before blocked remote image REMOTE08.
+45 603 285 617 | Paragraph before dot-relative image REL02.
+45 443 339 457 | Paragraph before dotdot-normalized image NORM04.
+45 207 295 221 | Paragraph before missing relative file MISS07.
+45 285 347 299 | Paragraph before nonexistent absolute path NOABS06.
+45 362 338 377 | Paragraph before out-of-scope parent image OOS05.
+45 683 260 697 | Paragraph before relative image REL01.
+54 96 176 108 | Web image: example.com
 
 --- Page 2 ---
-A short closing paragraph to keep this fixture off the page-bottom edge (redtear1115/mars-
-dawn-kit#20), so the last marker below lands on real content rather than a trailing blank
-page.
-Last paragraph marker IMGENDMARK99.
+45 773 544 787 | A short closing paragraph to keep this fixture off the page-bottom edge (redtear1115/mars-
+45 703 270 718 | Last paragraph marker IMGENDMARK99.
+45 754 524 768 | dawn-kit#20), so the last marker below lands on real content rather than a trailing blank
+45 735 76 749 | page.

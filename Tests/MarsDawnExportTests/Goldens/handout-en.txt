@@ -1,0 +1,208 @@
+OS build: Version 26.6.2 (Build 25G83) | WebKit: 21624.5.1.11.3 | Paper: a4
+Page count: 4
+Lines: minX minY maxX maxY | text, whole points from the page's bottom left, sorted by text; compared within 1 pt
+
+--- Page 1 ---
+45 745 111 759 | 2026-10-01
+45 675 202 704 | Briefing HOH1
+45 767 234 789 | Field Notes HONAME
+129 19 298 32 | Field Notes HONAME · 2026-10-01 · 1 / 4
+45 635 378 650 | HOAP01 A reader who skips ahead will find that each section
+45 547 379 561 | HOAP02 A reader who skips ahead will find that each section
+45 458 380 472 | HOAP03 A reader who skips ahead will find that each section
+45 369 380 383 | HOAP04 A reader who skips ahead will find that each section
+45 280 380 294 | HOAP05 A reader who skips ahead will find that each section
+45 191 380 205 | HOAP06 A reader who skips ahead will find that each section
+45 597 370 611 | Measurements were taken at the start and at the end of the
+45 508 370 522 | Measurements were taken at the start and at the end of the
+45 419 370 433 | Measurements were taken at the start and at the end of the
+45 330 370 345 | Measurements were taken at the start and at the end of the
+45 242 370 256 | Measurements were taken at the start and at the end of the
+45 153 370 167 | Measurements were taken at the start and at the end of the
+45 81 196 102 | Wide table HOTBL
+45 578 369 592 | period, and the difference between them is reported below.
+45 489 369 503 | period, and the difference between them is reported below.
+45 400 369 414 | period, and the difference between them is reported below.
+45 311 369 325 | period, and the difference between them is reported below.
+45 222 369 237 | period, and the difference between them is reported below.
+45 134 369 148 | period, and the difference between them is reported below.
+45 616 350 630 | repeats the vocabulary of the one before it, on purpose.
+45 527 350 542 | repeats the vocabulary of the one before it, on purpose.
+45 439 350 453 | repeats the vocabulary of the one before it, on purpose.
+45 350 350 364 | repeats the vocabulary of the one before it, on purpose.
+45 261 350 275 | repeats the vocabulary of the one before it, on purpose.
+45 172 350 186 | repeats the vocabulary of the one before it, on purpose.
+
+--- Page 2 ---
+197 663 225 678 | 11-11
+197 519 230 533 | 12-02
+197 393 230 407 | 12-09
+197 683 232 697 | 2026-
+197 538 232 552 | 2026-
+197 412 232 426 | 2026-
+129 683 156 697 | Alice
+129 528 174 542 | Bob Lee
+398 403 493 417 | CHANGELOG.md
+129 412 158 426 | Carol
+253 403 283 417 | Done
+203 767 226 782 | Due
+56 692 92 706 | Export
+129 19 298 32 | Field Notes HONAME · 2026-10-01 · 2 / 4
+56 711 108 726 | HOCELL1
+323 364 377 378 | HOCELL2
+56 235 132 249 | HONARROW1
+253 683 263 697 | In
+69 767 95 782 | Item
+129 663 176 678 | Johnson
+323 731 372 745 | Keep the
+155 265 204 279 | Meaning
+45 306 261 327 | Narrow table HONARROW
+253 538 273 552 | Not
+333 767 367 782 | Notes
+133 767 172 782 | Owner
+323 586 366 600 | Prepare
+56 538 108 552 | Quarterly
+416 767 475 782 | Reference
+56 412 99 426 | Release
+56 206 80 220 | Rule
+323 441 357 455 | Short,
+259 767 297 782 | Status
+79 265 109 279 | Term
+129 393 147 407 | Wu
+153 206 206 220 | a thin line
+323 509 365 523 | and the
+323 471 374 485 | appendix
+323 635 372 649 | blank for
+323 490 363 504 | budget
+323 383 364 397 | change
+398 538 488 552 | docs/review/q4-
+323 673 354 687 | every
+56 654 102 668 | handout
+398 692 493 706 | https://example.c
+56 635 89 649 | layout
+323 403 364 417 | line per
+323 615 354 630 | notes
+56 393 87 407 | notes
+398 673 490 687 | om/spec/handou
+323 654 351 668 | page
+323 422 377 436 | plain, one
+253 663 302 678 | progress
+56 519 92 533 | review
+323 711 349 726 | right
+153 235 182 249 | short
+323 528 355 542 | slides
+253 519 293 533 | started
+323 547 374 562 | summary
+398 519 469 533 | summary.md
+398 654 441 668 | t-layout
+56 673 74 687 | the
+323 567 341 581 | the
+323 692 363 706 | third of
+
+--- Page 3 ---
+308 545 329 559 | .md
+308 641 332 655 | /revi
+58 471 367 483 | 0123456789012345678901234567890123456789012345678
+157 583 184 598 | 11-11
+234 264 241 281 | 2
+116 317 167 336 | 2 b=
+146 318 182 336 | 2 c2
+157 622 179 636 | 202
+308 603 322 617 | 4-
+157 603 170 617 | 6-
+58 459 253 471 | 9012345678901234567890123456789
+66 690 75 704 | A
+359 603 386 617 | Alice
+117 690 125 704 | B
+409 603 431 617 | Bob
+167 690 176 704 | C
+460 603 489 617 | Carol
+57 728 84 742 | Colu
+108 728 134 742 | Colu
+158 728 185 742 | Colu
+209 728 235 742 | Colu
+360 728 387 742 | Colu
+410 728 437 742 | Colu
+259 719 286 733 | Colu
+310 719 336 733 | Colu
+461 719 487 733 | Colu
+511 719 538 733 | Colu
+217 690 226 704 | D
+63 363 103 370 | Draft HOMER
+56 612 80 626 | ENA
+510 612 532 626 | ENJ
+129 19 298 32 | Field Notes HONAME · 2026-10-01 · 3 / 4
+369 690 378 704 | G
+419 690 428 704 | H
+58 447 367 459 | HOCODE80 the line above is exactly eighty columns
+45 395 133 409 | HOCODEAFTER
+45 508 141 522 | HOCODEBEFORE
+186 318 349 333 | HOMATH and a display block:
+56 631 81 646 | HOT
+510 631 535 646 | HOT
+207 622 217 636 | In
+45 318 105 333 | Inline math
+107 612 134 626 | John
+335 363 353 370 | Notes
+250 363 264 370 | Print
+258 660 285 674 | Quar
+160 363 180 370 | Review
+45 769 214 790 | Ten columns HOTEN
+108 317 136 334 | a +
+258 564 286 578 | budg
+56 574 75 588 | cell
+510 574 529 588 | cell
+308 660 335 674 | docs
+258 545 269 559 | et
+308 622 335 636 | ew/q
+56 593 78 607 | first
+184 275 205 292 | i=
+163 258 180 270 | i=1
+510 593 530 607 | last
+308 564 336 578 | mary
+62 709 80 723 | mn
+112 709 130 723 | mn
+162 709 181 723 | mn
+213 709 231 723 | mn
+364 709 382 723 | mn
+414 709 433 723 | mn
+258 699 287 714 | mn E
+309 699 337 714 | mn F
+462 699 486 714 | mn I
+510 699 539 714 | mn J
+211 284 264 301 | n(n + 1)
+207 603 233 617 | prog
+207 583 231 598 | ress
+258 622 285 636 | revie
+107 593 127 607 | son
+308 583 332 598 | sum
+258 641 282 655 | terly
+258 583 276 598 | the
+258 603 281 617 | w of
+58 435 272 447 | wide and must wrap inside the body
+161 266 175 303 | ∑n
+
+--- Page 4 ---
+129 19 298 32 | Field Notes HONAME · 2026-10-01 · 4 / 4
+45 773 241 787 | HOAFTERBREAK starts a new page.
+45 742 379 756 | HOAP07 A reader who skips ahead will find that each section
+45 653 380 667 | HOAP08 A reader who skips ahead will find that each section
+45 564 380 578 | HOAP09 A reader who skips ahead will find that each section
+45 475 378 489 | HOAP10 A reader who skips ahead will find that each section
+45 387 376 401 | HOAP11 A reader who skips ahead will find that each section
+45 298 102 312 | HOEND99
+45 703 370 718 | Measurements were taken at the start and at the end of the
+45 615 370 629 | Measurements were taken at the start and at the end of the
+45 526 370 540 | Measurements were taken at the start and at the end of the
+45 437 370 451 | Measurements were taken at the start and at the end of the
+45 348 370 362 | Measurements were taken at the start and at the end of the
+45 684 369 698 | period, and the difference between them is reported below.
+45 595 369 610 | period, and the difference between them is reported below.
+45 507 369 521 | period, and the difference between them is reported below.
+45 418 369 432 | period, and the difference between them is reported below.
+45 329 369 343 | period, and the difference between them is reported below.
+45 723 350 737 | repeats the vocabulary of the one before it, on purpose.
+45 634 350 648 | repeats the vocabulary of the one before it, on purpose.
+45 545 350 559 | repeats the vocabulary of the one before it, on purpose.
+45 456 350 470 | repeats the vocabulary of the one before it, on purpose.
+45 367 350 381 | repeats the vocabulary of the one before it, on purpose.

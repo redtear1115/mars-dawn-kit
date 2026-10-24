@@ -224,7 +224,7 @@ enum FootnoteExtractor {
             let type = cmark_node_get_type(node)
             let line = Int(cmark_node_get_start_line(node))
             if type == CMARK_NODE_FOOTNOTE_REFERENCE, line >= 1, line <= bodyLineCount,
-               let definition = cmark_node_parent_footnote_def(node) {
+               !isInsideImage(node), let definition = cmark_node_parent_footnote_def(node) {
                 let key = literal(definition)
                 references.append(Reference(line: line, startColumn: Int(cmark_node_get_start_column(node)),
                                             endColumn: Int(cmark_node_get_end_column(node)), label: key,
@@ -239,6 +239,19 @@ enum FootnoteExtractor {
         }
         definitions.sort { $0.startLine < $1.startLine }
         return (references, definitions)
+    }
+
+    /// Whether `node` is part of an image's description. That text becomes the `alt` attribute,
+    /// which has no markup in it to put a reference in, so such a `[^label]` is left as written.
+    /// It is then no reference at all: it is not numbered, and a note only it names is listed
+    /// as unreferenced, like any other definition nothing refers to.
+    private static func isInsideImage(_ node: UnsafeMutablePointer<cmark_node>) -> Bool {
+        var ancestor = cmark_node_parent(node)
+        while let current = ancestor {
+            if cmark_node_get_type(current) == CMARK_NODE_IMAGE { return true }
+            ancestor = cmark_node_parent(current)
+        }
+        return false
     }
 
     private static func literal(_ node: UnsafeMutablePointer<cmark_node>) -> String {

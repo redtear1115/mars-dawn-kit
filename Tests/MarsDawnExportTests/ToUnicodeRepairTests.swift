@@ -202,6 +202,59 @@ struct ToUnicodeRepairTests {
         #expect(outcome == .unchanged("already updated"))
     }
 
+    // MARK: Generated text (the manual layout's footer, mars-dawn#432 S2)
+
+    /// Text drawn after printing in a font of its own keeps the radicals of that text, not the
+    /// document's. The body font draws 頁目 with ⾴ in the source; the generated font draws 頁 and
+    /// the radical ⾯, neither of which the source has. Checked on the CMaps themselves: PDFKit's
+    /// extraction can read 頁 even where the CMap says ⾴ (spike M3), so it would hide the twin.
+    @Test func generatedTextKeepsItsOwnRadicalsInItsOwnFont() throws {
+        let body = "PingFangTC-Semibold", footer = "PingFangTC-Regular"
+        let original = Self.glyphRunPDF([(body, "頁目"), (footer, "頁⾯")])
+        func destinations(_ pdf: Data) -> [String: Set<UInt32>] {
+            Dictionary(ManualProbe.cmapDestinations(pdf).map { ($0.font, $0.destinations) }, uniquingKeysWith: { $0.union($1) })
+        }
+        let names = Set(ToUnicodeRepair.baseFontNames(forToUnicodeIn: [UInt8](original)).values)
+        #expect(names == [body, footer], "BaseFont names without subset tags: \(names)")
+        let unrepaired = destinations(original)
+        #expect(unrepaired[footer]?.isSuperset(of: [0x2FB4, 0x2FAF]) == true, "precondition: the footer font's CMap maps to radicals: \(String(describing: unrepaired[footer]))")
+        #expect(unrepaired[body]?.contains(0x2FB4) == true, "precondition: the body font's CMap maps 頁 to ⾴")
+
+        let source = "⾴ 目"
+        let generated = ToUnicodeRepair.GeneratedText(fonts: [footer], text: "頁 ⾯")
+        let (repaired, outcome) = ToUnicodeRepair.repair(original, source: source, generated: generated)
+        guard case .repaired = outcome else {
+            Issue.record("expected a repair, got \(outcome)")
+            return
+        }
+        let after = destinations(repaired)
+        // The footer: 頁 is the ideograph (its twin is only in the source), ⾯ stays the radical.
+        #expect(after[footer]?.contains(0x9801) == true && after[footer]?.contains(0x2FB4) == false, "footer: \(String(describing: after[footer]))")
+        #expect(after[footer]?.contains(0x2FAF) == true && after[footer]?.contains(0x9762) == false, "footer: \(String(describing: after[footer]))")
+        // The body keeps the source's radical and repairs the rest.
+        #expect(after[body]?.contains(0x2FB4) == true && after[body]?.contains(0x76EE) == true, "body: \(String(describing: after[body]))")
+        #expect(after[body].map { ManualProbe.radicals(in: $0) } == [0x2FB4], "body: \(String(describing: after[body]))")
+
+        // Control: with the source's keep set for every font (no generated text), the footer
+        // reads 頁 as the radical and ⾯ as the ideograph.
+        let sourceOnly = destinations(ToUnicodeRepair.repair(original, source: source).0)
+        #expect(sourceOnly[footer]?.contains(0x2FB4) == true && sourceOnly[footer]?.contains(0x9762) == true, "control: \(String(describing: sourceOnly[footer]))")
+        // A generated font that isn't in the file changes nothing.
+        let unknown = ToUnicodeRepair.repair(original, source: source, generated: .init(fonts: ["NoSuchFont-Regular"], text: "頁 ⾯")).0
+        #expect(destinations(unknown) == sourceOnly)
+    }
+
+    /// The footer the manual layout draws, "n / N" in its own font, maps nothing but ASCII.
+    @Test func theFooterFontMapsNoCJK() throws {
+        let original = Self.glyphRunPDF([(ManualLayout.footerFontName, "12 / 345"), ("PingFangTC-Regular", "頁")])
+        let generated = ToUnicodeRepair.GeneratedText(fonts: [ManualLayout.footerFontName], text: "12 / 345")
+        let repaired = ToUnicodeRepair.repair(original, source: "", generated: generated).0
+        for cmap in ManualProbe.cmapDestinations(repaired) where cmap.font == ManualLayout.footerFontName {
+            #expect(cmap.destinations.allSatisfy { $0 < 0x80 }, "\(cmap.destinations.sorted())")
+        }
+        #expect(ManualProbe.cmapDestinations(repaired).first { $0.font == "PingFangTC-Regular" }?.destinations.contains(0x9801) == true)
+    }
+
     // MARK: CMap syntax
 
     @Test func bfcharBfrangeAndArraysAreAllRewritten() throws {
@@ -243,6 +296,52 @@ struct ToUnicodeRepairTests {
         // Something other than whitespace between mapping blocks: not rewritten.
         #expect(ToUnicodeRepair.rewriteCMap("1 beginbfchar\n<01> <2fb4>\nendbfchar\n1 begincidrange\n<00> <ff> 1\nendcidrange\n1 beginbfchar\n<02> <2fb4>\nendbfchar\n", keeping: []) == nil)
         #expect(ToUnicodeRepair.rewriteCMap("1 beginbfchar\n<01> /notahex\nendbfchar\n", keeping: []) == nil)
+    }
+
+    // MARK: Size limits
+
+    /// A bfrange whose destination is an array of `count` copies of one non-radical code point,
+    /// covering the codes 0 through `count - 1`. The array form never overflows the destination,
+    /// so only the range-size cap can refuse it.
+    private static func arrayRange(count: Int) -> String {
+        let hi = String(count - 1, radix: 16)
+        let items = String(repeating: "<4e00> ", count: count)
+        return "1 beginbfrange\n<00000000> <\(String(repeating: "0", count: 8 - hi.count) + hi)> [\(items)]\nendbfrange\n"
+    }
+
+    /// A range covers at most 65,536 codes (`hi - lo < 65_536`): 65,536 are rewritten, 65,537
+    /// are refused, whichever form the destination takes (literals, not the source's constant).
+    @Test func aRangeOf65536CodesIsReadAndOneOf65537IsRefused() throws {
+        let (atLimit, atChanges) = try #require(ToUnicodeRepair.rewriteCMap(Self.arrayRange(count: 65_536), keeping: []))
+        #expect(atChanges == 0)
+        #expect(atLimit == Self.arrayRange(count: 65_536))
+        #expect(ToUnicodeRepair.rewriteCMap(Self.arrayRange(count: 65_537), keeping: []) == nil)
+
+        // The same boundary with a single starting destination: codes 0 through 0xFFFF map to
+        // the code points 0 through 0xFFFF, which include the radicals, so it is rewritten.
+        let full = "1 beginbfrange\n<00000000> <0000ffff> <0000>\nendbfrange\n"
+        let (_, changes) = try #require(ToUnicodeRepair.rewriteCMap(full, keeping: []))
+        #expect(changes > 0)
+        let over = "1 beginbfrange\n<00000000> <00010000> <0000>\nendbfrange\n"
+        #expect(ToUnicodeRepair.rewriteCMap(over, keeping: []) == nil)
+    }
+
+    /// The mappings of all blocks together are capped at 200,000: exactly that many are read,
+    /// one more is refused. Ranges starting at <4e00> never reach a radical, so the accepted
+    /// case comes back unchanged and costs no rewrite.
+    @Test func twoHundredThousandMappingsAreReadAndOneMoreIsRefused() throws {
+        // 4 x 40,000 + 39,999 + 1 = 200,000 codes in one block.
+        let ranges = (0..<4).map { block -> String in
+            String(format: "<%08x> <%08x> <4e00>\n", block * 0x10000, block * 0x10000 + 39_999)
+        }.joined() + "<00040000> <00049c3e> <4e00>\n" + "<00050000> <00050000> <4e00>\n"
+        #expect(0x49c3e - 0x40000 + 1 == 39_999)
+        let atLimit = "5 beginbfrange\n" + ranges + "endbfrange\n"
+        let result = try #require(ToUnicodeRepair.rewriteCMap(atLimit, keeping: []))
+        #expect(result.0 == atLimit)
+        #expect(result.1 == 0)
+
+        let overLimit = "6 beginbfrange\n" + ranges + "<00060000> <00060000> <4e00>\nendbfrange\n"
+        #expect(ToUnicodeRepair.rewriteCMap(overLimit, keeping: []) == nil)
     }
 
     // MARK: Raster

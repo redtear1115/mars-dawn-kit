@@ -36,3 +36,24 @@
 
 /* Note under a Mermaid diagram left as source because the document has too many (mars-dawn-kit#95). */
 "Not rendered: too many diagrams in this document. Source shown." = "No renderizado: este documento tiene demasiados diagramas. Se muestra el código fuente.";
+
+/* Default titles of callouts (> [!NOTE], :::info), read by CalloutTitles; kit #135, #183. */
+"Note" = "Nota";
+"Tip" = "Consejo";
+"Important" = "Importante";
+"Warning" = "Advertencia";
+"Caution" = "Peligro";
+
+/* JSON and YAML tree page (mars-dawn-kit#128). Placeholders are replaced as plain text; keep them unchanged. */
+"{n} items" = "{n} elementos";
+"1 item" = "1 elemento";
+"Show {n} More" = "Mostrar {n} más";
+"Circular reference" = "Referencia circular";
+"Part of this file is collapsed to keep the preview responsive. Click a row to expand it." = "Parte de este archivo está contraída para que la vista previa siga siendo fluida. Haz clic en una fila para expandirla.";
+"This file is too deeply nested or too large to show as a tree." = "Este archivo tiene demasiados niveles de anidación o es demasiado grande para mostrarse como árbol.";
+"This file is larger than {size} MB, so it can't be shown as a tree." = "Este archivo supera los {size} MB, por lo que no se puede mostrar como árbol.";
+"This file isn't UTF-8 text, so it can't be shown as a tree." = "Este archivo no es texto UTF-8, por lo que no se puede mostrar como árbol.";
+"This file isn't valid {format} (line {line}, column {column})." = "Este archivo no es un {format} válido (línea {line}, columna {column}).";
+"This file isn't valid {format}." = "Este archivo no es un {format} válido.";
+"To read it as text, choose View ▸ Source Only in MarsDawn." = "Para leerlo como texto, elige Visualización ▸ Solo código en MarsDawn.";
+"Show Source Only" = "Mostrar solo código";
