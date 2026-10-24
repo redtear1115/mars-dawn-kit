@@ -336,8 +336,10 @@ struct CMarkGuardTests {
     }
 }
 
-/// F6: the code was written for swift-cmark 0.8.0. A different resolved version fails here, and
-/// RELEASING.md says what a bump takes.
+/// F6: the code was audited for swift-cmark 0.9.0 (08ddb528; `0.8.0...0.9.0` is commits
+/// `5a94b0de` and `5698f9ff`, merge `08ddb528`, changing only `src/html.c` +2/-2 and leaving
+/// `src/blocks.c` and `extensions/table.c` byte-identical to 0.8.0 `924936d0`). A different
+/// resolved version fails here, and RELEASING.md says what a bump takes.
 struct CMarkVersionPinTests {
     @Test func theResolvedSwiftCMarkIsTheAuditedOne() throws {
         let resolved = URL(filePath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
@@ -346,7 +348,7 @@ struct CMarkVersionPinTests {
         let pins = try #require(object?["pins"] as? [[String: Any]])
         let cmark = try #require(pins.first { $0["identity"] as? String == "swift-cmark" })
         let state = try #require(cmark["state"] as? [String: Any])
-        #expect(state["version"] as? String == "0.8.0")
-        #expect(state["revision"] as? String == "924936d0427cb25a61169739a7660230bffa6ea6")
+        #expect(state["version"] as? String == "0.9.0")
+        #expect(state["revision"] as? String == "08ddb528923cc1a6527e02b7a1aee9e516ca749a")
     }
 }

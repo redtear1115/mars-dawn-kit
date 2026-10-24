@@ -131,9 +131,11 @@ gh workflow run install-check.yml --repo redtear1115/homebrew-tap     # runs it 
 
 The node-budget pre-scan (`CMarkDepthScan` in `Sources/MarsDawnKit/MarkdownParsing.swift`) reads
 one cmark-gfm internal, `cmark_parser.root`, and stops a document early on a lower bound whose
-proof was made by reading swift-cmark 0.8.0's `blocks.c` and `extensions/table.c` (kit #150). A
+proof was made by reading swift-cmark 0.8.0's `blocks.c` and `extensions/table.c` (kit #150) and
+re-verified for 0.9.0 (kit #179; `0.8.0...0.9.0` changes only `src/html.c` +2/-2 and leaves
+`src/blocks.c` and `extensions/table.c` byte-identical). A
 different swift-cmark is a different proof: `CMarkVersionPinTests` fails when `Package.resolved`
-moves off 0.8.0, and at run time `CMarkInternals.isAudited` turns the early stop off for a
+moves off 0.9.0, and at run time `CMarkInternals.isAudited` turns the early stop off for a
 cmark-gfm whose version string, `cmark_parser` layout or probe counts differ. Bumping the pin
 (Dependabot opens such PRs) means redoing that audit against the new sources, then updating the
 pin test and `CMarkInternals.Fingerprint.audited` in the same change.
