@@ -246,12 +246,14 @@ private struct ReadableTextVisitor: MarkupWalker {
 
     mutating func visitHTMLBlock(_ block: HTMLBlock) {
         // The preview renders an HTML block, so its text is text a reader sees (#19).
+        html.beginHTMLBlock()
         output += html.visibleText(of: block.rawHTML)
         output += " "
+        html.endHTMLBlock()
     }
 
     mutating func visitInlineHTML(_ inlineHTML: InlineHTML) {
-        output += html.visibleText(of: inlineHTML.rawHTML)
+        output += html.visibleText(of: inlineHTML.rawHTML, inline: true)
     }
 
     mutating func visitParagraph(_ paragraph: Paragraph) {
@@ -261,6 +263,7 @@ private struct ReadableTextVisitor: MarkupWalker {
             descendInto(paragraph)
         }
         output += " "
+        html.endInline()
     }
 
     // MARK: Callouts (#135)
@@ -334,16 +337,19 @@ private struct ReadableTextVisitor: MarkupWalker {
         }
         for child in block.inlines[range] { visit(child) }
         output += " "
+        html.endInline()
     }
 
     mutating func visitHeading(_ heading: Heading) {
         descendInto(heading)
         output += " "
+        html.endInline()
     }
 
     mutating func visitTableCell(_ cell: Table.Cell) {
         descendInto(cell)
         output += " "
+        html.endInline()
     }
 }
 
@@ -358,10 +364,18 @@ private struct ReadableTextVisitor: MarkupWalker {
 /// - Any other `<` is shown as itself.
 /// - A comment, `<!--` to `-->`, shows nothing.
 /// - Never shown, up to the element's end, even when that is in a later piece of HTML:
-///   `script`, `style` and `noscript` (the preview runs scripts) up to their first close tag;
-///   `template`, `select` and any element with the `hidden` attribute up to their matching close
-///   tag, counting the same element nested inside; and a `<details>` without `open`, after its
-///   `</summary>`.
+///   `script` and `style` up to their first close tag; `template` and `select` up to their
+///   matching close tag, counting the same element nested inside; and a `<details>` without
+///   `open`, after its `</summary>`.
+/// - Hidden up to its matching close tag, counting the same element nested inside, unless the
+///   renderer's own end tag closes it first (#230): `noscript` (the preview runs scripts) and any
+///   element with the `hidden` attribute. The renderer writes each HTML block in a `<div>` of its
+///   own, and the browser's `</div>` closes the nearest open `div`, and the elements opened since.
+///   So a `<div hidden>` that the block leaves open is closed there, and the text after it shows;
+///   one more unclosed `<div>` in the block, and the `hidden` one stays open. An inline one is
+///   closed by the paragraph, heading or table cell's own end tag, unless it is a block element,
+///   which ends the paragraph first. A `<details>` is written as one element across the blocks it
+///   spans, and has no `<div>` of its own in between (#414).
 /// - Entities are decoded as the page decodes them: numeric ones, and the common named ones;
 ///   `&nbsp;` is a space. An unknown one is shown as written.
 /// - `<textarea>` text is counted: the reader sees it in the box, although `innerText` leaves
@@ -370,9 +384,13 @@ private struct ReadableTextVisitor: MarkupWalker {
 struct VisibleHTMLText {
     private static func names(_ list: [String]) -> Set<[UInt8]> { Set(list.map { Array($0.utf8) }) }
     /// Their content is text up to the first close tag: nothing inside nests.
-    private static let rawTextHidden = names(["script", "style", "noscript"])
-    /// Hidden with everything inside, up to the matching close tag.
+    private static let rawTextHidden = names(["script", "style"])
+    /// Hidden with everything inside, up to the matching close tag, in whatever block that is.
     private static let nestingHidden = names(["template", "select"])
+    /// Elements a `</div>` or `</p>` can't close: a "scope" boundary of the HTML parser (measured
+    /// against the page for `marquee` and `td`, the rest by the specification). Hidden by attribute
+    /// they stay hidden past the end of the block like `template`.
+    private static let persistingElements = names(["applet", "caption", "marquee", "td", "th"])
     /// No content and no close tag: a `hidden` attribute on one hides nothing else.
     private static let voidElements = names(["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"])
     private static let blockElements = names([
@@ -391,14 +409,50 @@ struct VisibleHTMLText {
         "raquo": "»", "iexcl": "¡", "iquest": "¿", "shy": "", "ensp": " ", "emsp": " ", "thinsp": " ",
     ]
 
-    /// The hidden element the text is inside, lowercased: whether it nests, and how deep.
-    private var hidden: (name: [UInt8], nests: Bool, depth: Int)?
+    /// What closes a hidden element other than its own close tag: nothing (`persists`), the `</div>`
+    /// the renderer writes after an HTML block, or the `</p>`, `</h1>` or `</td>` after inline HTML.
+    private enum Reach { case persists, htmlBlock, inline }
+
+    /// The hidden element the text is inside, lowercased: whether it nests, how deep (the same
+    /// element nested inside it), what else closes it, and, for an `htmlBlock` one that isn't a
+    /// `div`, how many `<div>`s opened inside it are still open.
+    private var hidden: (name: [UInt8], nests: Bool, depth: Int, reach: Reach, divs: Int)?
     /// For each `<details>` the text is inside, whether it is collapsed.
     private var details: [Bool] = []
 
     var isHiding: Bool { hidden != nil }
 
-    mutating func visibleText(of html: String) -> String {
+    private static let div = Array("div".utf8)
+    private static let detailsTag = Array("details".utf8)
+
+    /// The start of an HTML block. The renderer writes it in a `<div>` of its own, which is open
+    /// inside an element still hidden from before. Not inside a `<details>`: all of its blocks share
+    /// one `<div>` (#414), opened at the first and closed at the last.
+    mutating func beginHTMLBlock() {
+        guard details.isEmpty, var current = hidden, current.reach != .inline else { return }
+        if current.name == Self.div { current.depth += 1 } else if current.reach == .htmlBlock { current.divs += 1 }
+        hidden = current
+    }
+
+    /// The end of an HTML block: the renderer's `</div>` closes the nearest `div` open.
+    mutating func endHTMLBlock() {
+        guard details.isEmpty, var current = hidden, current.reach != .inline else { return }
+        if current.name == Self.div {
+            current.depth -= 1
+            hidden = current.depth > 0 ? current : nil
+        } else if current.reach == .htmlBlock {
+            current.divs -= 1
+            hidden = current.divs >= 0 ? current : nil
+        }
+    }
+
+    /// The end of a paragraph, heading or table cell: its end tag closes what inline HTML left open.
+    mutating func endInline() {
+        if hidden?.reach == .inline { hidden = nil }
+    }
+
+    /// The text of `html`, a block of raw HTML or, with `inline`, a piece of one in a paragraph.
+    mutating func visibleText(of html: String, inline: Bool = false) -> String {
         let b = Array(html.utf8)
         let n = b.count
         var out: [UInt8] = []
@@ -420,20 +474,38 @@ struct VisibleHTMLText {
                 // Skip to the close tag that ends it; the tag itself is read below.
                 var j = i
                 var depth = current.depth
+                var divs = current.divs
+                // A `</div>` with none open inside closes the renderer's, and this element with it.
+                let closedByDiv = current.reach == .htmlBlock && current.name != Self.div
                 var found = false
+                // The renderer writes a `<details>` and the blocks it spans as one element (#414) whether
+                // or not it is hidden, so one opened in here is still counted. A hidden `<details>`
+                // counts its own, at its close tag below.
+                let tracksDetails = current.name != Self.detailsTag
                 while j < n {
                     if b[j] == UInt8(ascii: "<") {
-                        if tagNamed(current.name, at: j, closing: true) {
+                        if tracksDetails, tagNamed(Self.detailsTag, at: j, closing: false) {
+                            details.append(false)
+                        } else if tracksDetails, tagNamed(Self.detailsTag, at: j, closing: true) {
+                            if !details.isEmpty { details.removeLast() }
+                        } else if tagNamed(current.name, at: j, closing: true) {
                             depth -= 1
                             if !current.nests || depth == 0 { found = true; break }
                         } else if current.nests, tagNamed(current.name, at: j, closing: false) {
                             depth += 1
+                        } else if closedByDiv {
+                            if tagNamed(Self.div, at: j, closing: false) {
+                                divs += 1
+                            } else if tagNamed(Self.div, at: j, closing: true) {
+                                if divs == 0 { found = true; break }
+                                divs -= 1
+                            }
                         }
                     }
                     j += 1
                 }
                 guard found else {
-                    hidden = (current.name, current.nests, depth)
+                    hidden = (current.name, current.nests, depth, current.reach, divs)
                     return String(decoding: out, as: UTF8.self)
                 }
                 hidden = nil
@@ -522,16 +594,22 @@ struct VisibleHTMLText {
                 if name == Array("details".utf8), !details.isEmpty { details.removeLast() }
                 if name == Array("summary".utf8), details.last == true {
                     // The rest of a collapsed <details> is hidden, up to its own </details>.
-                    hidden = (Array("details".utf8), true, 1)
+                    hidden = (Array("details".utf8), true, 1, .persists, 0)
                 }
                 continue
             }
             if name == Array("details".utf8) { details.append(!attributeNames.contains(Array("open".utf8))) }
+            // In a paragraph, a block element ends the paragraph first: the paragraph's end tag
+            // doesn't close it.
+            let closedBy: Reach = inline && !Self.blockElements.contains(name) ? .inline : .htmlBlock
             if Self.rawTextHidden.contains(name) {
-                hidden = (name, false, 1)
-            } else if Self.nestingHidden.contains(name) || (attributeNames.contains(Array("hidden".utf8))
-                        && !Self.voidElements.contains(name) && !selfClosing) {
-                hidden = (name, true, 1)
+                hidden = (name, false, 1, .persists, 0)
+            } else if Self.nestingHidden.contains(name) {
+                hidden = (name, true, 1, .persists, 0)
+            } else if name == Array("noscript".utf8) {
+                hidden = (name, true, 1, closedBy, 0)
+            } else if attributeNames.contains(Array("hidden".utf8)), !Self.voidElements.contains(name), !selfClosing {
+                hidden = (name, true, 1, Self.persistingElements.contains(name) ? .persists : closedBy, 0)
             }
         }
         return String(decoding: out, as: UTF8.self)
