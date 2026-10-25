@@ -33,7 +33,7 @@ jobs:
       - name: Each scratch shape in its own process
         run: |
           set +e
-          for t in s1_original s2_realDoCatch s3_realEnterLeave s4_realReadInside s5_realAsync s6_localOptSendable s7_localOptPlain s8_localNonOpt s9_localBoxed s10_realNoOverride s11_localOptSendableEnterLeave; do
+          for t in s1_original s2_realDoCatch s3_realEnterLeave s4_realReadInside s5_realAsync s6_localOptSendable s7_localOptPlain s8_localNonOpt s9_localBoxed s10_realNoOverride s11_localOptSendableEnterLeave s12_realCapturing s13_realAsyncCapturing s14_realLetClosure s15_nonThrowing s16_intClosure s17_voidClosure s18_intClosureCapturing s19_realAsyncCapturingThenRequire; do
             MARSDAWN_APP_PATH=/nonexistent swift test -c release --skip-build --no-parallel --filter "ScratchSegvTests/$t" >/tmp/o.txt 2>&1
             rc=$?
             echo "PROBE $t exit=$rc $(grep -c 'signal code 11' /tmp/o.txt) segv"
