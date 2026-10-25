@@ -31,12 +31,21 @@ struct OutputOptions: ParsableArguments {
     @Flag(help: "Print a JSON result on stdout instead of text.")
     var json = false
 
+    /// A line printer in a struct. A task-local that holds a bare closure crashes (signal 11) the
+    /// moment a test sets it, in a release build on Swift 6.3.3 (Xcode 26.6); wrapping the closure
+    /// in a struct is what avoids it (#238). The same goes for `MarsDawnApp.LocateOverride` and
+    /// `Open.Opener`. Nothing but tests ever sets one.
+    struct Sink: Sendable {
+        let call: @Sendable (String) -> Void
+        init(_ call: @escaping @Sendable (String) -> Void) { self.call = call }
+    }
+
     /// Where `report` prints. Tests set it, per task, to read what a command printed without
     /// redirecting file descriptor 1 for the whole process; nil prints to stdout.
-    @TaskLocal static var sink: (@Sendable (String) -> Void)?
+    @TaskLocal static var sink: Sink?
 
     func report(_ fields: [String: Any], text: String) {
-        let emit = Self.sink ?? { print($0) }
+        let emit = Self.sink?.call ?? { print($0) }
         if json {
             var object = fields
             object["ok"] = true
@@ -270,12 +279,18 @@ enum MarsDawnApp {
         }
     }
 
+    /// A `locate` replacement in a struct, not a bare closure (see `OutputOptions.Sink`, #238).
+    struct LocateOverride: Sendable {
+        let call: @Sendable () throws -> URL?
+        init(_ call: @escaping @Sendable () throws -> URL?) { self.call = call }
+    }
+
     /// Like `locate`, but per task: a test that sets it never changes what another running test
     /// sees. Nil outside tests.
-    @TaskLocal static var locateOverride: (@Sendable () throws -> URL?)?
+    @TaskLocal static var locateOverride: LocateOverride?
 
     static func require() throws -> URL {
-        guard let url = try (locateOverride ?? locate)() else { throw CLIFailure.appNotInstalled() }
+        guard let url = try (locateOverride?.call ?? locate)() else { throw CLIFailure.appNotInstalled() }
         return url
     }
 
@@ -620,7 +635,7 @@ extension MarsDawnCommand {
                 let configuration = openConfiguration()
                 configuration.appleEvent = RevealEvent.openDocuments(urls: group.urls, line: group.line)
                 if let opener = Self.opener {
-                    try await opener(group.urls, app, configuration)
+                    try await opener.call(group.urls, app, configuration)
                 } else {
                     _ = try await NSWorkspace.shared.open(group.urls, withApplicationAt: app, configuration: configuration)
                 }
@@ -635,7 +650,7 @@ extension MarsDawnCommand {
                 let capable = MarsDawnApp.reportsFolderStatus(app)
                 // A test's `opener` stands in for the folder's send too, so none reaches NSWorkspace.
                 let folderOpener = Self.opener.map { stub in
-                    FolderStatusOpener(open: { urls, app, configuration in try await stub(urls, app, configuration) })
+                    FolderStatusOpener(open: { urls, app, configuration in try await stub.call(urls, app, configuration) })
                 } ?? FolderStatusEnvironment.opener
                 folderStatus = try await FolderStatusRequest.send(
                     folder: folder, app: app, wait: wait, capable: capable, configuration: configuration,
@@ -670,7 +685,15 @@ extension MarsDawnCommand {
 
         /// Hands document URLs to the app. Tests set it, per task, so they never reach an
         /// installed MarsDawn; nil sends them through `NSWorkspace`.
-        @TaskLocal static var opener: (@MainActor @Sendable ([URL], URL, NSWorkspace.OpenConfiguration) async throws -> Void)?
+        @TaskLocal static var opener: Opener?
+
+        /// The opener in a struct, not a bare closure (see `OutputOptions.Sink`, #238).
+        struct Opener: Sendable {
+            let call: @MainActor @Sendable ([URL], URL, NSWorkspace.OpenConfiguration) async throws -> Void
+            init(_ call: @escaping @MainActor @Sendable ([URL], URL, NSWorkspace.OpenConfiguration) async throws -> Void) {
+                self.call = call
+            }
+        }
 
         /// The `"folder"` object in `--json`: always `path` and `requested: true`; `status` (and,
         /// for `needsUser`, `waitingFor`) only when `result` carries one. Shared by `run()` and by
