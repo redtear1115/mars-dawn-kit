@@ -135,4 +135,63 @@ struct FootnoteCodeSpanTests {
         #expect(html.matches(of: /class="footnote-ref"/).count == 2, "\(html)")
         #expect(html.contains("<section class=\"footnotes\">\n<ol>"), "\(html)")
     }
+
+    // MARK: The net is not the document's to trigger
+
+    /// A character reference for U+E002 / U+E003 decodes to a scalar the page holds and the source
+    /// does not. It must not make the renderer give up the footnotes: only a nonce can.
+    @Test(arguments: ["&#xE002;", "&#xE003;", "&#57346;", "&#57347;", "&#xe002;"])
+    func aCharacterReferenceForAPlaceholderScalarDoesNotTurnOffFootnotes(entity: String) {
+        for markdown in ["See [^1] here \(entity) ok.\n\n[^1]: A full sentence note.\n",
+                         "X [^1] [a](u \"\(entity)\").\n\n[^1]: note words\n",
+                         "X [^1].\n\n[^1]: https://example.com/paper \(entity)\n"] {
+            let html = render(markdown)
+            #expect(html.contains("class=\"footnote-ref\""), "\(markdown.debugDescription) -> \(html)")
+            #expect(html.contains("<li id=\"fn:1\">"), "\(markdown.debugDescription) -> \(html)")
+            #expect(!html.contains("<p>[^1]:"), "\(markdown.debugDescription) -> \(html)")
+        }
+    }
+
+    // MARK: When the net does fire, footnotes read as the text they are
+
+    /// A document that makes the net fire (`leak`) plus a note that a plain parser would take for
+    /// a link reference definition.
+    private static let leak = "[^1]: [^2]: \n    )&#33; |``[^2]~~\n\n"
+
+    @Test(arguments: [
+        ("Cite [^src] here.\n\n[^src]: https://example.com/paper\n", "[^src]: https://example.com/paper"),
+        ("Cite [^3] here.\n\n[^3]: Footnote\n", "[^3]: Footnote"),
+        ("Cite [^3] here.\n\n[^3]: javascript:alert(1)\n", "[^3]: javascript:alert(1)"),
+    ])
+    func aNoteIsShownAsTextWhenTheNetFires(rest: String, shown: String) {
+        let html = render(Self.leak + rest)
+        #expect(privateUse(html).isEmpty, "\(html)")
+        #expect(!html.contains("footnote-ref"), "the footnotes are off: \(html)")
+        #expect(html.contains(shown), "\(html)")
+        #expect(!html.contains("<a href"), "\(html)")
+        #expect(html.contains("Cite [^"), "\(html)")
+        #expect(html == render(Self.leak + rest), "the same on every render")
+    }
+
+    /// A shape from the independent verifier's search (a quote inside a definition, a URL note
+    /// behind it). Whether it needs the second render or not, its note is never lost and its
+    /// reference never becomes a link.
+    @Test func theVerifiersShapeNeverLosesItsURLNote() {
+        let markdown = ":::info\n[^1]: > > \\two'[^1]\u{4E2D}\u{6587}[^a]$$\n\nSee [^2].\n\n[^2]: https://example.com\n"
+        let html = render(markdown)
+        #expect(privateUse(html).isEmpty, "\(html)")
+        #expect(!html.contains("<a href=\"https://example.com\">"), "\(html)")
+        #expect(html.contains("https://example.com"), "\(html)")
+        #expect(html == render(markdown), "the same on every render")
+    }
+
+    @Test func neutralizingEscapesOnlyTheDefinitionsCmarkFinds() {
+        let n = FootnoteExtractor.neutralizingDefinitions(in:)
+        #expect(n("[^x]: https://e.com\n") == "\\[^x]: https://e.com\n")
+        #expect(n("a [^x]\n\n> [^x]: y\n") == "a [^x]\n\n> \\[^x]: y\n")
+        #expect(n("- [^x]: y\r\n") == "- \\[^x]: y\r\n")
+        #expect(n("```\n[^x]: in code\n```\n\n[^x]: z\n") == "```\n[^x]: in code\n```\n\n\\[^x]: z\n", "code is left alone")
+        #expect(n("no marker\n") == "no marker\n")
+        #expect(n("[^1]: a\n[^2]: b\n").split(separator: "\n").count == 2, "no line is added")
+    }
 }

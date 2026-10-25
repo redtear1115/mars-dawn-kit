@@ -159,6 +159,29 @@ enum FootnoteExtractor {
         return FootnoteExtraction(markdown: rewritten, nonce: nonce, references: references, notes: notes, unreferenced: unreferenced)
     }
 
+    /// `body` for a parser that has no footnotes, so that every `[^label]: text` and every
+    /// `[^label]` reads as the text it is. The one thing a plain parser would make of them
+    /// otherwise is a link reference definition (`[^x]: https://...` or a one-word note), which
+    /// hides the note and turns each `[^x]` into a link. A backslash before the `[` of each
+    /// definition cmark finds ends that, and shows nothing of itself. No line is added or
+    /// removed. A definition cmark drops (nothing refers to it, past `candidateLimit`) is not
+    /// found and is left as written.
+    static func neutralizingDefinitions(in body: String) -> String {
+        guard body.contains("[^") else { return body }
+        var lines = splitLines(body)
+        let found = scan(body, lines: lines, candidates: definitionCandidates(body))
+        var done = Set<Int>()
+        for definition in found.definitions {
+            let index = definition.startLine - 1
+            guard index >= 0, index < lines.count, done.insert(index).inserted else { continue }
+            let content = lines[index].content
+            let contentStart = min(max(definition.contentColumn - 1, 0), content.count)
+            guard let marker = lastMarker(in: content, before: contentStart) else { continue }
+            lines[index].content.insert(UInt8(ascii: "\\"), at: marker)
+        }
+        return String(decoding: lines.flatMap { $0.content + $0.ending }, as: UTF8.self)
+    }
+
     // MARK: Parsing
 
     private struct Reference {

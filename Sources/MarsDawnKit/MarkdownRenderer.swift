@@ -138,8 +138,9 @@ public enum MarkdownRenderer {
             }
             // The same for footnote references (#159): one that ends up where text is not expanded
             // (inside code, say) would show U+E002 ... U+E003 and the nonce. Render again with the
-            // footnotes left as the source text they are to a parser that has none.
-            if extractFootnotes, leaks(split.footnotes, in: result.html, source: markdown) {
+            // footnotes left as the source text they are to a parser that has none (a definition
+            // is escaped so that it is not read as a link reference definition).
+            if extractFootnotes, leaks(split.footnotes, in: result.html) {
                 extractFootnotes = false
                 continue
             }
@@ -147,42 +148,48 @@ public enum MarkdownRenderer {
         }
     }
 
-    /// Whether `html` holds a piece of `footnotes`' placeholders: the random nonce, or more of
-    /// their U+E002 / U+E003 scalars than the source has. A document cannot forge either, and a
-    /// document without references has no placeholders to leak. Runs on every render of a
-    /// document with footnotes, so it reads the UTF-8 in place (`memmem`, `memchr`) and copies nothing.
-    private static func leaks(_ footnotes: FootnoteExtraction, in html: String, source: String) -> Bool {
+    /// Whether `html` holds a piece of `footnotes`' random nonce. Only the nonce counts: a page
+    /// can hold U+E002 / U+E003 without a leak (`&#xE002;` in the source decodes to one), but
+    /// not a nonce it was not given. A placeholder cut anywhere leaves 8 of the 16 hex digits
+    /// at one end. A document without references has no placeholders to leak. Runs on every
+    /// render of a document with footnotes, so it reads the UTF-8 in place and copies nothing.
+    private static func leaks(_ footnotes: FootnoteExtraction, in html: String) -> Bool {
         guard !footnotes.references.isEmpty else { return false }
-        let nonce = footnotes.nonce.utf8
-        let head = Array(nonce.prefix(8)), tail = Array(nonce.suffix(8))
-        var page = html
-        let pieceFound = page.withUTF8 { bytes in
-            [head, tail].contains { needle in memmem(bytes.baseAddress, bytes.count, needle, needle.count) != nil }
+        let nonce: [UInt8] = Array(footnotes.nonce.utf8)
+        let head: [UInt8] = Array(nonce.prefix(8))
+        let tail: [UInt8] = Array(nonce.suffix(8))
+        var page: String = html
+        let found: Bool = page.withUTF8 { (bytes: UnsafeBufferPointer<UInt8>) -> Bool in
+            return containsBytes(bytes, head) || containsBytes(bytes, tail)
         }
-        return pieceFound || placeholderScalarCount(html, first: 0x82, second: 0x83) > placeholderScalarCount(source, first: 0x82, second: 0x83)
+        return found
     }
 
-    /// How many U+E000 / U+E001 scalars `text` holds (the private-use pair math placeholders use);
-    /// `first` and `second` are the last UTF-8 byte of another pair, U+E002 / U+E003 for footnotes.
-    private static func placeholderScalarCount(_ text: String, first: UInt8 = 0x80, second: UInt8 = 0x81) -> Int {
-        // UTF-8: U+E000 is EE 80 80 and U+E001 is EE 80 81. EE starts no other text a page holds
-        // but private use, so `memchr` skips nearly all of it.
-        var text = text
-        return text.withUTF8 { bytes in
-            guard let base = bytes.baseAddress else { return 0 }
-            var count = 0
-            var index = 0
-            while index + 2 < bytes.count, let found = memchr(base + index, 0xEE, bytes.count - index - 2) {
-                index = base.distance(to: found.assumingMemoryBound(to: UInt8.self))
-                if bytes[index + 1] == 0x80, bytes[index + 2] == first || bytes[index + 2] == second {
-                    count += 1
-                    index += 3
-                } else {
-                    index += 1
-                }
-            }
-            return count
+    /// Whether `needle` occurs in `haystack`.
+    private static func containsBytes(_ haystack: UnsafeBufferPointer<UInt8>, _ needle: [UInt8]) -> Bool {
+        guard let base = haystack.baseAddress, !needle.isEmpty, haystack.count >= needle.count else { return false }
+        var found = false
+        needle.withUnsafeBufferPointer { (pattern: UnsafeBufferPointer<UInt8>) -> Void in
+            if let pointer = pattern.baseAddress, memmem(base, haystack.count, pointer, pattern.count) != nil { found = true }
         }
+        return found
+    }
+
+    /// How many U+E000 / U+E001 scalars `text` holds (the private-use pair math placeholders use).
+    private static func placeholderScalarCount(_ text: String) -> Int {
+        // UTF-8: U+E000 is EE 80 80 and U+E001 is EE 80 81.
+        let bytes = Array(text.utf8)
+        var count = 0
+        var index = 0
+        while index + 2 < bytes.count {
+            if bytes[index] == 0xEE, bytes[index + 1] == 0x80, bytes[index + 2] == 0x80 || bytes[index + 2] == 0x81 {
+                count += 1
+                index += 3
+            } else {
+                index += 1
+            }
+        }
+        return count
     }
 
     /// A document split into its front matter, rendered up front (it is never parsed as
@@ -220,7 +227,7 @@ public enum MarkdownRenderer {
             // After the math, so `$[^1]$` stays TeX.
             footnotes = extractFootnotes
                 ? FootnoteExtractor.extract(from: math.markdown)
-                : FootnoteExtraction(markdown: math.markdown, nonce: "", references: [], notes: [], unreferenced: [])
+                : FootnoteExtraction(markdown: FootnoteExtractor.neutralizingDefinitions(in: math.markdown), nonce: "", references: [], notes: [], unreferenced: [])
             parsedBody = footnotes.markdown
             bodyLineOffset = offset
         }
