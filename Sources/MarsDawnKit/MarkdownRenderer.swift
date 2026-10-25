@@ -115,25 +115,64 @@ public enum MarkdownRenderer {
     /// Splits off the front matter, lifts the math out and renders what is left. Parses, so it
     /// blocks unless it is already on a parsing worker.
     private static func renderSplit(_ markdown: String, options: Options) -> RenderResult {
-        let split = SplitSource(markdown, options: options)
-        let result = MarkdownParsing.withDocument(split.parsedBody, options: options.parseLimits) { outcome in
-            renderResult(outcome, split: split, options: options)
+        var extractMath = true
+        var extractFootnotes = true
+        while true {
+            let split = SplitSource(markdown, options: options, extractMath: extractMath, extractFootnotes: extractFootnotes)
+            let result = MarkdownParsing.withDocument(split.parsedBody, options: options.parseLimits) { outcome in
+                renderResult(outcome, split: split, options: options)
+            }
+            // Defence in depth (#187): a placeholder the parse split apart is never expanded, so its
+            // pieces would reach the page, different on every render (the nonce is random). When this
+            // extraction made placeholders and more placeholder scalars came out than went in, render
+            // again with the math left as source text. Costs nothing for a document without math.
+            // A leak is a piece of this extraction's random nonce in the output (a placeholder cut
+            // short keeps most of it; 8 hex digits cannot occur by chance), or more scalars than the
+            // whole source holds (front matter included, as `result.html` renders it).
+            let nonce = split.math.nonce
+            if extractMath, split.math.expressionCount > 0,
+               result.html.contains(nonce.prefix(8)) || result.html.contains(nonce.suffix(8))
+                || placeholderScalarCount(result.html) > placeholderScalarCount(markdown) {
+                extractMath = false
+                continue
+            }
+            // The same for footnote references (#159): one that ends up where text is not expanded
+            // (inside code, say) would show U+E002 ... U+E003 and the nonce. Render again with the
+            // footnotes left as the source text they are to a parser that has none (a definition
+            // is escaped so that it is not read as a link reference definition).
+            if extractFootnotes, leaks(split.footnotes, in: result.html) {
+                extractFootnotes = false
+                continue
+            }
+            return result
         }
-        // Defence in depth (#187): a placeholder the parse split apart is never expanded, so its
-        // pieces would reach the page, different on every render (the nonce is random). When this
-        // extraction made placeholders and more placeholder scalars came out than went in, render
-        // again with the math left as source text. Costs nothing for a document without math.
-        // A leak is a piece of this extraction's random nonce in the output (a placeholder cut
-        // short keeps most of it; 8 hex digits cannot occur by chance), or more scalars than the
-        // whole source holds (front matter included, as `result.html` renders it).
-        let nonce = split.math.nonce
-        guard split.math.expressionCount > 0,
-              result.html.contains(nonce.prefix(8)) || result.html.contains(nonce.suffix(8))
-                || placeholderScalarCount(result.html) > placeholderScalarCount(markdown) else { return result }
-        let plain = SplitSource(markdown, options: options, extractMath: false)
-        return MarkdownParsing.withDocument(plain.parsedBody, options: options.parseLimits) { outcome in
-            renderResult(outcome, split: plain, options: options)
+    }
+
+    /// Whether `html` holds a piece of `footnotes`' random nonce. Only the nonce counts: a page
+    /// can hold U+E002 / U+E003 without a leak (`&#xE002;` in the source decodes to one), but
+    /// not a nonce it was not given. A placeholder cut anywhere leaves 8 of the 16 hex digits
+    /// at one end. A document without references has no placeholders to leak. Runs on every
+    /// render of a document with footnotes, so it reads the UTF-8 in place and copies nothing.
+    private static func leaks(_ footnotes: FootnoteExtraction, in html: String) -> Bool {
+        guard !footnotes.references.isEmpty else { return false }
+        let nonce: [UInt8] = Array(footnotes.nonce.utf8)
+        let head: [UInt8] = Array(nonce.prefix(8))
+        let tail: [UInt8] = Array(nonce.suffix(8))
+        var page: String = html
+        let found: Bool = page.withUTF8 { (bytes: UnsafeBufferPointer<UInt8>) -> Bool in
+            return containsBytes(bytes, head) || containsBytes(bytes, tail)
         }
+        return found
+    }
+
+    /// Whether `needle` occurs in `haystack`.
+    private static func containsBytes(_ haystack: UnsafeBufferPointer<UInt8>, _ needle: [UInt8]) -> Bool {
+        guard let base = haystack.baseAddress, !needle.isEmpty, haystack.count >= needle.count else { return false }
+        var found = false
+        needle.withUnsafeBufferPointer { (pattern: UnsafeBufferPointer<UInt8>) -> Void in
+            if let pointer = pattern.baseAddress, memmem(base, haystack.count, pointer, pattern.count) != nil { found = true }
+        }
+        return found
     }
 
     /// How many U+E000 / U+E001 scalars `text` holds (the private-use pair math placeholders use).
@@ -173,7 +212,7 @@ public enum MarkdownRenderer {
         let footnotes: FootnoteExtraction
         let bodyLineOffset: Int
 
-        init(_ markdown: String, options: Options, extractMath: Bool = true) {
+        init(_ markdown: String, options: Options, extractMath: Bool = true, extractFootnotes: Bool = true) {
             let (frontMatter, body, offset) = FrontMatter.split(markdown)
             if let frontMatter {
                 frontMatterHTML = MarkdownRenderer.frontMatterHTML(frontMatter, label: options.frontMatterLabel)
@@ -186,7 +225,9 @@ public enum MarkdownRenderer {
                 ? MathExtractor.extract(from: self.body)
                 : MathExtractor.Extraction(markdown: self.body, nonce: "", expressions: [])
             // After the math, so `$[^1]$` stays TeX.
-            footnotes = FootnoteExtractor.extract(from: math.markdown)
+            footnotes = extractFootnotes
+                ? FootnoteExtractor.extract(from: math.markdown)
+                : FootnoteExtraction(markdown: FootnoteExtractor.neutralizingDefinitions(in: math.markdown), nonce: "", references: [], notes: [], unreferenced: [])
             parsedBody = footnotes.markdown
             bodyLineOffset = offset
         }
