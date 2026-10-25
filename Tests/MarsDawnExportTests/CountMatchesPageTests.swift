@@ -84,6 +84,50 @@ struct CountMatchesPageTests {
         "<div>\n<details>\n<summary>T</summary>\n\n```\nsecret code\n```\n\n</details>\n</div>\n\nShown text after.\n",
         "- <details>\n  <summary>T</summary>\n\n  ```\n  secret code\n  ```\n\n  </details>\n\nShown text after.\n",
         "<template>\n\n```\nsecret code\n```\n\n</template>\n\nShown text after.\n",
+        // A `<div hidden>` split across blocks (kit #230): each HTML block is written in a `div` of its
+        // own, whose end closes the unclosed one, so the text and the code between show. One more
+        // unclosed `div` and the `hidden` one stays open, up to the `</div>` that closes it.
+        "<div hidden>\n\nsecret words\n\n</div>\n\nShown text after.\n",
+        "<div hidden>\n\n```\ncode secret words\n```\n\n</div>\n\nShown text after.\n",
+        "<div hidden>\n\n    indented code words\n\n</div>\n\nShown text after.\n",
+        "Shown text before.\n\n<div hidden>\n\nlast words\n",
+        "<div hidden>\n\none words\n\n</div>\n\n<div hidden>\n\ntwo words\n\n</div>\n\nShown text after.\n",
+        "- <div hidden>\n\n  secret words\n\n  </div>\n\nShown text after.\n",
+        "> <div hidden>\n>\n> secret words\n>\n> </div>\n\nShown text after.\n",
+        "<div>\n\n<div hidden>\n\nsecret words\n\n</div>\n\nvisible words\n\n</div>\n\nShown text after.\n",
+        "<div hidden>\n<div>\n\nsecret words\n\n</div>\n</div>\n\nShown text after.\n",
+        "<div hidden>\n<div>\n\nsecret words\n\n</div>\ntext inside\n</div>\n\nShown text after.\n",
+        "<div hidden>\n<div>\n<div>\n\nsecret words\n\n</div>\n</div>\n</div>\n\nShown text after.\n",
+        "<div>\n<div hidden>\n\nsecret words\n\n</div>\n</div>\n\nShown text after.\n",
+        "<div hidden>\n\nsecret words\n\n</div>\n\n</div>\n\nShown text after.\n",
+        "<section hidden>\n\nsecret words\n\n</section>\n\nShown text after.\n",
+        "<section hidden>\n<div>\n\nsecret words\n\n</div>\n</section>\n\nShown text after.\n",
+        "<section hidden>\n\nsecret words\n\n</div>\n\nShown text after.\n",
+        "<p hidden>\n\nsecret words\n\nShown text after.\n",
+        "<noscript>\n\nsecret words\n\n</noscript>\n\nShown text after.\n",
+        "<div hidden>\n\n<template>\n\nsecret words\n\n</template>\n\n</div>\n\nShown text after.\n",
+        "<div hidden>\n\n<details>\n<summary>T</summary>\n\nbody words\n\n</details>\n\n</div>\n\nShown text after.\n",
+        // The same in a `<details>` the renderer writes as one element: no `div` between its blocks.
+        "<details open>\n<summary>T</summary>\n\n<div hidden>\n\nsecret words\n\n</div>\n\nbody shown\n\n</details>\n\nShown text after.\n",
+        "<details open>\n<summary>T</summary>\n\n<div hidden>\n<div>\n\nsecret words\n\n</div>\n</div>\n\nbody shown\n\n</details>\n\nShown text after.\n",
+        "<details>\n<summary>T</summary>\n\n<div hidden>\n\nsecret words\n\n</div>\n\nbody hidden\n\n</details>\n\nShown text after.\n",
+        // Inline: the paragraph, heading, table cell or list item ends the `<span hidden>`. A block
+        // element ends the paragraph instead, and is left open.
+        "A <span hidden>secret words\n\nShown text after.\n",
+        "A <span hidden>secret words\n\nmore shown</span> text after.\n",
+        "# Head <span hidden>secret words\n\nShown text after.\n",
+        "- item <span hidden>secret words\n- second item shown\n\nShown text after.\n",
+        "> quote <span hidden>secret words\n\nShown text after.\n",
+        "| a | b |\n|---|---|\n| x <span hidden>secret | y shown |\n| more | shown |\n\nShown text after.\n",
+        "A <noscript>secret words\n\nShown text after.\n",
+        "A <div hidden>secret words\n\nShown text after.\n",
+        "A <details><summary>T</summary>secret words\n\nShown text after.\n",
+        "A <template>secret words\n\nShown text after.\n",
+        ":::info\n<div hidden>\n\nsecret words\n\n:::\n\nShown text after.\n",
+        ":::info\nA <span hidden>secret words\n\nmore shown\n:::\n\nShown text after.\n",
+        // What a `</div>` can't close stays hidden: the parser's scope boundaries.
+        "<table><tr><td hidden>\n\nsecret words\n\n</td></tr></table>\n\nShown text after.\n",
+        "<marquee hidden>\n\nsecret words\n\n</marquee>\n\nShown text after.\n",
         // Already right, kept right.
         "<div class=note>Html wrapped text</div>\n",
         "A <span class=x>red</span> word.\n",
@@ -125,6 +169,7 @@ struct CountMatchesPageTests {
         ":::spoiler Title[^1]\nbody words\n:::\n\n[^1]: note words\n",
         ":::info Title words\nbody words\n:::\n",
     ]
+
 
     @Test(arguments: probes)
     func theCountMatchesThePage(markdown: String) async throws {

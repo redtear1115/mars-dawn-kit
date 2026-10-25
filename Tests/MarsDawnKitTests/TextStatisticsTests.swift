@@ -151,6 +151,20 @@ struct TextStatisticsTests {
         #expect(words(":::spoiler S\n![alt three words](a.png)\n:::\n\nShown words.\n") == 3)
     }
 
+    /// A `<div hidden>` the renderer closes at the end of its HTML block (kit #230): what stands
+    /// between it and its `</div>` is shown, text, code and alt text alike. Measured against the
+    /// page by `CountMatchesPageTests`, which cannot hold alt text, so that is here.
+    @Test func aDivHiddenSplitAcrossBlocksHidesNothingAfterItsBlock() {
+        #expect(words("<div hidden>\n\nsecret words\n\n</div>\n\nShown text after.\n") == 5)
+        #expect(words("<div hidden>\n\n```\ncode secret words\n```\n\n</div>\n\nShown text after.\n") == 6)
+        #expect(words("<div hidden>\n\n![alt three words](a.png)\n\n</div>\n\nShown words.\n") == 5)
+        // One more unclosed `div` in the block: the `hidden` one is still open past it.
+        #expect(words("<div hidden>\n<div>\n\nsecret words\n\n</div>\n</div>\n\nShown words.\n") == 2)
+        // A `template` and a collapsed `<details>` do span blocks (kit #171).
+        #expect(words("<template>\n\n![alt three words](a.png)\n\n</template>\n\nShown words.\n") == 2)
+        #expect(words("<details>\n<summary>T</summary>\n\n![alt three words](a.png)\n\n</details>\n\nShown words.\n") == 3)
+    }
+
     /// A block-level tag breaks words, as the page lays them out; an inline tag doesn't.
     @Test func blockTagsSeparateWordsAndInlineTagsDoNot() {
         #expect(words("<div><p>one</p><p>two</p></div>\n") == 2)
