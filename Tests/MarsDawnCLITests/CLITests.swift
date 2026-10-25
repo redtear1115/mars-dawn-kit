@@ -178,7 +178,7 @@ struct StandaloneToolTests {
 
     /// `open` keeps the check; that is deliberate, and exit code 3 is its alone now.
     @Test func openStillNeedsTheApp() {
-        MarsDawnApp.$locateOverride.withValue({ nil }) {
+        MarsDawnApp.$locateOverride.withValue(MarsDawnApp.LocateOverride({ nil })) {
             #expect {
                 _ = try MarsDawnApp.require()
             } throws: { ($0 as? CLIFailure)?.code == .appNotInstalled }
@@ -763,8 +763,8 @@ struct FolderCapabilityTests {
         let incapable = try fakeApp(key: nil), dir = try folder()
         defer { [incapable, dir].forEach { try? FileManager.default.removeItem(at: $0) } }
         let sent = OpenRecorder()
-        try await MarsDawnApp.$locateOverride.withValue({ incapable }) {
-            try await MarsDawnCommand.Open.$opener.withValue(sent.opener) {
+        try await MarsDawnApp.$locateOverride.withValue(MarsDawnApp.LocateOverride({ incapable })) {
+            try await MarsDawnCommand.Open.$opener.withValue(MarsDawnCommand.Open.Opener(sent.opener)) {
                 for arguments in [["--folder", dir.path], [dir.path]] {
                     await #expect {
                         try await MarsDawnCommand.Open.parse(arguments).run()
@@ -773,8 +773,8 @@ struct FolderCapabilityTests {
                 // Positive control: the same recorder does see a folder sent to an app that can take one.
                 let capable = try fakeApp(key: true)
                 defer { try? FileManager.default.removeItem(at: capable) }
-                try await MarsDawnApp.$locateOverride.withValue({ capable }) {
-                    try await OutputOptions.$sink.withValue({ _ in }) {
+                try await MarsDawnApp.$locateOverride.withValue(MarsDawnApp.LocateOverride({ capable })) {
+                    try await OutputOptions.$sink.withValue(OutputOptions.Sink({ _ in })) {
                         try await MarsDawnCommand.Open.parse(["--folder", dir.path, "--wait", "0", "--json"]).run()
                     }
                 }
