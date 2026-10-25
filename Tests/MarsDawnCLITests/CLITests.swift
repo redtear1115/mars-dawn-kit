@@ -157,10 +157,8 @@ struct StandaloneToolTests {
     /// this package, and Homebrew builds and tests the tool on machines that have no app at all.
     /// Before C0 this threw `app_not_installed` and wrote nothing.
     @Test func exportRendersAPDFWithNoAppInstalled() async throws {
-        let original = MarsDawnApp.locate
-        defer { MarsDawnApp.locate = original }
-        MarsDawnApp.locate = { nil }
-
+        // No `locate` stub: export never asks where the app is, and a stub would only make this
+        // look like it checked that.
         let root = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
             .appendingPathComponent("marsdawn-export-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -180,12 +178,11 @@ struct StandaloneToolTests {
 
     /// `open` keeps the check; that is deliberate, and exit code 3 is its alone now.
     @Test func openStillNeedsTheApp() {
-        let original = MarsDawnApp.locate
-        defer { MarsDawnApp.locate = original }
-        MarsDawnApp.locate = { nil }
-        #expect {
-            _ = try MarsDawnApp.require()
-        } throws: { ($0 as? CLIFailure)?.code == .appNotInstalled }
+        MarsDawnApp.$locateOverride.withValue(MarsDawnApp.LocateOverride({ nil })) {
+            #expect {
+                _ = try MarsDawnApp.require()
+            } throws: { ($0 as? CLIFailure)?.code == .appNotInstalled }
+        }
     }
 
     /// `open`'s help and its not-installed error send people to the real listing, and the README
@@ -213,8 +210,8 @@ struct StandaloneToolTests {
 
 /// `resolveOverride` is a pure function of its arguments (no `ProcessInfo`/`MarsDawnApp.locate`
 /// mutation, no `setenv`, no `dup2` of a real file descriptor), so these tests call it directly
-/// with fixed inputs and can run safely alongside every other suite, including the ones that swap
-/// `MarsDawnApp.locate` itself (`StandaloneToolTests`, `FolderCapabilityTests`).
+/// with fixed inputs and can run safely alongside every other suite. Tests that need a located
+/// app use the task-local `MarsDawnApp.locateOverride`; none assigns `MarsDawnApp.locate`.
 ///
 /// The override is spoofable by anyone who can already fake `marsdawn` on `PATH`, so this isn't a
 /// security boundary — it only catches an override left pointing at a deleted test copy or another
@@ -765,14 +762,26 @@ struct FolderCapabilityTests {
     @Test func openStopsBeforeSendingAnything() async throws {
         let incapable = try fakeApp(key: nil), dir = try folder()
         defer { [incapable, dir].forEach { try? FileManager.default.removeItem(at: $0) } }
-        let original = MarsDawnApp.locate
-        defer { MarsDawnApp.locate = original }
-        MarsDawnApp.locate = { incapable }
-        for arguments in [["--folder", dir.path], [dir.path]] {
-            await #expect {
-                try await MarsDawnCommand.Open.parse(arguments).run()
-            } throws: { ($0 as? CLIFailure)?.code == .appCannotOpenFolders }
+        let sent = OpenRecorder()
+        try await MarsDawnApp.$locateOverride.withValue(MarsDawnApp.LocateOverride({ incapable })) {
+            try await MarsDawnCommand.Open.$opener.withValue(MarsDawnCommand.Open.Opener(sent.opener)) {
+                for arguments in [["--folder", dir.path], [dir.path]] {
+                    await #expect {
+                        try await MarsDawnCommand.Open.parse(arguments).run()
+                    } throws: { ($0 as? CLIFailure)?.code == .appCannotOpenFolders }
+                }
+                // Positive control: the same recorder does see a folder sent to an app that can take one.
+                let capable = try fakeApp(key: true)
+                defer { try? FileManager.default.removeItem(at: capable) }
+                try await MarsDawnApp.$locateOverride.withValue(MarsDawnApp.LocateOverride({ capable })) {
+                    try await OutputOptions.$sink.withValue(OutputOptions.Sink({ _ in })) {
+                        try await MarsDawnCommand.Open.parse(["--folder", dir.path, "--wait", "0", "--json"]).run()
+                    }
+                }
+            }
         }
+        #expect(sent.calls.map { $0.urls.map(\.path) } == [[dir.standardizedFileURL.path]],
+                "only the control's folder was sent; the two refusals sent nothing: \(sent.calls)")
     }
 }
 #endif

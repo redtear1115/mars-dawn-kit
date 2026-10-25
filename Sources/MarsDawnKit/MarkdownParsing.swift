@@ -349,8 +349,9 @@ private let workerKey: pthread_key_t = {
 ///
 /// The bound (`lowerBound(below:)`) is the number of block nodes reachable from the parser's
 /// root, minus every paragraph on the chain of last children from the root. Why every node it
-/// counts is still in the finished tree (swift-cmark 0.8.0; `CMarkInternals` turns this off for
-/// any other build):
+/// counts is still in the finished tree (swift-cmark 0.8.0 and 0.9.0, whose `src/blocks.c` and
+/// `extensions/table.c` are byte-for-byte identical; `CMarkInternals` turns this off for any
+/// other build):
 /// - A checkpoint falls between complete lines: `cmark_parser_feed` processes only whole lines
 ///   and keeps a trailing partial line in its line buffer. The table row that table.c frees when
 ///   a line turns out not to be a row (table.c:574) is created and freed within one line, so no
@@ -506,18 +507,21 @@ enum CMarkDepthScan {
 /// construction, which the public API only hands out from `cmark_parser_finish`. Everything else
 /// goes through public functions.
 ///
-/// `lowerBound(below:)`'s proof (see `CMarkDepthScan`) was made by reading swift-cmark 0.8.0, so
-/// the early stop runs only when `isAudited` says this is that cmark-gfm; otherwise the pre-scan
-/// counts every document exactly, as it did before. No runtime check can tell swift-cmark 0.8.0
-/// from 0.9.0, whose C sources differ in one string literal's spelling and compile to the same
-/// code, so `isAudited` checks what a different cmark-gfm would most likely change: the version
-/// string, the layout of the struct it reads, and the node counts of a few documents chosen to
-/// exercise what the proof relies on. It does not detect a behaviour change that leaves all
-/// three alone. `CMarkVersionPinTests` fails when the package resolves any swift-cmark other than
-/// 0.8.0, and RELEASING.md says a bump means redoing the audit.
+/// `lowerBound(below:)`'s proof (see `CMarkDepthScan`) was made by reading swift-cmark 0.8.0
+/// (`924936d0`) and re-verified on 0.9.0 (`08ddb528`, kit #179: `0.8.0...0.9.0` is commits
+/// `5a94b0de` and `5698f9ff`, merge `08ddb528`, which change only `src/html.c` +2/-2 and leave
+/// `src/blocks.c` and `extensions/table.c` byte-for-byte identical), so the early stop runs only
+/// when `isAudited` says this is that cmark-gfm; otherwise the pre-scan counts every document
+/// exactly, as it did before. No runtime check can tell swift-cmark 0.8.0 from 0.9.0, whose C
+/// sources differ in one string literal's spelling and compile to the same code, so `isAudited`
+/// checks what a different cmark-gfm would most likely change: the version string, the layout of
+/// the struct it reads, and the node counts of a few documents chosen to exercise what the proof
+/// relies on. It does not detect a behaviour change that leaves all three alone.
+/// `CMarkVersionPinTests` fails when the package resolves any swift-cmark other than 0.9.0, and
+/// RELEASING.md says a bump means redoing the audit.
 enum CMarkInternals {
-    /// What `isAudited` compares, recorded from swift-cmark 0.8.0 (924936d0) on 64-bit Apple
-    /// platforms.
+    /// What `isAudited` compares, recorded from swift-cmark 0.9.0 (08ddb528, identical here to
+    /// 0.8.0 924936d0) on 64-bit Apple platforms.
     struct Fingerprint: Equatable {
         var version: String
         var parserSize: Int
@@ -616,7 +620,7 @@ enum CMarkInternals {
 // MARK: - Table cost bound
 
 /// An upper bound, from the source alone, on what cmark-gfm's table extension (swift-cmark
-/// 0.8.0, extensions/table.c) builds and on its two superlinear loops. Linear in the source.
+/// 0.8.0 / 0.9.0, extensions/table.c) builds and on its two superlinear loops. Linear in the source.
 ///
 /// cmark would otherwise be the problem itself: it pads every table row to the header's
 /// width (up to 524,288 padded cells per table), so 28 tables of 128 columns and 4,200

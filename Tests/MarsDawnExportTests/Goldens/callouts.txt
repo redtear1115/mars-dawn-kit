@@ -1,31 +1,32 @@
 OS build: Version 26.6.2 (Build 25G83) | WebKit: 21624.5.1.11.3 | Paper: a4
 Page count: 2
+Lines: minX minY maxX maxY | text, whole points from the page's bottom left, sorted by text; compared within 1 pt
 
 --- Page 1 ---
-CALLHEAD01
-Intro CALLINTRO02 paragraph before the callouts.
-Note
-NOTEBODY03 with bold text.
-Tip
-TIPBODY04 in a tip.
-Important
-IMPBODY05 that matters.
-Warning
-WARNBODY06 to heed.
-Caution
-CAUTBODY07 with care.
-Note
-INFOBODY08 in a HackMD container.
-Done well
-SUCCBODY09 with an author title.
-Warning
-WARNITEM10 first
-WARNITEM11 second
+45 723 198 751 | CALLHEAD01
+60 365 195 379 | CAUTBODY07 with care.
+60 389 105 403 | Caution
+60 262 117 276 | Done well
+60 492 201 506 | IMPBODY05 that matters.
+60 302 265 316 | INFOBODY08 in a HackMD container.
+60 516 118 530 | Important
+45 683 322 697 | Intro CALLINTRO02 paragraph before the callouts.
+60 619 221 634 | NOTEBODY03 with bold text.
+60 643 88 658 | Note
+60 326 88 340 | Note
+60 238 249 252 | SUCCBODY09 with an author title.
+60 556 168 570 | TIPBODY04 in a tip.
+60 580 79 594 | Tip
+60 429 191 443 | WARNBODY06 to heed.
+84 174 185 189 | WARNITEM10 first
+84 152 201 166 | WARNITEM11 second
+60 453 109 467 | Warning
+60 198 109 213 | Warning
 
 --- Page 2 ---
-Careful now
-DANGBODY12 before the code.
-const callout = 1; // CODEIN13
-▼ Open me
-SPOILBODY14 inside a spoiler.
-CALLENDMARK99
+45 612 147 626 | CALLENDMARK99
+60 765 130 779 | Careful now
+60 741 232 755 | DANGBODY12 before the code.
+45 643 212 658 | SPOILBODY14 inside a spoiler.
+73 704 262 716 | const callout = 1; // CODEIN13
+45 663 107 677 | ▼ Open me

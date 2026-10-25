@@ -18,7 +18,7 @@ struct MarsDawnCommand: AsyncParsableCommand {
         \(CLIFailure.Code.inputNotFound.rawValue) input not found, \
         \(CLIFailure.Code.appNotInstalled.rawValue) MarsDawn not installed (open only), \(CLIFailure.Code.outputExists.rawValue) output exists \
         (use --force), \(CLIFailure.Code.exportFailed.rawValue) export failed or input too large, \(CLIFailure.Code.appCannotOpenFolders.rawValue) this MarsDawn \
-        can't show a folder (open only), \(CLIFailure.Code.skillInstallFailed.rawValue) skill --install couldn't write the file, 64 usage error (including theme preview's refused -o).
+        can't show a folder (open only), \(CLIFailure.Code.skillInstallFailed.rawValue) skill --install couldn't write the file, 64 usage error (a bad option or value is plain text; with --json, command-checked refusals carry a kind, like open --wait's wait_out_of_range, skill --install's skill_differs, and theme preview's refused -o).
         """,
         version: MarsDawnCLI.version,
         subcommands: [Open.self, Export.self, Skill.self, Theme.self]
@@ -31,13 +31,27 @@ struct OutputOptions: ParsableArguments {
     @Flag(help: "Print a JSON result on stdout instead of text.")
     var json = false
 
+    /// A line printer in a struct. A task-local that holds a bare closure crashes (signal 11) the
+    /// moment a test sets it, in a release build on Swift 6.3.3 (Xcode 26.6); wrapping the closure
+    /// in a struct is what avoids it (#238). The same goes for `MarsDawnApp.LocateOverride` and
+    /// `Open.Opener`. Nothing but tests ever sets one.
+    struct Sink: Sendable {
+        let call: @Sendable (String) -> Void
+        init(_ call: @escaping @Sendable (String) -> Void) { self.call = call }
+    }
+
+    /// Where `report` prints. Tests set it, per task, to read what a command printed without
+    /// redirecting file descriptor 1 for the whole process; nil prints to stdout.
+    @TaskLocal static var sink: Sink?
+
     func report(_ fields: [String: Any], text: String) {
+        let emit = Self.sink?.call ?? { print($0) }
         if json {
             var object = fields
             object["ok"] = true
-            printJSON(object)
+            emit(jsonString(object))
         } else {
-            print(text)
+            emit(text)
         }
     }
 }
@@ -179,7 +193,7 @@ struct WaitRangeFailure: Error, CustomStringConvertible {
 /// usage error like `WaitRangeFailure` (#120): it exits `64`, not one of `CLIFailure.Code`'s
 /// runtime codes, and carries its own machine-readable `kind` for `--json`.
 struct SkillInstallFailure: Error, CustomStringConvertible {
-    enum Kind: String {
+    enum Kind: String, CaseIterable {
         /// A `SKILL.md` is already at the target and its bytes differ from this version's.
         case differs = "skill_differs"
         /// The target path is a symlink whose resolved destination is outside the target folder.
@@ -265,12 +279,18 @@ enum MarsDawnApp {
         }
     }
 
+    /// A `locate` replacement in a struct, not a bare closure (see `OutputOptions.Sink`, #238).
+    struct LocateOverride: Sendable {
+        let call: @Sendable () throws -> URL?
+        init(_ call: @escaping @Sendable () throws -> URL?) { self.call = call }
+    }
+
     /// Like `locate`, but per task: a test that sets it never changes what another running test
     /// sees. Nil outside tests.
-    @TaskLocal static var locateOverride: (@Sendable () throws -> URL?)?
+    @TaskLocal static var locateOverride: LocateOverride?
 
     static func require() throws -> URL {
-        guard let url = try (locateOverride ?? locate)() else { throw CLIFailure.appNotInstalled() }
+        guard let url = try (locateOverride?.call ?? locate)() else { throw CLIFailure.appNotInstalled() }
         return url
     }
 
@@ -615,7 +635,7 @@ extension MarsDawnCommand {
                 let configuration = openConfiguration()
                 configuration.appleEvent = RevealEvent.openDocuments(urls: group.urls, line: group.line)
                 if let opener = Self.opener {
-                    try await opener(group.urls, app, configuration)
+                    try await opener.call(group.urls, app, configuration)
                 } else {
                     _ = try await NSWorkspace.shared.open(group.urls, withApplicationAt: app, configuration: configuration)
                 }
@@ -628,9 +648,13 @@ extension MarsDawnCommand {
             if let folder = folders.first {
                 let configuration = openConfiguration()
                 let capable = MarsDawnApp.reportsFolderStatus(app)
+                // A test's `opener` stands in for the folder's send too, so none reaches NSWorkspace.
+                let folderOpener = Self.opener.map { stub in
+                    FolderStatusOpener(open: { urls, app, configuration in try await stub.call(urls, app, configuration) })
+                } ?? FolderStatusEnvironment.opener
                 folderStatus = try await FolderStatusRequest.send(
                     folder: folder, app: app, wait: wait, capable: capable, configuration: configuration,
-                    opener: FolderStatusEnvironment.opener, notifier: FolderStatusEnvironment.notifier
+                    opener: folderOpener, notifier: FolderStatusEnvironment.notifier
                 )
             }
             var fields: [String: Any] = [
@@ -661,7 +685,15 @@ extension MarsDawnCommand {
 
         /// Hands document URLs to the app. Tests set it, per task, so they never reach an
         /// installed MarsDawn; nil sends them through `NSWorkspace`.
-        @TaskLocal static var opener: (@MainActor @Sendable ([URL], URL, NSWorkspace.OpenConfiguration) async throws -> Void)?
+        @TaskLocal static var opener: Opener?
+
+        /// The opener in a struct, not a bare closure (see `OutputOptions.Sink`, #238).
+        struct Opener: Sendable {
+            let call: @MainActor @Sendable ([URL], URL, NSWorkspace.OpenConfiguration) async throws -> Void
+            init(_ call: @escaping @MainActor @Sendable ([URL], URL, NSWorkspace.OpenConfiguration) async throws -> Void) {
+                self.call = call
+            }
+        }
 
         /// The `"folder"` object in `--json`: always `path` and `requested: true`; `status` (and,
         /// for `needsUser`, `waitingFor`) only when `result` carries one. Shared by `run()` and by
@@ -1106,7 +1138,7 @@ extension ThemePreviewRenderer.Appearance: ExpressibleByArgument {}
 /// `theme preview -o` refused a path it will not write to (kit #139): a usage error like
 /// `SkillInstallFailure`, exit 64, with its own machine-readable kind for `--json`.
 struct OutputPathFailure: Error, CustomStringConvertible {
-    enum Kind: String {
+    enum Kind: String, CaseIterable {
         /// The folder the file would go in isn't there (or isn't a folder).
         case folderMissing = "output_folder_missing"
         /// A symlink is at the path. Never followed and never replaced, `--force` included.

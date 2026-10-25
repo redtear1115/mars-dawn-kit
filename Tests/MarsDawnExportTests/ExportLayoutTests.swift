@@ -35,7 +35,9 @@ struct ExportLayoutTests {
         #expect(NSEdgeInsetsEqual(ExportLayout.handout.pageMargins, ExportLayout.document.pageMargins))
         let margins = ExportLayout.handout.bodyMargins
         #expect(margins.top == 51 && margins.bottom == 51 && margins.left == 45)
-        #expect(margins.right == 45 + ExportLayout.notesColumnWidth)
+        // The column's width as a number, not the constant against itself: it is a design value.
+        #expect(ExportLayout.notesColumnWidth == 168)
+        #expect(margins.right == 213)  // the document's 45 plus the column
         #expect(NSEdgeInsetsEqual(ExportLayout.document.bodyMargins, ExportLayout.document.pageMargins))
         for paper in [CGFloat(595), 612] {
             let ratio = (paper - margins.left - margins.right) / (paper - 90)

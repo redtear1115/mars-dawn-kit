@@ -462,6 +462,42 @@ struct HTMLDocumentSchemeHandlerTests {
 
     // MARK: Limits
 
+    /// The tests below inject their own limits, so nothing else shows what a plain `Handler()`
+    /// enforces. These are the shipped defaults, written out.
+    @Test func theDefaultLimitsAreTheShippedNumbers() {
+        let limits = Handler.Limits()
+        #expect(limits.documentBytes == 16_777_216)
+        #expect(limits.requestsPerLoad == 2_000)
+        #expect(limits.bytesPerLoad == 536_870_912)
+        #expect(limits.concurrentReads == 6)
+        #expect(limits.queuedReads == 256)
+        #expect(limits.fileBytes == 33_554_432)
+        #expect(limits.mediaFileBytes == 2_147_483_648)
+        #expect(limits.mediaChunkBytes == 8_388_608)
+    }
+
+    /// Through the default `Handler()`: an image of exactly 32 MiB is served, one byte more is
+    /// refused as too large. The files are sparse.
+    @Test func theDefaultHandlerRefusesAnImageOver32MiB() async throws {
+        let tree = try makeTree()
+        defer { try? FileManager.default.removeItem(at: tree.root) }
+        for (name, size) in [("atcap.png", 33_554_432), ("overcap.png", 33_554_433)] as [(String, UInt64)] {
+            let url = tree.url("site/pages/\(name)")
+            #expect(FileManager.default.createFile(atPath: url.path, contents: nil))
+            let handle = try FileHandle(forWritingTo: url)
+            try handle.truncate(atOffset: size)
+            try handle.close()
+        }
+        let handler = Handler()
+        let page = try begin(handler, tree)
+        let atCap = try await request(handler, page, "/%2F/%2F/atcap.png")
+        #expect(atCap.status == 200)
+        #expect(atCap.body.count == 33_554_432)
+        let overCap = try await request(handler, page, "/%2F/%2F/overcap.png")
+        #expect(overCap.error != nil && overCap.response == nil)
+        #expect(handler.requestLog.last?.outcome == .failed(.tooLarge))
+    }
+
     @Test func refusesRequestsPastTheRequestBudget() async throws {
         let tree = try makeTree()
         defer { try? FileManager.default.removeItem(at: tree.root) }

@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import WebKit
 @testable import MarsDawnKit
 
 /// What `PreviewSchemeHandler` says a file is (S5-6).
@@ -41,6 +42,42 @@ struct PreviewServingTests {
             if type == "application/octet-stream" {
                 #expect(file.lastPathComponent.hasPrefix("LICENSE-"), "no content type for \(file.lastPathComponent)")
             }
+        }
+    }
+
+    // MARK: Traversal
+
+    /// `resolve` serves only files under the handler's root: a `..` segment (spelled plainly or
+    /// percent-encoded), or a sibling folder whose name merely starts with the root's, is
+    /// refused, while a real file under the root is served (the positive control).
+    @MainActor
+    @Test func requestsOutsideTheRootAreRefusedAndOnesInsideAreServed() throws {
+        let parent = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("preview-root-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: parent) }
+        let root = parent.appendingPathComponent("Preview")
+        let sibling = parent.appendingPathComponent("Preview2")
+        for folder in [root, sibling] { try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true) }
+        try Data("inside".utf8).write(to: root.appendingPathComponent("ok.css"))
+        try Data("sibling".utf8).write(to: sibling.appendingPathComponent("secret.css"))
+        try Data("above".utf8).write(to: parent.appendingPathComponent("secret.css"))
+
+        let handler = PreviewSchemeHandler(rootURL: root)
+        let webView = WKWebView(frame: .zero)
+        func serve(_ path: String) -> FakeSchemeTask {
+            let task = FakeSchemeTask(url: URL(string: "\(PreviewSchemeHandler.scheme)://preview\(path)")!)
+            handler.webView(webView, start: task)
+            return task
+        }
+
+        let ok = serve("/ok.css")
+        #expect(ok.status == 200)
+        #expect(ok.body == Data("inside".utf8))
+
+        for path in ["/../secret.css", "/%2e%2e/secret.css", "/%2E%2E/secret.css", "/../Preview2/secret.css",
+                     "/%2e%2e/Preview2/secret.css", "/sub/../../secret.css"] {
+            let task = serve(path)
+            #expect(task.response == nil && task.body.isEmpty, "served \(path)")
+            #expect((task.error as? URLError)?.code == .fileDoesNotExist, "\(path)")
         }
     }
 }

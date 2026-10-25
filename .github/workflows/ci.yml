@@ -34,6 +34,41 @@ jobs:
     timeout-minutes: 70
     permissions:
       contents: read
+    env:
+      # The release pass on pull requests (see the steps below). A suite added here must exist:
+      # the step before the pass fails on a name that matches no test.
+      RELEASE_SUITES: >-
+        MarsDawnKitTests.MarkdownNestingTests
+        MarsDawnKitTests.StackMarginTests
+        MarsDawnKitTests.NodeBudgetTests
+        MarsDawnKitTests.CMarkGuardTests
+        MarsDawnKitTests.CMarkVersionPinTests
+        MarsDawnKitTests.MarkdownParsingWorkerTests
+        MarsDawnKitTests.WorkerGateTests
+        MarsDawnKitTests.MarkdownParsingTimingTests
+        MarsDawnKitTests.DataDocumentBombTests
+        MarsDawnKitTests.DataDocumentJSYAMLProbeTests
+        MarsDawnKitTests.DataDocumentMeasurementTests
+        MarsDawnKitTests.VendoredJSYAMLTests
+        MarsDawnKitTests.TableBudgetTests
+        MarsDawnKitTests.DetailsGroupingCostTests
+        MarsDawnKitTests.DocumentOutlineTests
+        MarsDawnKitTests.FrontMatterSplitTests
+        MarsDawnKitTests.FrontMatterKeyValueTests
+        MarsDawnKitTests.FrontMatterRenderingTests
+        MarsDawnKitTests.FrontMatterFallbackTests
+        MarsDawnKitTests.NoFrontMatterGoldenTests
+        MarsDawnKitTests.FrontMatterUnclosedScanBoundTests
+        MarsDawnKitTests.FrontMatterTimingTests
+        MarsDawnKitTests.MathExtractorTests
+        MarsDawnKitTests.TextStatisticsTests
+        MarsDawnKitTests.TextStatisticsCalloutEdgeTests
+        MarsDawnKitTests.InlineMarksTests
+        MarsDawnKitTests.ContentLanguageTests
+        MarsDawnKitTests.HTMLDocumentEndToEndTests
+        MarsDawnKitTests.HTMLDocumentSchemeHandlerTests
+        MarsDawnKitTests.ImageSizeTests
+        MarsDawnThemesTests.JSONStructureScanTests
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -57,8 +92,40 @@ jobs:
       # that same process-wide peak, so sharing a process failed it without any table regressing.
       - run: swift test --no-parallel --skip 'MarsDawnExportTests\.PDFCorpus'
       - run: swift test --no-parallel --filter 'MarsDawnExportTests\.PDFCorpus'
-      # Release builds inline more, so stack use per nesting level differs from debug.
-      - run: swift test -c release --no-parallel --skip 'MarsDawnExportTests\.PDFCorpus'
+      # Release builds inline more, so stack use per nesting level differs from debug. On a pull
+      # request the release pass runs only the suites where the configuration changes what is
+      # measured: the deepest-nesting and stack-margin suites, the budget and cost suites whose
+      # bounds are written for release, and the suites with `#if DEBUG` branches. The rest repeated
+      # the debug pass and took about 25 of macos-15's 60 minutes. A pull request into main (a
+      # release branch going out), a push to main and a tag still run the whole release pass, so a
+      # release is checked in full before it reaches main, and every tag has had every suite in
+      # both configurations.
+      #
+      # The Unicode scalar sweeps (ScalarEscaperTests, ScalarRendererTests: every scalar, about
+      # three minutes) run in the debug pass only. They test grapheme rules, which come from the
+      # OS's Swift runtime rather than the build configuration, so both runners keep them.
+      - name: Check that every release suite exists
+        if: github.event_name == 'pull_request' && github.base_ref != 'main'
+        run: |
+          set -euo pipefail
+          listed=$(swift test -c release --list-tests)
+          missing=0
+          for suite in $RELEASE_SUITES; do
+            if ! grep -q "^${suite}/" <<<"$listed"; then
+              echo "::error::release suite $suite matches no test; fix RELEASE_SUITES"
+              missing=1
+            fi
+          done
+          exit $missing
+      - name: Release pass, configuration-sensitive suites
+        if: github.event_name == 'pull_request' && github.base_ref != 'main'
+        run: |
+          set -euo pipefail
+          filter=$(printf '%s/|' $RELEASE_SUITES | sed 's/|$//; s/\./\\./g')
+          swift test -c release --no-parallel --filter "^(${filter})"
+      - name: Release pass, every suite
+        if: github.event_name != 'pull_request' || github.base_ref == 'main'
+        run: swift test -c release --no-parallel --skip 'MarsDawnExportTests\.PDFCorpus|MarsDawnKitTests\.Scalar(Escaper|Renderer)Tests'
       - run: swift test -c release --no-parallel --filter 'MarsDawnExportTests\.PDFCorpus'
       # Two groups of tests don't run here, so the CLI covers their ground on the real system:
       # the gate's tests, which macOS 15's Concurrency runtime kills (mars-dawn-kit#26), and the

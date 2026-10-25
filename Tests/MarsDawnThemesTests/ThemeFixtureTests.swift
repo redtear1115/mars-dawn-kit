@@ -139,4 +139,23 @@ struct ThemeFileRuleTests {
         #expect(data.count == ThemeValidator.maxFileBytes)
         #expect(ThemeValidator.validate(data: data).issues.isEmpty)
     }
+
+    /// The two tests above size their data from the constant; this one pins the shipped number
+    /// and the boundary with literals: 16,384 bytes are read, 16,385 are refused unread.
+    @Test func theCapIs16384BytesAndTheBoundaryIsLiteral() throws {
+        #expect(ThemeValidator.maxFileBytes == 16_384)
+        let fixture = ThemeFixtureTests.root.appendingPathComponent("valid/sample-dawn.json")
+        let base = try Data(contentsOf: fixture)
+        #expect(base.count < 16_384)
+
+        var atCap = base
+        atCap.append(Data(repeating: UInt8(ascii: " "), count: 16_384 - base.count))
+        #expect(atCap.count == 16_384)
+        #expect(ThemeValidator.validate(data: atCap).issues.isEmpty)
+
+        var overCap = atCap
+        overCap.append(UInt8(ascii: " "))
+        #expect(overCap.count == 16_385)
+        #expect(ThemeValidator.validate(data: overCap).issues.map(\.rule) == ["file.tooLarge"])
+    }
 }

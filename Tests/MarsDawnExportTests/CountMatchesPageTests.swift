@@ -71,13 +71,76 @@ struct CountMatchesPageTests {
         "<details><summary>Title here</summary>Body words hidden</details>\n",
         "<details open><summary>Title</summary>Body shown</details>\n",
         // The GitHub form of <details> (#414): the opening tag, the Markdown and the closing tag
-        // are separate blocks, written as one element. Without fenced code in the middle: a
-        // fence's words are counted whatever the group hides (`visitCodeBlock` does not know),
-        // which is deferred to its own issue.
+        // are separate blocks, written as one element.
         "<details>\n<summary>Title here</summary>\n\nBody **words** hidden here\n\n- item one\n- item two\n\n</details>\n\nShown text after.\n",
         "<details open>\n<summary>Title</summary>\n\nBody words shown here\n\n</details>\n\nShown text after.\n",
         "<details open>\n<summary>Outer</summary>\n\nouter body\n\n<details>\n<summary>Inner</summary>\n\ninner body hidden\n\n</details>\n\nafter inner\n\n</details>\n\nShown text after.\n",
         "<details>\n<summary>One</summary>\n\nfirst hidden body\n\n</details>\n<details>\n<summary>Two</summary>\n\nsecond hidden body\n\n</details>\n\nShown text after.\n",
+        // Fenced and indented code inside a collapsed group is hidden with the rest (kit #171); in an
+        // open one it is shown (the control), and in a `<template>` it is never shown.
+        "<details>\n<summary>Title here</summary>\n\n```\ncode hidden words\n```\n\n</details>\n\nShown text after.\n",
+        "<details open>\n<summary>Title here</summary>\n\n```\ncode shown words\n```\n\n</details>\n\nShown text after.\n",
+        "<details>\n<summary>Title here</summary>\n\n    indented hidden code\n\n</details>\n\nShown text after.\n",
+        "<div>\n<details>\n<summary>T</summary>\n\n```\nsecret code\n```\n\n</details>\n</div>\n\nShown text after.\n",
+        "- <details>\n  <summary>T</summary>\n\n  ```\n  secret code\n  ```\n\n  </details>\n\nShown text after.\n",
+        "<template>\n\n```\nsecret code\n```\n\n</template>\n\nShown text after.\n",
+        // A `<div hidden>` split across blocks (kit #230): each HTML block is written in a `div` of its
+        // own, whose end closes the unclosed one, so the text and the code between show. One more
+        // unclosed `div` and the `hidden` one stays open, up to the `</div>` that closes it.
+        "<div hidden>\n\nsecret words\n\n</div>\n\nShown text after.\n",
+        "<div hidden>\n\n```\ncode secret words\n```\n\n</div>\n\nShown text after.\n",
+        "<div hidden>\n\n    indented code words\n\n</div>\n\nShown text after.\n",
+        "Shown text before.\n\n<div hidden>\n\nlast words\n",
+        "<div hidden>\n\none words\n\n</div>\n\n<div hidden>\n\ntwo words\n\n</div>\n\nShown text after.\n",
+        "- <div hidden>\n\n  secret words\n\n  </div>\n\nShown text after.\n",
+        "> <div hidden>\n>\n> secret words\n>\n> </div>\n\nShown text after.\n",
+        "<div>\n\n<div hidden>\n\nsecret words\n\n</div>\n\nvisible words\n\n</div>\n\nShown text after.\n",
+        "<div hidden>\n<div>\n\nsecret words\n\n</div>\n</div>\n\nShown text after.\n",
+        "<div hidden>\n<div>\n\nsecret words\n\n</div>\ntext inside\n</div>\n\nShown text after.\n",
+        "<div hidden>\n<div>\n<div>\n\nsecret words\n\n</div>\n</div>\n</div>\n\nShown text after.\n",
+        "<div>\n<div hidden>\n\nsecret words\n\n</div>\n</div>\n\nShown text after.\n",
+        "<div hidden>\n\nsecret words\n\n</div>\n\n</div>\n\nShown text after.\n",
+        "<section hidden>\n\nsecret words\n\n</section>\n\nShown text after.\n",
+        "<section hidden>\n<div>\n\nsecret words\n\n</div>\n</section>\n\nShown text after.\n",
+        "<section hidden>\n\nsecret words\n\n</div>\n\nShown text after.\n",
+        "<p hidden>\n\nsecret words\n\nShown text after.\n",
+        "<noscript>\n\nsecret words\n\n</noscript>\n\nShown text after.\n",
+        "<div hidden>\n\n<template>\n\nsecret words\n\n</template>\n\n</div>\n\nShown text after.\n",
+        "<div hidden>\n\n<details>\n<summary>T</summary>\n\nbody words\n\n</details>\n\n</div>\n\nShown text after.\n",
+        // The same in a `<details>` the renderer writes as one element: no `div` between its blocks.
+        "<details open>\n<summary>T</summary>\n\n<div hidden>\n\nsecret words\n\n</div>\n\nbody shown\n\n</details>\n\nShown text after.\n",
+        "<details open>\n<summary>T</summary>\n\n<div hidden>\n<div>\n\nsecret words\n\n</div>\n</div>\n\nbody shown\n\n</details>\n\nShown text after.\n",
+        "<details>\n<summary>T</summary>\n\n<div hidden>\n\nsecret words\n\n</div>\n\nbody hidden\n\n</details>\n\nShown text after.\n",
+        // Inline: the paragraph, heading, table cell or list item ends the `<span hidden>`. A block
+        // element ends the paragraph instead, and is left open.
+        "A <span hidden>secret words\n\nShown text after.\n",
+        "A <span hidden>secret words\n\nmore shown</span> text after.\n",
+        "# Head <span hidden>secret words\n\nShown text after.\n",
+        "- item <span hidden>secret words\n- second item shown\n\nShown text after.\n",
+        "> quote <span hidden>secret words\n\nShown text after.\n",
+        "| a | b |\n|---|---|\n| x <span hidden>secret | y shown |\n| more | shown |\n\nShown text after.\n",
+        "A <noscript>secret words\n\nShown text after.\n",
+        "A <div hidden>secret words\n\nShown text after.\n",
+        "A <details><summary>T</summary>secret words\n\nShown text after.\n",
+        "A <template>secret words\n\nShown text after.\n",
+        ":::info\n<div hidden>\n\nsecret words\n\n:::\n\nShown text after.\n",
+        ":::info\nA <span hidden>secret words\n\nmore shown\n:::\n\nShown text after.\n",
+        // A hidden element around a `<details>` that spans blocks: the renderer writes the group in one
+        // `div`, so the hidden element is closed at the group's end, not at the first block's (kit #230).
+        "<div hidden>\n<details open>\n<summary>T</summary>\n\nbody words\n\n</details>\n</div>\n\nTail words.\n",
+        "<div hidden>\n<details>\n<summary>T</summary>\n\nbody words\n\n</details>\n</div>\n\nTail words.\n",
+        "<section hidden>\n<details open>\n<summary>T</summary>\n\nbody words\n\n</details>\n</section>\n\nTail words.\n",
+        "<div hidden>\n<details>\n<summary>T</summary>\n\nbody\n\n</details>\n\nshown words\n\nTail words.\n",
+        "<section hidden>\n<details>\n<summary>T</summary>\n\nbody\n\n</details>\n\nshown words\n\nTail words.\n",
+        "<div hidden>\n<details open>\n<summary>A</summary>\n<details>\n<summary>B</summary>\n\nbody words\n\n</details>\n</details>\n</div>\n\nTail words.\n",
+        "<div hidden>\n<details open>\n<summary>T</summary>\n<div>\n\nbody words\n\n</div>\n</details>\n</div>\n\nTail words.\n",
+        "<div hidden>\n<details open>\n<summary>T</summary>\n\n```\ncode words\n```\n\n</details>\n</div>\n\nTail words.\n",
+        "<div hidden>\n\n<details open>\n<summary>T</summary>\n\nbody words\n\n</details>\n\n</div>\n\nTail words.\n",
+        "<div hidden><details open><summary>T</summary>body words</details></div>\n\nTail words.\n",
+        "<div>\n<div hidden>\n<details open>\n<summary>T</summary>\n\nbody words\n\n</details>\n</div>\n</div>\n\nTail words.\n",
+        // What a `</div>` can't close stays hidden: the parser's scope boundaries.
+        "<table><tr><td hidden>\n\nsecret words\n\n</td></tr></table>\n\nShown text after.\n",
+        "<marquee hidden>\n\nsecret words\n\n</marquee>\n\nShown text after.\n",
         // Already right, kept right.
         "<div class=note>Html wrapped text</div>\n",
         "A <span class=x>red</span> word.\n",
@@ -113,13 +176,33 @@ struct CountMatchesPageTests {
         "\\:::info\nescaped words\n:::\n",
         "&#58;&#58;&#58;info\nentity words\n:::\n",
         ":::info\nopen words\n\\:::\n",
+        // A marker line whose title holds a footnote reference is text on the page, not a container
+        // (kit #221), and the count follows (kit #223). The last is the control.
+        ":::info Title[^1]\nbody words\n:::\n\n[^1]: note words\n",
+        ":::spoiler Title[^1]\nbody words\n:::\n\n[^1]: note words\n",
+        ":::info Title words\nbody words\n:::\n",
     ]
+
 
     @Test(arguments: probes)
     func theCountMatchesThePage(markdown: String) async throws {
         let page = try await pageWords(markdown)
         #expect(page > 0, "precondition: the page shows words")
-        #expect(TextStatistics(markdownBody: markdown).words == page, "counted vs shown")
+        let counted = TextStatistics(markdownBody: markdown).words
+        #expect(counted == page, "counted vs shown: \(counted) vs \(page)")
+    }
+
+    /// A title with math and a footnote reference (kit #223). Math alone already differs from the page
+    /// by a constant in this harness (the page lays the expression out; the counter reads its TeX), so
+    /// the probe is the footnote's own part: what the reference and its note add must be what the page
+    /// adds.
+    @Test func aFootnoteOnAMathTitleAddsWhatThePageAdds() async throws {
+        let plain = ":::warning Title $x^2$ and\nbody words\n:::\n"
+        let noted = ":::warning Title $x^2$ and[^1]\nbody words\n:::\n\n[^1]: note words\n"
+        let page = try await pageWords(noted) - pageWords(plain)
+        let counted = TextStatistics(markdownBody: noted).words - TextStatistics(markdownBody: plain).words
+        #expect(page > 0, "precondition: the note shows words")
+        #expect(counted == page, "footnote adds, counted vs shown: \(counted) vs \(page)")
     }
 
     /// An opened spoiler adds exactly its body's words to the closed one's count, on the page.

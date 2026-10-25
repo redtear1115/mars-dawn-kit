@@ -159,6 +159,77 @@ enum FootnoteExtractor {
         return FootnoteExtraction(markdown: rewritten, nonce: nonce, references: references, notes: notes, unreferenced: unreferenced)
     }
 
+    /// `body` for a parser that has no footnotes, so that every `[^label]: text` and every
+    /// `[^label]` reads as the text it is. The one thing a plain parser would make of them
+    /// otherwise is a link reference definition (`[^x]: https://...`, a one-word note, or
+    /// `[^1]: [^2]: ...`, where the outer marker's destination is the rest), which hides the note
+    /// and turns each `[^x]` into a link.
+    ///
+    /// The rule: a link reference definition can only start a paragraph, so a backslash goes
+    /// before the `[` of every `[^label]:` marker that opens a line's content, and of each one
+    /// that follows it directly (`[^1]: [^2]: ...`, any depth). "Opens a line's content" is after
+    /// any run of `>`, list markers (`-`, `*`, `+`, `1.`, `1)`), spaces and tabs. This does not ask
+    /// cmark which markers are definitions: it drops a repeated label, and the plain parser then
+    /// takes the repeat for the definition of a label whose first one was escaped. What cmark is
+    /// asked is which lines are code or raw HTML, which are left as written. A backslash before
+    /// `[` shows as nothing in text and ends the link reference definition. A marker later in the
+    /// line is text to a plain parser and is left alone. No line is added or removed.
+    static func neutralizingDefinitions(in body: String) -> String {
+        guard body.contains("[^") else { return body }
+        var lines = splitLines(body)
+        var isVerbatim = [Bool](repeating: false, count: lines.count + 1)
+        for range in scan(body, lines: lines, candidates: []).verbatim {
+            for number in range where number < isVerbatim.count { isVerbatim[number] = true }
+        }
+        for index in lines.indices {
+            if isVerbatim[index + 1] { continue }
+            let starts = leadingMarkerStarts(in: lines[index].content)
+            for start in starts.reversed() { lines[index].content.insert(UInt8(ascii: "\\"), at: start) }
+        }
+        return String(decoding: lines.flatMap { $0.content + $0.ending }, as: UTF8.self)
+    }
+
+    /// Where the `[^label]:` markers that open a line's content begin: the first after any
+    /// container prefix, and each that follows one directly.
+    private static func leadingMarkerStarts(in content: [UInt8]) -> [Int] {
+        guard content.contains(UInt8(ascii: "^")) else { return [] }
+        var index = 0
+        // Container prefix: quote markers, list markers and indentation.
+        while index < content.count {
+            let byte = content[index]
+            if byte == UInt8(ascii: " ") || byte == UInt8(ascii: "\t") || byte == UInt8(ascii: ">") {
+                index += 1
+            } else if (byte == UInt8(ascii: "-") || byte == UInt8(ascii: "*") || byte == UInt8(ascii: "+")), index + 1 < content.count,
+                      content[index + 1] == UInt8(ascii: " ") || content[index + 1] == UInt8(ascii: "\t") {
+                index += 2
+            } else if ("0"..."9").contains(Unicode.Scalar(byte)) {
+                var end = index
+                while end < content.count, ("0"..."9").contains(Unicode.Scalar(content[end])), end - index < 9 { end += 1 }
+                guard end < content.count, content[end] == UInt8(ascii: ".") || content[end] == UInt8(ascii: ")"),
+                      end + 1 < content.count, content[end + 1] == UInt8(ascii: " ") || content[end + 1] == UInt8(ascii: "\t") else { break }
+                index = end + 2
+            } else {
+                break
+            }
+        }
+        var starts: [Int] = []
+        while let end = markerEnd(in: content, at: index) {
+            starts.append(index)
+            index = end
+            while index < content.count, content[index] == UInt8(ascii: " ") || content[index] == UInt8(ascii: "\t") { index += 1 }
+        }
+        return starts
+    }
+
+    /// If a `[^label]:` starts at `index`, the offset just after its colon.
+    private static func markerEnd(in content: [UInt8], at index: Int) -> Int? {
+        guard index + 1 < content.count, content[index] == UInt8(ascii: "["), content[index + 1] == UInt8(ascii: "^") else { return nil }
+        var end = index + 2
+        while end < content.count, content[end] != UInt8(ascii: "]"), content[end] != UInt8(ascii: "[") { end += 1 }
+        guard end > index + 2, end + 1 < content.count, content[end] == UInt8(ascii: "]"), content[end + 1] == UInt8(ascii: ":") else { return nil }
+        return end + 2
+    }
+
     // MARK: Parsing
 
     private struct Reference {
@@ -198,38 +269,53 @@ enum FootnoteExtractor {
         return result
     }
 
-    private static func scan(_ body: String, lines: [Line], candidates: [String]) -> (references: [Reference], definitions: [Definition]) {
+    private static func scan(_ body: String, lines: [Line], candidates: [String]) -> (references: [Reference], definitions: [Definition], verbatim: [ClosedRange<Int>]) {
         let bodyLineCount = lines.count
         // The extra paragraph goes after a line break the body may lack, then a blank line.
         let tail = "\n\n" + candidates.map { "[^" + $0 + "]" }.joined(separator: " ") + "\n"
         let source = candidates.isEmpty ? body : body + tail
         cmark_gfm_core_extensions_ensure_registered()
-        guard let parser = cmark_parser_new(CMARK_OPT_FOOTNOTES | CMARK_OPT_SOURCEPOS) else { return ([], []) }
+        guard let parser = cmark_parser_new(CMARK_OPT_FOOTNOTES | CMARK_OPT_SOURCEPOS) else { return ([], [], []) }
         defer { cmark_parser_free(parser) }
         for name in ["table", "strikethrough", "tasklist"] {
             cmark_parser_attach_syntax_extension(parser, cmark_find_syntax_extension(name))
         }
         cmark_parser_feed(parser, source, source.utf8.count)
-        guard let root = cmark_parser_finish(parser) else { return ([], []) }
+        guard let root = cmark_parser_finish(parser) else { return ([], [], []) }
         defer { cmark_node_free(root) }
-        guard let iterator = cmark_iter_new(root) else { return ([], []) }
+        guard let iterator = cmark_iter_new(root) else { return ([], [], []) }
         defer { cmark_iter_free(iterator) }
 
         var references: [Reference] = []
         var definitions: [Definition] = []
+        var verbatim: [ClosedRange<Int>] = []
         while true {
             let event = cmark_iter_next(iterator)
             if event == CMARK_EVENT_DONE { break }
             guard event == CMARK_EVENT_ENTER, let node = cmark_iter_get_node(iterator) else { continue }
             let type = cmark_node_get_type(node)
             let line = Int(cmark_node_get_start_line(node))
-            if type == CMARK_NODE_FOOTNOTE_REFERENCE, line >= 1, line <= bodyLineCount,
-               let definition = cmark_node_parent_footnote_def(node) {
+            if type == CMARK_NODE_FOOTNOTE_REFERENCE, !isInsideImage(node), let definition = cmark_node_parent_footnote_def(node),
+               let place = placement(of: node, lines: lines), place.line >= 1, place.line <= bodyLineCount,
+               readsAsReference(lines[place.line - 1].content, startColumn: place.startColumn, endColumn: place.endColumn) {
                 let key = literal(definition)
-                references.append(Reference(line: line, startColumn: Int(cmark_node_get_start_column(node)),
-                                            endColumn: Int(cmark_node_get_end_column(node)), label: key,
-                                            originalLabel: writtenLabel(lines, line: line, start: Int(cmark_node_get_start_column(node)),
-                                                                        end: Int(cmark_node_get_end_column(node))) ?? key))
+                references.append(Reference(line: place.line, startColumn: place.startColumn, endColumn: place.endColumn, label: key,
+                                            originalLabel: writtenLabel(lines, line: place.line, start: place.startColumn,
+                                                                        end: place.endColumn) ?? key))
+            } else if type == CMARK_NODE_CODE_BLOCK || type == CMARK_NODE_HTML_BLOCK {
+                // Only outside a definition: inside one, a plain parser sees the lines as the text
+                // they are (`[^1]: <b>` is a definition whose destination is `<b>`, not an HTML block).
+                // The lines the block's own text covers, not `end_line`: cmark reports the end of
+                // an unclosed fence inside a container far past the container.
+                if line >= 1, !isInsideDefinition(node) {
+                    let text = cmark_node_get_literal(node).map { String(cString: $0) } ?? ""
+                    var textLines = 0
+                    for byte in text.utf8 where byte == UInt8(ascii: "\n") { textLines += 1 }
+                    var length: Int32 = 0, offset: Int32 = 0, fence: CChar = 0
+                    let fenced = type == CMARK_NODE_CODE_BLOCK && cmark_node_get_fenced(node, &length, &offset, &fence) != 0
+                    // A fence opens on its own line; the other blocks' first line is their text's.
+                    verbatim.append(line...(line + (fenced ? textLines : max(textLines - 1, 0))))
+                }
             } else if type == CMARK_NODE_FOOTNOTE_DEFINITION, line >= 1, line <= bodyLineCount {
                 definitions.append(Definition(label: literal(node), startLine: line,
                                               contentColumn: Int(cmark_node_get_start_column(node)),
@@ -238,7 +324,131 @@ enum FootnoteExtractor {
             }
         }
         definitions.sort { $0.startLine < $1.startLine }
-        return (references, definitions)
+        return (references, definitions, verbatim)
+    }
+
+    /// Where a reference stands in the source: its line, and the 1-based first and last column of
+    /// its `[^label]`.
+    ///
+    /// cmark-gfm's columns are right on the first line of a paragraph and wrong on the others:
+    /// there a node's column is its offset in the line's own text (container prefix and
+    /// indentation left out) added to the column the paragraph starts at. A reference on a
+    /// continuation line is placed by that offset instead, from where the line's text starts in
+    /// the source (#159: a footnote definition's second line, with its `[^label]`, put a
+    /// placeholder over a code span's closing backticks).
+    ///
+    /// The table extension takes the last line of a paragraph as the table's header row and
+    /// leaves the lines above it as a paragraph with no source positions: it starts at line 0
+    /// and its nodes count their line from 0, their column from the line's own text. The table
+    /// that follows starts where that paragraph did (#161).
+    ///
+    /// A position that does not read as a `[^label]` in the source is not used (see
+    /// `readsAsReference`).
+    private static func placement(of node: UnsafeMutablePointer<cmark_node>, lines: [Line]) -> (line: Int, startColumn: Int, endColumn: Int)? {
+        let startColumn = Int(cmark_node_get_start_column(node))
+        let endColumn = Int(cmark_node_get_end_column(node))
+        let nodeLine = Int(cmark_node_get_start_line(node))
+        guard let paragraph = enclosingParagraph(of: node) else {
+            // A header row's cells carry a position shifted by the paragraph above their table;
+            // not read from the source here, so they stay text rather than be misplaced.
+            if let table = headerTable(of: node), let previous = cmark_node_previous(table),
+               cmark_node_get_type(previous) == CMARK_NODE_PARAGRAPH, cmark_node_get_start_line(previous) == 0 {
+                return nil
+            }
+            return (nodeLine, startColumn, endColumn)
+        }
+        var line = nodeLine
+        let textStart: Int
+        // The split paragraph starts at column 0, so this is the column itself there.
+        let offset = startColumn - Int(cmark_node_get_start_column(paragraph))
+        if cmark_node_get_start_line(paragraph) == 0 {
+            guard let table = cmark_node_next(paragraph), isTable(table) else { return nil }
+            line = Int(cmark_node_get_start_line(table)) + nodeLine
+            if nodeLine == 0 {
+                textStart = Int(cmark_node_get_start_column(table)) - 1
+            } else {
+                guard let start = continuationTextStart(lines, line: line) else { return nil }
+                textStart = start
+            }
+        } else if nodeLine > Int(cmark_node_get_start_line(paragraph)) {
+            guard let start = continuationTextStart(lines, line: line) else { return nil }
+            textStart = start
+        } else {
+            return (nodeLine, startColumn, endColumn)
+        }
+        let first = textStart + offset
+        return (line, first + 1, first + 1 + (endColumn - startColumn))
+    }
+
+    /// Where the text of a paragraph's continuation line starts: after whatever container
+    /// prefix (`>`) and indentation the line has.
+    private static func continuationTextStart(_ lines: [Line], line: Int) -> Int? {
+        guard line >= 1, line <= lines.count else { return nil }
+        let content = lines[line - 1].content
+        var index = 0
+        while index < content.count, content[index] == UInt8(ascii: " ") || content[index] == UInt8(ascii: "\t") || content[index] == UInt8(ascii: ">") {
+            index += 1
+        }
+        return index
+    }
+
+    private static func enclosingParagraph(of node: UnsafeMutablePointer<cmark_node>) -> UnsafeMutablePointer<cmark_node>? {
+        var ancestor = cmark_node_parent(node)
+        while let current = ancestor {
+            if cmark_node_get_type(current) == CMARK_NODE_PARAGRAPH { return current }
+            ancestor = cmark_node_parent(current)
+        }
+        return nil
+    }
+
+    private static func isTable(_ node: UnsafeMutablePointer<cmark_node>) -> Bool {
+        cmark_node_get_type_string(node).map { String(cString: $0) == "table" } ?? false
+    }
+
+    /// The table whose header row holds `node`, if it is in one.
+    private static func headerTable(of node: UnsafeMutablePointer<cmark_node>) -> UnsafeMutablePointer<cmark_node>? {
+        var ancestor = cmark_node_parent(node)
+        while let current = ancestor {
+            if let name = cmark_node_get_type_string(current), String(cString: name) == "table_header" {
+                return cmark_node_parent(current)
+            }
+            ancestor = cmark_node_parent(current)
+        }
+        return nil
+    }
+
+    /// Whether the bytes at these 1-based columns of a line are a `[^label]`. cmark-gfm's columns
+    /// are wrong in places (a line after a code span that began on an earlier line, for one), and
+    /// a placeholder written over other text would eat it: here the closing backticks of a code
+    /// span, which then took the placeholder into its text (#159). A reference whose position
+    /// does not read as one is not a reference: it stays as written, like one in a code span.
+    private static func readsAsReference(_ content: [UInt8], startColumn: Int, endColumn: Int) -> Bool {
+        let first = startColumn - 1, last = endColumn - 1
+        guard first >= 0, last < content.count, last - first >= 3,
+              content[first] == UInt8(ascii: "["), content[first + 1] == UInt8(ascii: "^"), content[last] == UInt8(ascii: "]") else { return false }
+        return !content[(first + 2)..<last].contains { $0 == UInt8(ascii: "[") || $0 == UInt8(ascii: "]") }
+    }
+
+    /// Whether `node` is part of an image's description. That text becomes the `alt` attribute,
+    /// which has no markup in it to put a reference in, so such a `[^label]` is left as written.
+    /// It is then no reference at all: it is not numbered, and a note only it names is listed
+    /// as unreferenced, like any other definition nothing refers to.
+    private static func isInsideImage(_ node: UnsafeMutablePointer<cmark_node>) -> Bool {
+        var ancestor = cmark_node_parent(node)
+        while let current = ancestor {
+            if cmark_node_get_type(current) == CMARK_NODE_IMAGE { return true }
+            ancestor = cmark_node_parent(current)
+        }
+        return false
+    }
+
+    private static func isInsideDefinition(_ node: UnsafeMutablePointer<cmark_node>) -> Bool {
+        var ancestor = cmark_node_parent(node)
+        while let current = ancestor {
+            if cmark_node_get_type(current) == CMARK_NODE_FOOTNOTE_DEFINITION { return true }
+            ancestor = cmark_node_parent(current)
+        }
+        return false
     }
 
     private static func literal(_ node: UnsafeMutablePointer<cmark_node>) -> String {

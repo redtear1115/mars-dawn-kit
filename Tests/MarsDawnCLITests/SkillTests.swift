@@ -28,7 +28,7 @@ struct SkillTests {
     /// first place — fails loudly instead of silently writing into the real `~/.claude`. The one
     /// test that legitimately exercises the default (`withoutDirItWritesTheDefaultDirectory`)
     /// installs its own override before calling `install(dir: nil, …)`, same as every other test
-    /// here installs its own fakes for `MarsDawnApp.locate` elsewhere in this target.
+    /// here installs its own fakes (the task-local `MarsDawnApp.locateOverride`) elsewhere in this target.
     init() {
         SkillInstaller.defaultDirectory = {
             Issue.record("SkillInstaller.defaultDirectory was called with no test override in place — this would have touched the real ~/.claude/skills/marsdawn")
@@ -120,6 +120,26 @@ struct SkillTests {
         }
         #expect(kinds.contains("5 input_too_large"), "positive fixture: a kind that shares its code")
         #expect(rows.map { "\($0.output.1) \($0.output.2)" } == kinds, "one row per failure kind, in code order")
+    }
+
+    /// Every usage error that exits 64 and prints JSON must be named in the exit-64 row, so no
+    /// future kind can go missing from SKILL.md the way it named only `theme preview`'s kinds
+    /// before (#214). The exit-code table's own regex above only covers codes 1–63: the 64 row has
+    /// `—` in its `error` column (it carries several kinds, grouped by command, in its Meaning
+    /// column instead), so this checks that row's prose directly against the CLI's own types —
+    /// `CaseIterable` means adding a new kind to either enum fails this test until it's documented.
+    @Test func theExitSixtyFourRowNamesEveryJSONUsageErrorKind() throws {
+        let row = try #require(
+            MarsDawnSkill.text.components(separatedBy: "\n").first { $0.hasPrefix("| 64 |") },
+            "the exit-code table has a row for code 64"
+        )
+        let kinds = [WaitRangeFailure.kind]
+            + SkillInstallFailure.Kind.allCases.map(\.rawValue)
+            + OutputPathFailure.Kind.allCases.map(\.rawValue)
+        #expect(kinds.count == 8, "positive fixture: every exit-64 JSON kind, across the three commands")
+        for kind in kinds {
+            #expect(row.contains("`\(kind)`"), "the exit-64 row must name the JSON kind \(kind)")
+        }
     }
 
     /// One source: the repository's `skill/SKILL.md` is what `marsdawn skill` prints, byte for

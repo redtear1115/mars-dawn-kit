@@ -276,6 +276,13 @@ enum Callouts {
         return found
     }
 
+    /// The scalars a placeholder of this render starts and ends with: math's U+E000/U+E001 and
+    /// the footnote reference's U+E002/U+E003.
+    private static func isPlaceholderScalar(_ scalar: Unicode.Scalar) -> Bool {
+        scalar == MathExtractor.placeholderStart || scalar == MathExtractor.placeholderEnd
+            || scalar == FootnoteExtractor.placeholderStart || scalar == FootnoteExtractor.placeholderEnd
+    }
+
     /// `:::info`, `:::success`, `:::warning`, `:::danger` (each with an optional title), `:::spoiler
     /// Title` or `:::`, as a whole line of text.
     private static func parse(_ line: String, line sourceLine: Int?, source: Source?) -> Marker? {
@@ -288,7 +295,7 @@ enum Callouts {
         guard end > 3, end == bytes.count || bytes[end] == 0x20 || bytes[end] == 0x09 else { return nil }
         let title = String(decoding: trimmed(Array(bytes[end...])), as: UTF8.self)
         // A placeholder of this render (math, footnote) is not a title.
-        guard !title.unicodeScalars.contains(where: { $0 == "\u{E000}" || $0 == "\u{E001}" }) else { return nil }
+        guard !title.unicodeScalars.contains(where: Self.isPlaceholderScalar) else { return nil }
         // The same for math the renderer's source has not had swapped out yet.
         if let sourceLine, source?.mathLines.contains(sourceLine) == true { return nil }
         let author = title.isEmpty ? nil : title

@@ -1,26 +1,29 @@
 OS build: Version 26.6.2 (Build 25G83) | WebKit: 21624.5.1.11.3 | Paper: a4
 Page count: 1
+Lines: minX minY maxX maxY | text, whole points from the page's bottom left, sorted by text; compared within 1 pt
 
 --- Page 1 ---
-標題HDCJK01:你好世界 Heading
-繁體中文段落標記ZHT01,這是一段測試文字,包含全形標點:「引號」、逗號,句號。分號;
-問號?驚嘆號!
-简体中文段落标记ZHS02,这是一段测试文字,包含全角标点:“引号”、逗号,句号。分号;问
-号?惊叹号!
-日本語のパラグラフJPN03です。全角句読点のテスト、これは「括弧」とマルです。ありがとうご
-ざいます。
-한국어 단락입니다 KOR04. 전각 문장 부호 테스트, 이것은 “따옴표”와 마침표입니다. 감사합니다.
-MixedABC123測試全形與Latin混排MIXCJK05,句號。逗號,冒號:分號;問號?驚嘆號!
-表格CJKTBL06 Table
-欄位CELLTBL07 值CELLTBL08
-中文儲存格09 English cell 10
-// 中文注釋CODECJK11 comment inline with code
-let 変数名 = "日本語コメント12"
-func greet() -> String { return "こんにちは世界13" }
-項目LISTCJK14
-English item fifteen
-混合Mixed項目CJK16 with Latin text
-永和九年岁在癸丑暮春之初会于会稽山阴之兰亭修禊事也群贤毕至少长咸集此地有崇山峻封装换
-行标记岭茂林修竹又有清流激湍映带左右引以为流觞曲水列坐其次虽无丝竹管弦之盛一觞一咏亦
-足以畅叙幽情
-Last paragraph marker CJKENDMARK99.
+58 335 332 347 | // 中文注釋CODECJK11 comment inline with code
+167 378 245 392 | English cell 10
+69 248 174 262 | English item fifteen
+45 125 270 139 | Last paragraph marker CJKENDMARK99.
+45 500 528 514 | MixedABC123測試全形與Latin混排MIXCJK05,句號。逗號,冒號:分號;問號?驚嘆號!
+58 309 365 325 | func greet() -> String { return "こんにちは世界13" }
+58 321 226 337 | let 変数名 = "日本語コメント12"
+45 561 101 579 | ざいます。
+56 378 131 392 | 中文儲存格09
+167 407 246 421 | 值CELLTBL08
+45 613 116 626 | 号?惊叹号!
+45 663 128 676 | 問號?驚嘆號!
+45 580 549 598 | 日本語のパラグラフJPN03です。全角句読点のテスト、これは「括弧」とマルです。ありがとうご
+45 722 416 751 | 標題HDCJK01:你好世界 Heading
+56 407 146 421 | 欄位CELLTBL07
+45 194 545 208 | 永和九年岁在癸丑暮春之初会于会稽山阴之兰亭修禊事也群贤毕至少长咸集此地有崇山峻封装换
+69 225 265 240 | 混合Mixed項目CJK16 with Latin text
+45 632 546 646 | 简体中文段落标记ZHS02,这是一段测试文字,包含全角标点:“引号”、逗号,句号。分号;问
+45 682 546 697 | 繁體中文段落標記ZHT01,這是一段測試文字,包含全形標點:「引號」、逗號,句號。分號;
+45 175 545 188 | 行标记岭茂林修竹又有清流激湍映带左右引以为流觞曲水列坐其次虽无丝竹管弦之盛一觞一咏亦
+45 447 219 469 | 表格CJKTBL06 Table
+45 156 116 169 | 足以畅叙幽情
+69 270 152 285 | 項目LISTCJK14
+45 531 503 546 | 한국어 단락입니다 KOR04. 전각 문장 부호 테스트, 이것은 “따옴표”와 마침표입니다. 감사합니다.

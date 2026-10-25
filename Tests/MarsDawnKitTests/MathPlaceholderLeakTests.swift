@@ -2,15 +2,22 @@ import Foundation
 import Testing
 @testable import MarsDawnKit
 
-/// mars-dawn-kit#187: a math placeholder split apart by the parse (a list item, an attribute
-/// definition line and a footnote together) was never expanded, so its pieces reached the page
-/// with a random nonce. The renderer now renders such a document again without math.
+/// mars-dawn-kit#187: a math placeholder split apart by the parse was never expanded, so its
+/// pieces reached the page with a random nonce. The renderer now renders such a document again
+/// without math.
+///
+/// The leaking inputs were a list item, an attribute definition line and a footnote together,
+/// where the footnote's column (wrong on a paragraph's later lines) put its placeholder over the
+/// math's (#159 fixed that). They are the first two of `clean` now. What leaks today, found by a
+/// random search, is a footnote definition whose opening fence line holds math.
 struct MathPlaceholderLeakTests {
     static let leaking = [
-        "1. ^[a]:=\n--$x$\n|[^1]\r\n[^1]:",
-        "1. ^[a]:=\n--$x$\n|[^1]\n[^1]:",
+        "[^2]: ``` $m$\n\n$x$",
+        "[^2]: ``` $m$\r\n\r\n$x$",
     ]
     static let clean = [
+        "1. ^[a]:=\n--$x$\n|[^1]\r\n[^1]:",
+        "1. ^[a]:=\n--$x$\n|[^1]\n[^1]:",
         "^[a]:=\n--$x$\n",
         "--$x$\n|[^1]\r\n[^1]:",
         "1. ^[a]:=\n--$x$",
@@ -63,7 +70,7 @@ struct MathPlaceholderLeakTests {
     /// must not hide a leak by tying the scalar counts.
     @Test func droppedAuthorScalarDoesNotHideALeak() {
         for scalars in ["\u{E000}", "\u{E001}", "\u{E000}\u{E001}"] {
-            let source = "1. ^[a]:=\(scalars)\n--$x$\n|[^1]\n[^1]:"
+            let source = "^[a]:=\(scalars)\n[^2]: ``` $m$\n\n$x$"
             let first = MarkdownRenderer.render(source)
             let stray = first.unicodeScalars.filter { $0 == "\u{E000}" || $0 == "\u{E001}" }.count
             #expect(stray <= scalars.unicodeScalars.count, "\(first.debugDescription)")
