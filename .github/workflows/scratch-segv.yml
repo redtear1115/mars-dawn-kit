@@ -28,15 +28,20 @@ jobs:
           MARSDAWN_APP_PATH=/nonexistent "$cli" open /tmp/some.md; echo "PROBE open exit=$?"
           MARSDAWN_APP_PATH=/nonexistent "$cli" open --json /tmp/some.md; echo "PROBE open-json exit=$?"
           exit 0
+      - name: Build release tests
+        run: swift build -c release --build-tests
+      - name: Each scratch shape in its own process
+        run: |
+          set +e
+          for t in s1_original s2_realDoCatch s3_realEnterLeave s4_realReadInside s5_realAsync s6_localOptSendable s7_localOptPlain s8_localNonOpt s9_localBoxed s10_realNoOverride s11_localOptSendableEnterLeave; do
+            MARSDAWN_APP_PATH=/nonexistent swift test -c release --skip-build --no-parallel --filter "ScratchSegvTests/$t" >/tmp/o.txt 2>&1
+            rc=$?
+            echo "PROBE $t exit=$rc $(grep -c 'signal code 11' /tmp/o.txt) segv"
+          done
+          exit 0
       - name: Release test, StandaloneToolTests
         run: |
           set +e
-          MARSDAWN_APP_PATH=/nonexistent swift test -c release --no-parallel --filter StandaloneToolTests
+          MARSDAWN_APP_PATH=/nonexistent swift test -c release --skip-build --no-parallel --filter StandaloneToolTests
           echo "PROBE standalone-tests exit=$?"
-          exit 0
-      - name: Release test, the single test
-        run: |
-          set +e
-          MARSDAWN_APP_PATH=/nonexistent swift test -c release --no-parallel --filter 'StandaloneToolTests/openStillNeedsTheApp'
-          echo "PROBE single-test exit=$?"
           exit 0
