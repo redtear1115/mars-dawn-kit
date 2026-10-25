@@ -115,42 +115,74 @@ public enum MarkdownRenderer {
     /// Splits off the front matter, lifts the math out and renders what is left. Parses, so it
     /// blocks unless it is already on a parsing worker.
     private static func renderSplit(_ markdown: String, options: Options) -> RenderResult {
-        let split = SplitSource(markdown, options: options)
-        let result = MarkdownParsing.withDocument(split.parsedBody, options: options.parseLimits) { outcome in
-            renderResult(outcome, split: split, options: options)
-        }
-        // Defence in depth (#187): a placeholder the parse split apart is never expanded, so its
-        // pieces would reach the page, different on every render (the nonce is random). When this
-        // extraction made placeholders and more placeholder scalars came out than went in, render
-        // again with the math left as source text. Costs nothing for a document without math.
-        // A leak is a piece of this extraction's random nonce in the output (a placeholder cut
-        // short keeps most of it; 8 hex digits cannot occur by chance), or more scalars than the
-        // whole source holds (front matter included, as `result.html` renders it).
-        let nonce = split.math.nonce
-        guard split.math.expressionCount > 0,
-              result.html.contains(nonce.prefix(8)) || result.html.contains(nonce.suffix(8))
-                || placeholderScalarCount(result.html) > placeholderScalarCount(markdown) else { return result }
-        let plain = SplitSource(markdown, options: options, extractMath: false)
-        return MarkdownParsing.withDocument(plain.parsedBody, options: options.parseLimits) { outcome in
-            renderResult(outcome, split: plain, options: options)
+        var extractMath = true
+        var extractFootnotes = true
+        while true {
+            let split = SplitSource(markdown, options: options, extractMath: extractMath, extractFootnotes: extractFootnotes)
+            let result = MarkdownParsing.withDocument(split.parsedBody, options: options.parseLimits) { outcome in
+                renderResult(outcome, split: split, options: options)
+            }
+            // Defence in depth (#187): a placeholder the parse split apart is never expanded, so its
+            // pieces would reach the page, different on every render (the nonce is random). When this
+            // extraction made placeholders and more placeholder scalars came out than went in, render
+            // again with the math left as source text. Costs nothing for a document without math.
+            // A leak is a piece of this extraction's random nonce in the output (a placeholder cut
+            // short keeps most of it; 8 hex digits cannot occur by chance), or more scalars than the
+            // whole source holds (front matter included, as `result.html` renders it).
+            let nonce = split.math.nonce
+            if extractMath, split.math.expressionCount > 0,
+               result.html.contains(nonce.prefix(8)) || result.html.contains(nonce.suffix(8))
+                || placeholderScalarCount(result.html) > placeholderScalarCount(markdown) {
+                extractMath = false
+                continue
+            }
+            // The same for footnote references (#159): one that ends up where text is not expanded
+            // (inside code, say) would show U+E002 ... U+E003 and the nonce. Render again with the
+            // footnotes left as the source text they are to a parser that has none.
+            if extractFootnotes, leaks(split.footnotes, in: result.html, source: markdown) {
+                extractFootnotes = false
+                continue
+            }
+            return result
         }
     }
 
-    /// How many U+E000 / U+E001 scalars `text` holds (the private-use pair math placeholders use).
-    private static func placeholderScalarCount(_ text: String) -> Int {
-        // UTF-8: U+E000 is EE 80 80 and U+E001 is EE 80 81.
-        let bytes = Array(text.utf8)
-        var count = 0
-        var index = 0
-        while index + 2 < bytes.count {
-            if bytes[index] == 0xEE, bytes[index + 1] == 0x80, bytes[index + 2] == 0x80 || bytes[index + 2] == 0x81 {
-                count += 1
-                index += 3
-            } else {
-                index += 1
-            }
+    /// Whether `html` holds a piece of `footnotes`' placeholders: the random nonce, or more of
+    /// their U+E002 / U+E003 scalars than the source has. A document cannot forge either, and a
+    /// document without references has no placeholders to leak. Runs on every render of a
+    /// document with footnotes, so it reads the UTF-8 in place (`memmem`, `memchr`) and copies nothing.
+    private static func leaks(_ footnotes: FootnoteExtraction, in html: String, source: String) -> Bool {
+        guard !footnotes.references.isEmpty else { return false }
+        let nonce = footnotes.nonce.utf8
+        let head = Array(nonce.prefix(8)), tail = Array(nonce.suffix(8))
+        var page = html
+        let pieceFound = page.withUTF8 { bytes in
+            [head, tail].contains { needle in memmem(bytes.baseAddress, bytes.count, needle, needle.count) != nil }
         }
-        return count
+        return pieceFound || placeholderScalarCount(html, first: 0x82, second: 0x83) > placeholderScalarCount(source, first: 0x82, second: 0x83)
+    }
+
+    /// How many U+E000 / U+E001 scalars `text` holds (the private-use pair math placeholders use);
+    /// `first` and `second` are the last UTF-8 byte of another pair, U+E002 / U+E003 for footnotes.
+    private static func placeholderScalarCount(_ text: String, first: UInt8 = 0x80, second: UInt8 = 0x81) -> Int {
+        // UTF-8: U+E000 is EE 80 80 and U+E001 is EE 80 81. EE starts no other text a page holds
+        // but private use, so `memchr` skips nearly all of it.
+        var text = text
+        return text.withUTF8 { bytes in
+            guard let base = bytes.baseAddress else { return 0 }
+            var count = 0
+            var index = 0
+            while index + 2 < bytes.count, let found = memchr(base + index, 0xEE, bytes.count - index - 2) {
+                index = base.distance(to: found.assumingMemoryBound(to: UInt8.self))
+                if bytes[index + 1] == 0x80, bytes[index + 2] == first || bytes[index + 2] == second {
+                    count += 1
+                    index += 3
+                } else {
+                    index += 1
+                }
+            }
+            return count
+        }
     }
 
     /// A document split into its front matter, rendered up front (it is never parsed as
@@ -173,7 +205,7 @@ public enum MarkdownRenderer {
         let footnotes: FootnoteExtraction
         let bodyLineOffset: Int
 
-        init(_ markdown: String, options: Options, extractMath: Bool = true) {
+        init(_ markdown: String, options: Options, extractMath: Bool = true, extractFootnotes: Bool = true) {
             let (frontMatter, body, offset) = FrontMatter.split(markdown)
             if let frontMatter {
                 frontMatterHTML = MarkdownRenderer.frontMatterHTML(frontMatter, label: options.frontMatterLabel)
@@ -186,7 +218,9 @@ public enum MarkdownRenderer {
                 ? MathExtractor.extract(from: self.body)
                 : MathExtractor.Extraction(markdown: self.body, nonce: "", expressions: [])
             // After the math, so `$[^1]$` stays TeX.
-            footnotes = FootnoteExtractor.extract(from: math.markdown)
+            footnotes = extractFootnotes
+                ? FootnoteExtractor.extract(from: math.markdown)
+                : FootnoteExtraction(markdown: math.markdown, nonce: "", references: [], notes: [], unreferenced: [])
             parsedBody = footnotes.markdown
             bodyLineOffset = offset
         }
