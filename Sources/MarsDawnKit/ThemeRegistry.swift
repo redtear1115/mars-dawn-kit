@@ -32,6 +32,10 @@ import MarsDawnThemes
 ///   folder claiming it is dropped, so the outcome doesn't depend on the order folders are listed.
 /// - A theme by a revoked author (`author.github`, compared ignoring ASCII case) is dropped.
 ///   Revocation never touches a built-in (L5).
+/// - At most `maxScannedFolders` candidate folders -- those whose name passes the grammar, taken
+///   in byte order of name -- are read at all; any beyond that are recorded and left unread, so a
+///   container full of valid-looking folders can't make one load read without bound (#138). Only
+///   the app writes the container, so this is a cost bound, not a security boundary.
 /// - At most `maxInstalled` themes are accepted, in ascending order of id; the rest are ignored
 ///   with a log line (L2).
 ///
@@ -50,6 +54,11 @@ public final class ThemeRegistry: Sendable {
 
     /// L2: the most installed themes one load accepts.
     package static let maxInstalled = 200
+
+    /// The most candidate folders (names passing the grammar) one load reads from disk at all,
+    /// before the `maxInstalled` cap on accepted themes applies: a cost bound on a container only
+    /// the app writes (#138).
+    package static let maxScannedFolders = 400
 
     /// The built-ins' ids: reserved, never loaded from a directory, never revoked.
     package static let reservedIDs: Set<String> = ["dawn", "classic", "modern", "vivid"]
@@ -149,6 +158,7 @@ public final class ThemeRegistry: Sendable {
         case revokedID
         case revokedAuthor
         case overLimit
+        case overFolderLimit
     }
 
     package struct ScanResult: Sendable {
@@ -172,9 +182,16 @@ public final class ThemeRegistry: Sendable {
         // Folders in byte order of name, so everything below is deterministic.
         let names = folderNames(in: root).filter(ThemeGrammar.isThemeID).sorted { Array($0.utf8).lexicographicallyPrecedes(Array($1.utf8)) }
 
+        // #138: bound the number of candidate folders read, not only the themes accepted. Every
+        // folder whose name passes the grammar would otherwise cost a read and a validate, so only
+        // the first `maxScannedFolders` are opened; the rest are recorded without being read.
+        for folder in names.dropFirst(maxScannedFolders) {
+            result.dropped[folder] = .overFolderLimit
+        }
+
         struct Candidate { let folder: String; let theme: ValidatedTheme }
         var candidates: [Candidate] = []
-        for folder in names {
+        for folder in names.prefix(maxScannedFolders) {
             switch readThemeFile(folder: folder, in: root) {
             case .failure(let drop):
                 result.dropped[folder] = drop
@@ -225,6 +242,9 @@ public final class ThemeRegistry: Sendable {
         }
         if let over = counts["\(Drop.overLimit)"] {
             log.error("THEME-LIMIT: \(over, privacy: .public) installed theme(s) beyond the limit of \(maxInstalled, privacy: .public) were ignored")
+        }
+        if let over = counts["\(Drop.overFolderLimit)"] {
+            log.error("THEME-FOLDER-LIMIT: \(over, privacy: .public) theme folder(s) beyond the scan limit of \(maxScannedFolders, privacy: .public) were not read")
         }
         for (folder, drop) in result.dropped.sorted(by: { $0.key < $1.key }) where drop == .duplicateID {
             log.error("THEME-DUPLICATE: folder \(folder, privacy: .public) declares an id another folder also declares; every claimant is dropped")
