@@ -1,0 +1,42 @@
+name: scratch-segv
+on:
+  push:
+    branches: [fix/238-release-segv]
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: macos-26
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Use Xcode 26
+        run: |
+          set -euo pipefail
+          app=$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)
+          sudo xcode-select -s "$app"
+      - run: swift --version
+      - run: git log -1 --format=%H
+      - name: Release CLI probe
+        run: |
+          swift build -c release --product marsdawn
+          cli="$(swift build -c release --show-bin-path)/marsdawn"
+          printf '# t\n' > /tmp/some.md
+          set +e
+          MARSDAWN_APP_PATH=/nonexistent "$cli" open /tmp/some.md; echo "PROBE open exit=$?"
+          MARSDAWN_APP_PATH=/nonexistent "$cli" open --json /tmp/some.md; echo "PROBE open-json exit=$?"
+          exit 0
+      - name: Release test, StandaloneToolTests
+        run: |
+          set +e
+          MARSDAWN_APP_PATH=/nonexistent swift test -c release --no-parallel --filter StandaloneToolTests
+          echo "PROBE standalone-tests exit=$?"
+          exit 0
+      - name: Release test, the single test
+        run: |
+          set +e
+          MARSDAWN_APP_PATH=/nonexistent swift test -c release --no-parallel --filter 'StandaloneToolTests/openStillNeedsTheApp'
+          echo "PROBE single-test exit=$?"
+          exit 0
