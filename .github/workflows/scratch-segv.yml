@@ -29,7 +29,7 @@ jobs:
           MARSDAWN_APP_PATH=/nonexistent "$cli" open --json /tmp/some.md; echo "PROBE open-json exit=$?"
           exit 0
       - name: Build release tests
-        run: swift build -c release --build-tests
+        run: MARSDAWN_APP_PATH=/nonexistent swift test -c release --no-parallel --filter 'ScratchSegvTests/s3_realEnterLeave'
       - name: Each scratch shape in its own process
         run: |
           set +e
