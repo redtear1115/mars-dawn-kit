@@ -139,6 +139,18 @@ struct TextStatisticsTests {
         #expect(words("a <!-- b --> c\n") == 2)
     }
 
+    /// An image's alt text is read by the same rule as text (kit #171): not counted where the page
+    /// hides what is around it, counted where it does not. The page's `innerText` never holds alt
+    /// text, so this is measured on the count alone: the twins differ by exactly the alt's words.
+    @Test func altTextFollowsTheHiddenRuleOfText() {
+        let shown = "![alt three words](a.png)\n\nShown words.\n"
+        #expect(words(shown) == 5)
+        #expect(words("<details>\n<summary>T</summary>\n\n![alt three words](a.png)\n\n</details>\n\nShown words.\n") == 3)
+        #expect(words("<details open>\n<summary>T</summary>\n\n![alt three words](a.png)\n\n</details>\n\nShown words.\n") == 6)
+        #expect(words("<template>\n\n![alt three words](a.png)\n\n</template>\n\nShown words.\n") == 2)
+        #expect(words(":::spoiler S\n![alt three words](a.png)\n:::\n\nShown words.\n") == 3)
+    }
+
     /// A block-level tag breaks words, as the page lays them out; an inline tag doesn't.
     @Test func blockTagsSeparateWordsAndInlineTagsDoNot() {
         #expect(words("<div><p>one</p><p>two</p></div>\n") == 2)

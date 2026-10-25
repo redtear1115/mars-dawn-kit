@@ -71,13 +71,19 @@ struct CountMatchesPageTests {
         "<details><summary>Title here</summary>Body words hidden</details>\n",
         "<details open><summary>Title</summary>Body shown</details>\n",
         // The GitHub form of <details> (#414): the opening tag, the Markdown and the closing tag
-        // are separate blocks, written as one element. Without fenced code in the middle: a
-        // fence's words are counted whatever the group hides (`visitCodeBlock` does not know),
-        // which is deferred to its own issue.
+        // are separate blocks, written as one element.
         "<details>\n<summary>Title here</summary>\n\nBody **words** hidden here\n\n- item one\n- item two\n\n</details>\n\nShown text after.\n",
         "<details open>\n<summary>Title</summary>\n\nBody words shown here\n\n</details>\n\nShown text after.\n",
         "<details open>\n<summary>Outer</summary>\n\nouter body\n\n<details>\n<summary>Inner</summary>\n\ninner body hidden\n\n</details>\n\nafter inner\n\n</details>\n\nShown text after.\n",
         "<details>\n<summary>One</summary>\n\nfirst hidden body\n\n</details>\n<details>\n<summary>Two</summary>\n\nsecond hidden body\n\n</details>\n\nShown text after.\n",
+        // Fenced and indented code inside a collapsed group is hidden with the rest (kit #171); in an
+        // open one it is shown (the control), and in a `<template>` it is never shown.
+        "<details>\n<summary>Title here</summary>\n\n```\ncode hidden words\n```\n\n</details>\n\nShown text after.\n",
+        "<details open>\n<summary>Title here</summary>\n\n```\ncode shown words\n```\n\n</details>\n\nShown text after.\n",
+        "<details>\n<summary>Title here</summary>\n\n    indented hidden code\n\n</details>\n\nShown text after.\n",
+        "<div>\n<details>\n<summary>T</summary>\n\n```\nsecret code\n```\n\n</details>\n</div>\n\nShown text after.\n",
+        "- <details>\n  <summary>T</summary>\n\n  ```\n  secret code\n  ```\n\n  </details>\n\nShown text after.\n",
+        "<template>\n\n```\nsecret code\n```\n\n</template>\n\nShown text after.\n",
         // Already right, kept right.
         "<div class=note>Html wrapped text</div>\n",
         "A <span class=x>red</span> word.\n",

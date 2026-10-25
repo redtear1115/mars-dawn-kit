@@ -225,11 +225,13 @@ private struct ReadableTextVisitor: MarkupWalker {
     }
 
     mutating func visitCodeBlock(_ codeBlock: CodeBlock) {
+        guard !html.isHiding else { return }
         output += codeBlock.code
         output += "\n"
     }
 
     mutating func visitImage(_ image: Image) {
+        guard !html.isHiding else { return }
         output += image.plainText
         output += " "
     }
