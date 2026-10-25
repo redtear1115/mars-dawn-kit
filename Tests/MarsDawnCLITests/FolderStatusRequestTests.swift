@@ -305,8 +305,8 @@ struct WaitOptionTests {
     /// recorder, never in the installed MarsDawn.
     private func exitCodeOfRun(_ arguments: [String]) async -> Int32? {
         let recorder = OpenRecorder()
-        let code = await MarsDawnApp.$locateOverride.withValue({ nil }) {
-            await MarsDawnCommand.Open.$opener.withValue(recorder.opener) {
+        let code = await MarsDawnApp.$locateOverride.withValue(MarsDawnApp.LocateOverride({ nil })) {
+            await MarsDawnCommand.Open.$opener.withValue(MarsDawnCommand.Open.Opener(recorder.opener)) {
                 await exitCode { _ = try await MarsDawnCommand.Open.parse(arguments).run() }
             }
         }

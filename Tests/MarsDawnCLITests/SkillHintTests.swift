@@ -402,8 +402,8 @@ struct SkillHintCallSiteTests {
         let opened = Opened()
         let before = HintTesting.marsDawnProcesses()
         let fakeApp = sandbox.root.appendingPathComponent("Fake.app")
-        try await MarsDawnApp.$locateOverride.withValue({ fakeApp }) {
-            try await MarsDawnCommand.Open.$opener.withValue({ urls, _, _ in opened.add(urls) }) {
+        try await MarsDawnApp.$locateOverride.withValue(MarsDawnApp.LocateOverride({ fakeApp })) {
+            try await MarsDawnCommand.Open.$opener.withValue(MarsDawnCommand.Open.Opener({ urls, _, _ in opened.add(urls) })) {
                 try await sandbox.run { try await MarsDawnCommand.Open.parse([input.path]).run() }
                 let json = try HintSandbox()
                 try await json.run { try await MarsDawnCommand.Open.parse([input.path, "--json"]).run() }
@@ -442,8 +442,8 @@ struct SkillHintCallSiteTests {
         let sandbox = try HintSandbox()
         let (input, _) = try makeInput(in: sandbox)
         let opened = Opened()
-        try await MarsDawnApp.$locateOverride.withValue({ nil }) {
-            try await MarsDawnCommand.Open.$opener.withValue({ urls, _, _ in opened.add(urls) }) {
+        try await MarsDawnApp.$locateOverride.withValue(MarsDawnApp.LocateOverride({ nil })) {
+            try await MarsDawnCommand.Open.$opener.withValue(MarsDawnCommand.Open.Opener({ urls, _, _ in opened.add(urls) })) {
                 await sandbox.run {
                     await #expect(throws: CLIFailure.self) { try await MarsDawnCommand.Open.parse([input.path]).run() }
                 }

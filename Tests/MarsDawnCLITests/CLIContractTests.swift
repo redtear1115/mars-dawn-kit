@@ -59,9 +59,9 @@ struct OpenJSONContractTests {
         /// Runs `open` with the given arguments, with nothing able to reach the real app.
         func run(_ arguments: [String]) async throws {
             let app = app, printed = printed
-            try await MarsDawnApp.$locateOverride.withValue({ app }) {
-                try await MarsDawnCommand.Open.$opener.withValue(recorder.opener) {
-                    try await OutputOptions.$sink.withValue({ printed.add($0) }) {
+            try await MarsDawnApp.$locateOverride.withValue(MarsDawnApp.LocateOverride({ app })) {
+                try await MarsDawnCommand.Open.$opener.withValue(MarsDawnCommand.Open.Opener(recorder.opener)) {
+                    try await OutputOptions.$sink.withValue(OutputOptions.Sink({ printed.add($0) })) {
                         try await MarsDawnCommand.Open.parse(arguments).run()
                     }
                 }
@@ -322,9 +322,9 @@ struct WaitBoundsContractTests {
     private func run(_ arguments: [String], recorder: OpenRecorder) async throws {
         let app = try makeFakeApp(opensFolders: false)
         defer { try? FileManager.default.removeItem(at: app) }
-        try await MarsDawnApp.$locateOverride.withValue({ app }) {
-            try await MarsDawnCommand.Open.$opener.withValue(recorder.opener) {
-                try await OutputOptions.$sink.withValue({ _ in }) {
+        try await MarsDawnApp.$locateOverride.withValue(MarsDawnApp.LocateOverride({ app })) {
+            try await MarsDawnCommand.Open.$opener.withValue(MarsDawnCommand.Open.Opener(recorder.opener)) {
+                try await OutputOptions.$sink.withValue(OutputOptions.Sink({ _ in })) {
                     try await MarsDawnCommand.Open.parse(arguments).run()
                 }
             }
@@ -387,7 +387,7 @@ struct ExportForceContractTests {
             #expect(try Data(contentsOf: output) == old, "byte-identical without --force")
 
             // --force: succeeds and replaces it.
-            try await OutputOptions.$sink.withValue({ printed.add($0) }) {
+            try await OutputOptions.$sink.withValue(OutputOptions.Sink({ printed.add($0) })) {
                 try await MarsDawnCommand.Export.parse([input.path, "-o", output.path, "--force", "--json"]).run()
             }
         }
