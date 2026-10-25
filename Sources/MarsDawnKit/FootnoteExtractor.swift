@@ -161,25 +161,73 @@ enum FootnoteExtractor {
 
     /// `body` for a parser that has no footnotes, so that every `[^label]: text` and every
     /// `[^label]` reads as the text it is. The one thing a plain parser would make of them
-    /// otherwise is a link reference definition (`[^x]: https://...` or a one-word note), which
-    /// hides the note and turns each `[^x]` into a link. A backslash before the `[` of each
-    /// definition cmark finds ends that, and shows nothing of itself. No line is added or
-    /// removed. A definition cmark drops (nothing refers to it, past `candidateLimit`) is not
-    /// found and is left as written.
+    /// otherwise is a link reference definition (`[^x]: https://...`, a one-word note, or
+    /// `[^1]: [^2]: ...`, where the outer marker's destination is the rest), which hides the note
+    /// and turns each `[^x]` into a link.
+    ///
+    /// The rule: a link reference definition can only start a paragraph, so a backslash goes
+    /// before the `[` of every `[^label]:` marker that opens a line's content, and of each one
+    /// that follows it directly (`[^1]: [^2]: ...`, any depth). "Opens a line's content" is after
+    /// any run of `>`, list markers (`-`, `*`, `+`, `1.`, `1)`), spaces and tabs. This does not ask
+    /// cmark which markers are definitions: it drops a repeated label, and the plain parser then
+    /// takes the repeat for the definition of a label whose first one was escaped. What cmark is
+    /// asked is which lines are code or raw HTML, which are left as written. A backslash before
+    /// `[` shows as nothing in text and ends the link reference definition. A marker later in the
+    /// line is text to a plain parser and is left alone. No line is added or removed.
     static func neutralizingDefinitions(in body: String) -> String {
         guard body.contains("[^") else { return body }
         var lines = splitLines(body)
-        let found = scan(body, lines: lines, candidates: definitionCandidates(body))
-        var done = Set<Int>()
-        for definition in found.definitions {
-            let index = definition.startLine - 1
-            guard index >= 0, index < lines.count, done.insert(index).inserted else { continue }
-            let content = lines[index].content
-            let contentStart = min(max(definition.contentColumn - 1, 0), content.count)
-            guard let marker = lastMarker(in: content, before: contentStart) else { continue }
-            lines[index].content.insert(UInt8(ascii: "\\"), at: marker)
+        var isVerbatim = [Bool](repeating: false, count: lines.count + 1)
+        for range in scan(body, lines: lines, candidates: []).verbatim {
+            for number in range where number < isVerbatim.count { isVerbatim[number] = true }
+        }
+        for index in lines.indices {
+            if isVerbatim[index + 1] { continue }
+            let starts = leadingMarkerStarts(in: lines[index].content)
+            for start in starts.reversed() { lines[index].content.insert(UInt8(ascii: "\\"), at: start) }
         }
         return String(decoding: lines.flatMap { $0.content + $0.ending }, as: UTF8.self)
+    }
+
+    /// Where the `[^label]:` markers that open a line's content begin: the first after any
+    /// container prefix, and each that follows one directly.
+    private static func leadingMarkerStarts(in content: [UInt8]) -> [Int] {
+        guard content.contains(UInt8(ascii: "^")) else { return [] }
+        var index = 0
+        // Container prefix: quote markers, list markers and indentation.
+        while index < content.count {
+            let byte = content[index]
+            if byte == UInt8(ascii: " ") || byte == UInt8(ascii: "\t") || byte == UInt8(ascii: ">") {
+                index += 1
+            } else if (byte == UInt8(ascii: "-") || byte == UInt8(ascii: "*") || byte == UInt8(ascii: "+")), index + 1 < content.count,
+                      content[index + 1] == UInt8(ascii: " ") || content[index + 1] == UInt8(ascii: "\t") {
+                index += 2
+            } else if ("0"..."9").contains(Unicode.Scalar(byte)) {
+                var end = index
+                while end < content.count, ("0"..."9").contains(Unicode.Scalar(content[end])), end - index < 9 { end += 1 }
+                guard end < content.count, content[end] == UInt8(ascii: ".") || content[end] == UInt8(ascii: ")"),
+                      end + 1 < content.count, content[end + 1] == UInt8(ascii: " ") || content[end + 1] == UInt8(ascii: "\t") else { break }
+                index = end + 2
+            } else {
+                break
+            }
+        }
+        var starts: [Int] = []
+        while let end = markerEnd(in: content, at: index) {
+            starts.append(index)
+            index = end
+            while index < content.count, content[index] == UInt8(ascii: " ") || content[index] == UInt8(ascii: "\t") { index += 1 }
+        }
+        return starts
+    }
+
+    /// If a `[^label]:` starts at `index`, the offset just after its colon.
+    private static func markerEnd(in content: [UInt8], at index: Int) -> Int? {
+        guard index + 1 < content.count, content[index] == UInt8(ascii: "["), content[index + 1] == UInt8(ascii: "^") else { return nil }
+        var end = index + 2
+        while end < content.count, content[end] != UInt8(ascii: "]"), content[end] != UInt8(ascii: "[") { end += 1 }
+        guard end > index + 2, end + 1 < content.count, content[end] == UInt8(ascii: "]"), content[end + 1] == UInt8(ascii: ":") else { return nil }
+        return end + 2
     }
 
     // MARK: Parsing
@@ -221,25 +269,26 @@ enum FootnoteExtractor {
         return result
     }
 
-    private static func scan(_ body: String, lines: [Line], candidates: [String]) -> (references: [Reference], definitions: [Definition]) {
+    private static func scan(_ body: String, lines: [Line], candidates: [String]) -> (references: [Reference], definitions: [Definition], verbatim: [ClosedRange<Int>]) {
         let bodyLineCount = lines.count
         // The extra paragraph goes after a line break the body may lack, then a blank line.
         let tail = "\n\n" + candidates.map { "[^" + $0 + "]" }.joined(separator: " ") + "\n"
         let source = candidates.isEmpty ? body : body + tail
         cmark_gfm_core_extensions_ensure_registered()
-        guard let parser = cmark_parser_new(CMARK_OPT_FOOTNOTES | CMARK_OPT_SOURCEPOS) else { return ([], []) }
+        guard let parser = cmark_parser_new(CMARK_OPT_FOOTNOTES | CMARK_OPT_SOURCEPOS) else { return ([], [], []) }
         defer { cmark_parser_free(parser) }
         for name in ["table", "strikethrough", "tasklist"] {
             cmark_parser_attach_syntax_extension(parser, cmark_find_syntax_extension(name))
         }
         cmark_parser_feed(parser, source, source.utf8.count)
-        guard let root = cmark_parser_finish(parser) else { return ([], []) }
+        guard let root = cmark_parser_finish(parser) else { return ([], [], []) }
         defer { cmark_node_free(root) }
-        guard let iterator = cmark_iter_new(root) else { return ([], []) }
+        guard let iterator = cmark_iter_new(root) else { return ([], [], []) }
         defer { cmark_iter_free(iterator) }
 
         var references: [Reference] = []
         var definitions: [Definition] = []
+        var verbatim: [ClosedRange<Int>] = []
         while true {
             let event = cmark_iter_next(iterator)
             if event == CMARK_EVENT_DONE { break }
@@ -253,6 +302,20 @@ enum FootnoteExtractor {
                 references.append(Reference(line: place.line, startColumn: place.startColumn, endColumn: place.endColumn, label: key,
                                             originalLabel: writtenLabel(lines, line: place.line, start: place.startColumn,
                                                                         end: place.endColumn) ?? key))
+            } else if type == CMARK_NODE_CODE_BLOCK || type == CMARK_NODE_HTML_BLOCK {
+                // Only outside a definition: inside one, a plain parser sees the lines as the text
+                // they are (`[^1]: <b>` is a definition whose destination is `<b>`, not an HTML block).
+                // The lines the block's own text covers, not `end_line`: cmark reports the end of
+                // an unclosed fence inside a container far past the container.
+                if line >= 1, !isInsideDefinition(node) {
+                    let text = cmark_node_get_literal(node).map { String(cString: $0) } ?? ""
+                    var textLines = 0
+                    for byte in text.utf8 where byte == UInt8(ascii: "\n") { textLines += 1 }
+                    var length: Int32 = 0, offset: Int32 = 0, fence: CChar = 0
+                    let fenced = type == CMARK_NODE_CODE_BLOCK && cmark_node_get_fenced(node, &length, &offset, &fence) != 0
+                    // A fence opens on its own line; the other blocks' first line is their text's.
+                    verbatim.append(line...(line + (fenced ? textLines : max(textLines - 1, 0))))
+                }
             } else if type == CMARK_NODE_FOOTNOTE_DEFINITION, line >= 1, line <= bodyLineCount {
                 definitions.append(Definition(label: literal(node), startLine: line,
                                               contentColumn: Int(cmark_node_get_start_column(node)),
@@ -261,7 +324,7 @@ enum FootnoteExtractor {
             }
         }
         definitions.sort { $0.startLine < $1.startLine }
-        return (references, definitions)
+        return (references, definitions, verbatim)
     }
 
     /// Where a reference stands in the source: its line, and the 1-based first and last column of
@@ -374,6 +437,15 @@ enum FootnoteExtractor {
         var ancestor = cmark_node_parent(node)
         while let current = ancestor {
             if cmark_node_get_type(current) == CMARK_NODE_IMAGE { return true }
+            ancestor = cmark_node_parent(current)
+        }
+        return false
+    }
+
+    private static func isInsideDefinition(_ node: UnsafeMutablePointer<cmark_node>) -> Bool {
+        var ancestor = cmark_node_parent(node)
+        while let current = ancestor {
+            if cmark_node_get_type(current) == CMARK_NODE_FOOTNOTE_DEFINITION { return true }
             ancestor = cmark_node_parent(current)
         }
         return false

@@ -194,4 +194,47 @@ struct FootnoteCodeSpanTests {
         #expect(n("no marker\n") == "no marker\n")
         #expect(n("[^1]: a\n[^2]: b\n").split(separator: "\n").count == 2, "no line is added")
     }
+
+    // MARK: Nested definitions: every marker in front of the content is escaped
+
+    /// The independent verifier's round-2 shape: with only the inner marker escaped, `[^1]: \[^2]:`
+    /// was a link reference definition, its text was lost and `See [^1]` was a link to `#`.
+    @Test(arguments: [
+        "[^1]: [^2]: \n    )&#33; |``[^2]~~\n\nSee [^1].\n",
+        "[^1]: [^2]: [^3]: \n    )&#33; |``[^3]~~\n\nSee [^1].\n",
+        "> [^1]: [^2]: \n>     )&#33; |``[^2]~~\n\nSee [^1].\n",
+        "- [^1]: [^2]: \n      )&#33; |``[^2]~~\n\nSee [^1].\n",
+        "[^1]: [^2]: \n    )&#33; |``[^2]~~\n\n[^2]: [^1]\n\nSee [^1].\n",
+    ])
+    func nestedMarkersAreNotLinkReferenceDefinitions(markdown: String) {
+        let html = render(markdown)
+        #expect(privateUse(html).isEmpty, "\(html)")
+        #expect(!html.contains("<a href"), "\(markdown.debugDescription) -> \(html)")
+        #expect(html.contains("See [^1]."), "\(markdown.debugDescription) -> \(html)")
+        #expect(html.contains("[^1]: [^2]:"), "the first line is shown: \(markdown.debugDescription) -> \(html)")
+        #expect(html == render(markdown), "the same on every render")
+    }
+
+    @Test func everyMarkerBeforeTheContentIsEscapedAndNoOtherIs() {
+        let n = FootnoteExtractor.neutralizingDefinitions(in:)
+        #expect(n("[^1]: [^2]: https://e.com\n") == "\\[^1]: \\[^2]: https://e.com\n")
+        #expect(n("[^1]: [^2]: [^3]: https://e.com\n") == "\\[^1]: \\[^2]: \\[^3]: https://e.com\n")
+        #expect(n("> [^1]: [^2]: y\n") == "> \\[^1]: \\[^2]: y\n")
+        #expect(n(">> [^1]: [^2]: y\n") == ">> \\[^1]: \\[^2]: y\n")
+        #expect(n("- [^1]: [^2]: y\n") == "- \\[^1]: \\[^2]: y\n")
+        #expect(n("   [^1]: [^2]: y\n") == "   \\[^1]: \\[^2]: y\n")
+        #expect(n("[^1]: see [^2]: here\n") == "\\[^1]: see [^2]: here\n", "a marker after the content is text")
+        #expect(n("[^1]: a [^2]\n[^3]: b\n") == "\\[^1]: a [^2]\n\\[^3]: b\n")
+        #expect(n("1. [^1]: [^2]: y\n2) [^3]: z\n") == "1. \\[^1]: \\[^2]: y\n2) \\[^3]: z\n")
+        #expect(n("> - [^1]: [^2]: y\n") == "> - \\[^1]: \\[^2]: y\n")
+        #expect(n("```\n[^1]: [^2]: in code\n```\n\n    [^3]: indented code\n\n<div>\n[^4]: html\n</div>\n") == "```\n[^1]: [^2]: in code\n```\n\n    [^3]: indented code\n\n<div>\n[^4]: html\n</div>\n", "code and raw HTML are left as written")
+        // A block that starts inside a definition is text to a plain parser: its destination is `<b>`.
+        #expect(n("[^1]: <b>\n") == "\\[^1]: <b>\n")
+        #expect(n("[^1]: ```\n[^2]: x\n") == "\\[^1]: ```\n\\[^2]: x\n")
+        // An unclosed fence in a quote ends with the quote.
+        #expect(n("> ```ab\n- [^1]: [^2]: y\n") == "> ```ab\n- \\[^1]: \\[^2]: y\n")
+        // cmark keeps one definition per label; a plain parser reads every repeat.
+        #expect(n("[^2]: [^2]\n\n[^2]: [^1]\n") == "\\[^2]: [^2]\n\n\\[^2]: [^1]\n")
+        #expect(n("[a]: https://e.com\n[^1]: x\n") == "[a]: https://e.com\n\\[^1]: x\n", "an ordinary definition is left alone")
+    }
 }
