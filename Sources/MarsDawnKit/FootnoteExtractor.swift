@@ -223,13 +223,12 @@ enum FootnoteExtractor {
             guard event == CMARK_EVENT_ENTER, let node = cmark_iter_get_node(iterator) else { continue }
             let type = cmark_node_get_type(node)
             let line = Int(cmark_node_get_start_line(node))
-            if type == CMARK_NODE_FOOTNOTE_REFERENCE, line >= 1, line <= bodyLineCount,
-               !isInsideImage(node), let definition = cmark_node_parent_footnote_def(node) {
+            if type == CMARK_NODE_FOOTNOTE_REFERENCE, !isInsideImage(node), let definition = cmark_node_parent_footnote_def(node),
+               let place = placement(of: node, lines: lines), place.line >= 1, place.line <= bodyLineCount {
                 let key = literal(definition)
-                references.append(Reference(line: line, startColumn: Int(cmark_node_get_start_column(node)),
-                                            endColumn: Int(cmark_node_get_end_column(node)), label: key,
-                                            originalLabel: writtenLabel(lines, line: line, start: Int(cmark_node_get_start_column(node)),
-                                                                        end: Int(cmark_node_get_end_column(node))) ?? key))
+                references.append(Reference(line: place.line, startColumn: place.startColumn, endColumn: place.endColumn, label: key,
+                                            originalLabel: writtenLabel(lines, line: place.line, start: place.startColumn,
+                                                                        end: place.endColumn) ?? key))
             } else if type == CMARK_NODE_FOOTNOTE_DEFINITION, line >= 1, line <= bodyLineCount {
                 definitions.append(Definition(label: literal(node), startLine: line,
                                               contentColumn: Int(cmark_node_get_start_column(node)),
@@ -239,6 +238,68 @@ enum FootnoteExtractor {
         }
         definitions.sort { $0.startLine < $1.startLine }
         return (references, definitions)
+    }
+
+    /// Where a reference stands in the source: its line, and the 1-based first and last column of
+    /// its `[^label]`. cmark-gfm's table extension takes the last line of a paragraph as the
+    /// table's header row and leaves the lines above it as a paragraph of their own, whose
+    /// source positions it never sets: that paragraph starts at line 0, and its inline nodes
+    /// count their line from 0 (the first line of that paragraph) and their column from the
+    /// start of the line's own text (container prefix and indentation left out). The
+    /// table that follows starts where that paragraph did, so the line is the table's plus the
+    /// node's. The column is found by reading the source line (#161). A position that does not
+    /// read as a `[^label]` there is not used: the reference stays text.
+    private static func placement(of node: UnsafeMutablePointer<cmark_node>, lines: [Line]) -> (line: Int, startColumn: Int, endColumn: Int)? {
+        let startColumn = Int(cmark_node_get_start_column(node))
+        let endColumn = Int(cmark_node_get_end_column(node))
+        if let paragraph = enclosingParagraph(of: node), cmark_node_get_start_line(paragraph) == 0 {
+            guard let table = cmark_node_next(paragraph), isTable(table) else { return nil }
+            let relative = Int(cmark_node_get_start_line(node))
+            let line = Int(cmark_node_get_start_line(table)) + relative
+            guard relative >= 0, line >= 1, line <= lines.count else { return nil }
+            let content = lines[line - 1].content
+            var textStart = relative == 0 ? Int(cmark_node_get_start_column(table)) - 1 : 0
+            if relative > 0 {
+                // A continuation line: whatever container prefix (`>`) and indentation it has.
+                while textStart < content.count, content[textStart] == UInt8(ascii: " ") || content[textStart] == UInt8(ascii: "\t") || content[textStart] == UInt8(ascii: ">") { textStart += 1 }
+            }
+            let first = textStart + startColumn, last = textStart + endColumn
+            guard textStart >= 0, first >= 0, last < content.count, last - first >= 3,
+                  content[first] == UInt8(ascii: "["), content[first + 1] == UInt8(ascii: "^"), content[last] == UInt8(ascii: "]") else { return nil }
+            return (line, first + 1, last + 1)
+        }
+        // A header row's cells carry the same kind of position, shifted by the paragraph above
+        // the table; not read from the source here, so they stay text rather than be misplaced.
+        if let table = headerTable(of: node), let previous = cmark_node_previous(table),
+           cmark_node_get_type(previous) == CMARK_NODE_PARAGRAPH, cmark_node_get_start_line(previous) == 0 {
+            return nil
+        }
+        return (Int(cmark_node_get_start_line(node)), startColumn, endColumn)
+    }
+
+    private static func enclosingParagraph(of node: UnsafeMutablePointer<cmark_node>) -> UnsafeMutablePointer<cmark_node>? {
+        var ancestor = cmark_node_parent(node)
+        while let current = ancestor {
+            if cmark_node_get_type(current) == CMARK_NODE_PARAGRAPH { return current }
+            ancestor = cmark_node_parent(current)
+        }
+        return nil
+    }
+
+    private static func isTable(_ node: UnsafeMutablePointer<cmark_node>) -> Bool {
+        cmark_node_get_type_string(node).map { String(cString: $0) == "table" } ?? false
+    }
+
+    /// The table whose header row holds `node`, if it is in one.
+    private static func headerTable(of node: UnsafeMutablePointer<cmark_node>) -> UnsafeMutablePointer<cmark_node>? {
+        var ancestor = cmark_node_parent(node)
+        while let current = ancestor {
+            if let name = cmark_node_get_type_string(current), String(cString: name) == "table_header" {
+                return cmark_node_parent(current)
+            }
+            ancestor = cmark_node_parent(current)
+        }
+        return nil
     }
 
     /// Whether `node` is part of an image's description. That text becomes the `alt` attribute,
