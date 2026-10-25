@@ -125,6 +125,19 @@ struct CountMatchesPageTests {
         "A <template>secret words\n\nShown text after.\n",
         ":::info\n<div hidden>\n\nsecret words\n\n:::\n\nShown text after.\n",
         ":::info\nA <span hidden>secret words\n\nmore shown\n:::\n\nShown text after.\n",
+        // A hidden element around a `<details>` that spans blocks: the renderer writes the group in one
+        // `div`, so the hidden element is closed at the group's end, not at the first block's (kit #230).
+        "<div hidden>\n<details open>\n<summary>T</summary>\n\nbody words\n\n</details>\n</div>\n\nTail words.\n",
+        "<div hidden>\n<details>\n<summary>T</summary>\n\nbody words\n\n</details>\n</div>\n\nTail words.\n",
+        "<section hidden>\n<details open>\n<summary>T</summary>\n\nbody words\n\n</details>\n</section>\n\nTail words.\n",
+        "<div hidden>\n<details>\n<summary>T</summary>\n\nbody\n\n</details>\n\nshown words\n\nTail words.\n",
+        "<section hidden>\n<details>\n<summary>T</summary>\n\nbody\n\n</details>\n\nshown words\n\nTail words.\n",
+        "<div hidden>\n<details open>\n<summary>A</summary>\n<details>\n<summary>B</summary>\n\nbody words\n\n</details>\n</details>\n</div>\n\nTail words.\n",
+        "<div hidden>\n<details open>\n<summary>T</summary>\n<div>\n\nbody words\n\n</div>\n</details>\n</div>\n\nTail words.\n",
+        "<div hidden>\n<details open>\n<summary>T</summary>\n\n```\ncode words\n```\n\n</details>\n</div>\n\nTail words.\n",
+        "<div hidden>\n\n<details open>\n<summary>T</summary>\n\nbody words\n\n</details>\n\n</div>\n\nTail words.\n",
+        "<div hidden><details open><summary>T</summary>body words</details></div>\n\nTail words.\n",
+        "<div>\n<div hidden>\n<details open>\n<summary>T</summary>\n\nbody words\n\n</details>\n</div>\n</div>\n\nTail words.\n",
         // What a `</div>` can't close stays hidden: the parser's scope boundaries.
         "<table><tr><td hidden>\n\nsecret words\n\n</td></tr></table>\n\nShown text after.\n",
         "<marquee hidden>\n\nsecret words\n\n</marquee>\n\nShown text after.\n",

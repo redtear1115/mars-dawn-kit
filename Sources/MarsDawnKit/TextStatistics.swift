@@ -423,6 +423,7 @@ struct VisibleHTMLText {
     var isHiding: Bool { hidden != nil }
 
     private static let div = Array("div".utf8)
+    private static let detailsTag = Array("details".utf8)
 
     /// The start of an HTML block. The renderer writes it in a `<div>` of its own, which is open
     /// inside an element still hidden from before. Not inside a `<details>`: all of its blocks share
@@ -477,9 +478,17 @@ struct VisibleHTMLText {
                 // A `</div>` with none open inside closes the renderer's, and this element with it.
                 let closedByDiv = current.reach == .htmlBlock && current.name != Self.div
                 var found = false
+                // The renderer writes a `<details>` and the blocks it spans as one element (#414) whether
+                // or not it is hidden, so one opened in here is still counted. A hidden `<details>`
+                // counts its own, at its close tag below.
+                let tracksDetails = current.name != Self.detailsTag
                 while j < n {
                     if b[j] == UInt8(ascii: "<") {
-                        if tagNamed(current.name, at: j, closing: true) {
+                        if tracksDetails, tagNamed(Self.detailsTag, at: j, closing: false) {
+                            details.append(false)
+                        } else if tracksDetails, tagNamed(Self.detailsTag, at: j, closing: true) {
+                            if !details.isEmpty { details.removeLast() }
+                        } else if tagNamed(current.name, at: j, closing: true) {
                             depth -= 1
                             if !current.nests || depth == 0 { found = true; break }
                         } else if current.nests, tagNamed(current.name, at: j, closing: false) {
