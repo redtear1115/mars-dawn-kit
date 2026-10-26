@@ -75,8 +75,8 @@ struct CalloutExportTests {
         let page = try #require(document.page(at: 0))
         let box = page.bounds(for: .mediaBox)
         let scale: CGFloat = 4
-        let image = page.thumbnail(of: NSSize(width: box.width * scale, height: box.height * scale), for: .mediaBox)
-        let rep = try #require(image.tiffRepresentation.flatMap { NSBitmapImageRep(data: $0) })
+        let context = try #require(Self.render(page, scale: scale))
+        let pixels = try #require(context.data).assumingMemoryBound(to: UInt8.self)
         // Dawn on white paper: accent, string, function, number, keyword (the mapping approved on kit #135).
         let palette = try #require(PreviewTheme.dawn.validated?.light)
         let expected = [palette.accent, palette.syntax.string, palette.syntax.function, palette.syntax.number, palette.syntax.keyword]
@@ -89,13 +89,35 @@ struct CalloutExportTests {
             var bestX: CGFloat = 0
             // From 40 pt left of the title to its edge: the 4 px bar is about 19 px from the text.
             for x in Int((bounds.minX - 40) * scale)..<Int(bounds.minX * scale) {
-                guard let colour = rep.colorAt(x: x, y: row)?.usingColorSpace(.sRGB) else { continue }
+                guard (0..<context.width).contains(x), (0..<context.height).contains(row) else { continue }
+                let offset = (row * context.width + x) * 4
+                let colour = NSColor(
+                    srgbRed: CGFloat(pixels[offset]) / 255, green: CGFloat(pixels[offset + 1]) / 255,
+                    blue: CGFloat(pixels[offset + 2]) / 255, alpha: 1
+                )
                 let distance = Self.distance(colour, hex)
                 if distance < best { best = distance; bestX = CGFloat(x) / scale }
             }
             #expect(best < 0.16, "\(word): nearest to \(hex) left of the title is \(best) away (at x \(bestX), title at \(bounds.minX))")
             #expect(bounds.minX - bestX > 8 && bounds.minX - bestX < 30, "\(word): the bar is at x \(bestX), the title at \(bounds.minX)")
         }
+    }
+
+    /// `page` drawn on white at `scale` into an sRGB bitmap; row 0 of its memory is the top. Not
+    /// `PDFPage.thumbnail(of:for:)`: that renders in the main display's colour space, so the pixels
+    /// differ from machine to machine (kit #241).
+    private static func render(_ page: PDFPage, scale: CGFloat) -> CGContext? {
+        let box = page.bounds(for: .mediaBox)
+        let width = Int(box.width * scale), height = Int(box.height * scale)
+        guard let context = CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+        context.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        context.scaleBy(x: scale, y: scale)
+        page.draw(with: .mediaBox, to: context)
+        return context
     }
 
     private static func distance(_ colour: NSColor, _ hex: String) -> CGFloat {
