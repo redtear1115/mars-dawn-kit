@@ -65,6 +65,8 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
     private nonisolated static let signposter = OSSignposter(subsystem: "dev.southern-light.marsdawn-kit", category: "Performance")
     /// Diagrams and images get this long to finish before export gives up.
     static let contentTimeout: Duration = .seconds(20)
+    /// What this export waits; `contentTimeout` unless a test lengthens it (`ManualHooks.contentTimeout`).
+    var contentTimeLimit: Duration = DocumentExporter.contentTimeout
 
     /// Exporters that are still printing; a print operation doesn't retain its web view's owner.
     private static var active: Set<DocumentExporter> = []
@@ -193,7 +195,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         ))
 
         // One deadline covers rendering, updating the page and waiting for its content.
-        let deadline = ContinuousClock.now + Self.contentTimeout
+        let deadline = ContinuousClock.now + contentTimeLimit
         let rendered = try await withExportDeadline(deadline, timeoutError: ExportError.contentTimedOut) {
             let renderSignpost = Self.signposter.beginInterval("render", id: Self.signposter.makeSignpostID())
             defer { Self.signposter.endInterval("render", renderSignpost) }
@@ -499,6 +501,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
             baseDirectory: baseDirectory, allowRemoteImages: allowRemoteImages, width: printableWidth,
             scopeRoot: scopeRoot, layout: layout
         )
+        if let contentTimeout = hooks.contentTimeout { exporter.contentTimeLimit = contentTimeout }
         active.insert(exporter)
         defer { active.remove(exporter) }
         try await exporter.prepare(

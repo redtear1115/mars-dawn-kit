@@ -46,6 +46,12 @@ struct PDFCorpus {
 
     // MARK: Generated: `boundary-under` / `boundary-over`
 
+    /// Test-only: the boundary exports wait up to 60 s for content, not the production 20 s
+    /// (`DocumentExporter.contentTimeout`, unchanged for app and CLI users). The debug build
+    /// measured 18.9 s against that limit, and a passively cooled MacBook Air runner flaked
+    /// once with `.contentTimedOut` (redtear1115/mars-dawn-kit#240).
+    private static let boundaryContentTimeout: Duration = .seconds(60)
+
     /// The emphasis shape, not the table shape: at the node-budget boundary the table shape
     /// takes 61.6s to export versus 18.9s for emphasis (measured in debug), so emphasis keeps
     /// the suite inside its time budget.
@@ -55,7 +61,7 @@ struct PDFCorpus {
             MarkdownRenderer.renderResult(markdown).fallback == nil,
             "boundary-under: unexpectedly fell back to escaped source"
         )
-        let outcome = try await Self.exportOnce(markdown: markdown, baseDirectory: nil, allowRemoteImages: false)
+        let outcome = try await Self.exportOnce(markdown: markdown, baseDirectory: nil, allowRemoteImages: false, contentTimeout: Self.boundaryContentTimeout)
         let text = corpusNormalize(outcome.pageTexts.joined())
         #expect(!text.contains("*"), "boundary-under: a literal * leaked into the exported text")
         #expect(text.contains(corpusNormalize("ENDEMPH99")), "boundary-under: end marker missing")
@@ -73,7 +79,7 @@ struct PDFCorpus {
             MarkdownRenderer.renderResult(markdown).fallback != nil,
             "boundary-over: expected the renderer to fall back to escaped source"
         )
-        let outcome = try await Self.exportOnce(markdown: markdown, baseDirectory: nil, allowRemoteImages: false)
+        let outcome = try await Self.exportOnce(markdown: markdown, baseDirectory: nil, allowRemoteImages: false, contentTimeout: Self.boundaryContentTimeout)
         let text = corpusNormalize(outcome.pageTexts.joined())
         #expect(text.contains(corpusNormalize("*e0x0*")), "boundary-over: escaped source not visible in the PDF")
         #expect(text.contains(corpusNormalize("ENDEMPH99")), "boundary-over: end marker missing")
@@ -411,7 +417,8 @@ struct PDFCorpus {
 
     static func exportOnce(
         markdown: String, baseDirectory: URL?, allowRemoteImages: Bool, layout: ExportLayout = .document,
-        displayName: String? = nil, paper: DocumentExporter.Paper = .a4, measureInk: Bool = true
+        displayName: String? = nil, paper: DocumentExporter.Paper = .a4, measureInk: Bool = true,
+        contentTimeout: Duration? = nil
     ) async throws -> ExportOutcome {
         let outputDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
@@ -424,6 +431,7 @@ struct PDFCorpus {
         var hooks = ManualHooks()
         hooks.report = { manual = $0 }
         hooks.handoutReport = { handout = $0 }
+        hooks.contentTimeout = contentTimeout
         let result = try await DocumentExporter.exportPDF(
             markdown: markdown, to: pdfURL, theme: .dawn,
             baseDirectory: baseDirectory, allowRemoteImages: allowRemoteImages, paper: paper, layout: layout,
