@@ -19,11 +19,28 @@ concurrency:
 jobs:
   test:
     # macOS 15 is the package's floor; macOS 26 is what the app ships on.
+    #
+    # The debug and release passes are separate matrix jobs so they run at the same time; one job
+    # held both and took about 60 minutes on macos-15. macOS 15 runs only where a release is
+    # checked (a push to main, a tag, a pull request into main): on every other pull request it
+    # was the slowest leg and repeats what macOS 26 checks, except the floor itself.
     strategy:
       fail-fast: false
       matrix:
-        runner: [macos-15, macos-26]
-    runs-on: ${{ matrix.runner }}
+        os: ${{ fromJSON((github.event_name == 'push' || github.base_ref == 'main') && '["macos-15","macos-26"]' || '["macos-26"]') }}
+        pass: [debug, release]
+    # macOS 26 runs on Ray's self-hosted MacBook Airs (labels self-hosted, macOS, kit), but only
+    # for code from this repository: a push (to main or a tag; see `on:`) or a pull request whose
+    # head branch lives here. This repository is public, and a self-hosted runner must never run a
+    # fork's code, so a fork's pull request runs the same steps on hosted macos-26 instead. The
+    # second layer is the repository setting that makes every outside contributor's fork pull
+    # request wait for approval before any workflow runs. It is the one that holds against a
+    # hostile fork: a pull request runs the workflow file from its own branch, so a fork could
+    # rewrite this line, and whoever approves a fork's run must read any change under .github/
+    # first. No `pull_request_target` or `workflow_run`, and no secrets: those would hand a
+    # fork's code more than a read token.
+    # Until the MacBook Air runners are registered, the jobs aimed at them wait in the queue.
+    runs-on: ${{ (matrix.os == 'macos-26' && (github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository))) && fromJSON('["self-hosted","macOS","kit"]') || matrix.os }}
     # A nesting or table regression hangs rather than fails, so don't wait the 6-hour default.
     # 50, not 30: by 0.6.2 macos-15 already took about 27 minutes (debug and release suites plus
     # the CLI exports), so the next suite added tipped it over 30 and the run was cancelled.
@@ -31,10 +48,16 @@ jobs:
     # measurements, which run in both the debug and release passes; 50 covers both.
     # 70, not 50: the JSON/YAML tree page (#128) added WebKit suites that run in both passes, and
     # macos-15 hit 50 twice in the release pass with every test passing (run 39231688388).
-    timeout-minutes: 70
+    # 50 and 35 now that each job runs one pass: in run 40196953693 (release/0.7.4 into main, every
+    # suite in both passes) macos-15's debug pass took about 32 minutes and its release pass 25;
+    # macos-26's took about 21 and 17. Those are hosted times, so 35 holds for the fork fallback on
+    # hosted macos-26 as well as for the MacBook Airs.
+    timeout-minutes: ${{ matrix.os == 'macos-15' && 50 || 35 }}
     permissions:
       contents: read
     env:
+      # The build configuration this job tests: debug or release.
+      CONFIG: ${{ matrix.pass }}
       # The release pass on pull requests (see the steps below). A suite added here must exist:
       # the step before the pass fails on a name that matches no test.
       RELEASE_SUITES: >-
@@ -70,28 +93,38 @@ jobs:
         MarsDawnKitTests.ImageSizeTests
         MarsDawnThemesTests.JSONStructureScanTests
     steps:
+      # On a self-hosted runner the workspace stays between jobs; checkout's default clean
+      # (`git clean -ffdx`) wipes the last job's files, .build included.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # swift-tools 6.2 needs Xcode 26, which isn't the default on the macOS 15 image.
+      # swift-tools 6.2 needs Xcode 26, which isn't the default on the macOS 15 image. Hosted
+      # runners only: the MacBook Airs have no sudo, and their default Xcode (27.1) is already
+      # new enough.
       - name: Use Xcode 26
+        if: runner.environment == 'github-hosted'
         run: |
           set -euo pipefail
           app=$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)
           echo "Selecting $app"
           sudo xcode-select -s "$app"
+      # So the log shows which toolchain ran, on whichever runner picked the job up.
+      - run: xcodebuild -version
       - run: swift --version
-      - run: swift build
+      - run: swift build -c "$CONFIG"
       # Not in parallel: the hosted runners have 3 CPUs, and with every suite running at once the
       # WebKit suites time out waiting for their pages and the timing-budget tests miss their
       # budgets. Run alone they pass (checked on both runners in #22), and so does the whole
-      # suite run serially.
+      # suite run serially. The MacBook Airs keep --no-parallel too: the timing budgets were set
+      # against serial runs.
       #
       # The PDF corpus runs in a process of its own. Its long and fallback-boundary exports lift
       # the process's peak memory past 2 GB on the hosted runners, and TableBudgetTests checks
       # that same process-wide peak, so sharing a process failed it without any table regressing.
-      - run: swift test --no-parallel --skip 'MarsDawnExportTests\.PDFCorpus'
-      - run: swift test --no-parallel --filter 'MarsDawnExportTests\.PDFCorpus'
+      - if: matrix.pass == 'debug'
+        run: swift test --no-parallel --skip 'MarsDawnExportTests\.PDFCorpus'
+      - if: matrix.pass == 'debug'
+        run: swift test --no-parallel --filter 'MarsDawnExportTests\.PDFCorpus'
       # Release builds inline more, so stack use per nesting level differs from debug. On a pull
       # request the release pass runs only the suites where the configuration changes what is
       # measured: the deepest-nesting and stack-margin suites, the budget and cost suites whose
@@ -103,9 +136,9 @@ jobs:
       #
       # The Unicode scalar sweeps (ScalarEscaperTests, ScalarRendererTests: every scalar, about
       # three minutes) run in the debug pass only. They test grapheme rules, which come from the
-      # OS's Swift runtime rather than the build configuration, so both runners keep them.
+      # OS's Swift runtime rather than the build configuration, so both OS legs keep them.
       - name: Check that every release suite exists
-        if: github.event_name == 'pull_request' && github.base_ref != 'main'
+        if: matrix.pass == 'release' && github.event_name == 'pull_request' && github.base_ref != 'main'
         run: |
           set -euo pipefail
           listed=$(swift test -c release --list-tests)
@@ -118,41 +151,45 @@ jobs:
           done
           exit $missing
       - name: Release pass, configuration-sensitive suites
-        if: github.event_name == 'pull_request' && github.base_ref != 'main'
+        if: matrix.pass == 'release' && github.event_name == 'pull_request' && github.base_ref != 'main'
         run: |
           set -euo pipefail
           filter=$(printf '%s/|' $RELEASE_SUITES | sed 's/|$//; s/\./\\./g')
           swift test -c release --no-parallel --filter "^(${filter})"
       - name: Release pass, every suite
-        if: github.event_name != 'pull_request' || github.base_ref == 'main'
+        if: matrix.pass == 'release' && (github.event_name != 'pull_request' || github.base_ref == 'main')
         run: swift test -c release --no-parallel --skip 'MarsDawnExportTests\.PDFCorpus|MarsDawnKitTests\.Scalar(Escaper|Renderer)Tests'
-      - run: swift test -c release --no-parallel --filter 'MarsDawnExportTests\.PDFCorpus'
+      - if: matrix.pass == 'release'
+        run: swift test -c release --no-parallel --filter 'MarsDawnExportTests\.PDFCorpus'
       # Two groups of tests don't run here, so the CLI covers their ground on the real system:
       # the gate's tests, which macOS 15's Concurrency runtime kills (mars-dawn-kit#26), and the
       # wall-clock budgets, which a shared 3-CPU runner can't measure (mars-dawn-kit#15). These
       # exports drive the parsing worker, the nesting budget and the math extractor end to end.
+      # Each pass exports with its own configuration, so between them every OS leg still covers
+      # both debug and release.
       - name: Export documents through the CLI
         run: |
           set -euo pipefail
           work=$(mktemp -d)
+          # The MacBook Airs keep $TMPDIR between jobs.
+          trap 'rm -rf "$work"' EXIT
           printf '# Title\n\nInline $E=mc^2$ and a block:\n\n$$\n\\int_0^1 x\\,dx\n$$\n' > "$work/math.md"
           printf -- '---\ntitle: Front matter\n---\n\n# Body\n\nText.\n' > "$work/front.md"
           python3 -c "print('> ' * 250 + 'deep')" > "$work/deep.md"
-          for config in debug release; do
-            swift build -c $config --product marsdawn
-            cli="$(swift build -c $config --show-bin-path)/marsdawn"
-            for doc in math front deep; do
-              MARSDAWN_APP_PATH=/nonexistent "$cli" export "$work/$doc.md" -o "$work/$doc-$config.pdf" --json
-              head -c 5 "$work/$doc-$config.pdf" | grep -q '%PDF-'
-            done
-            # theme css / theme preview (#139): the website's gallery renders previews on this
-            # runner image, so the real binary must render a PNG here, headless.
-            theme=Sources/MarsDawnThemes/Resources/Themes/vivid/theme.json
-            "$cli" theme css "$theme" --json | grep -q '"ok":true'
-            "$cli" theme preview "$theme" --appearance dark -o "$work/vivid-$config.png" --width 800 --json
-            test "$(head -c 8 "$work/vivid-$config.png" | xxd -p)" = 89504e470d0a1a0a
+          config=$CONFIG
+          swift build -c $config --product marsdawn
+          cli="$(swift build -c $config --show-bin-path)/marsdawn"
+          for doc in math front deep; do
+            MARSDAWN_APP_PATH=/nonexistent "$cli" export "$work/$doc.md" -o "$work/$doc-$config.pdf" --json
+            head -c 5 "$work/$doc-$config.pdf" | grep -q '%PDF-'
           done
-          echo "CLI exports and theme previews fine in debug and release"
+          # theme css / theme preview (#139): the website's gallery renders previews on a CI
+          # runner, so the real binary must render a PNG here, headless.
+          theme=Sources/MarsDawnThemes/Resources/Themes/vivid/theme.json
+          "$cli" theme css "$theme" --json | grep -q '"ok":true'
+          "$cli" theme preview "$theme" --appearance dark -o "$work/vivid-$config.png" --width 800 --json
+          test "$(head -c 8 "$work/vivid-$config.png" | xxd -p)" = 89504e470d0a1a0a
+          echo "CLI exports and theme previews fine in $config"
 
   version-matches-tag:
     # `marsdawn --version` is how a script decides whether a feature exists, so a build that
