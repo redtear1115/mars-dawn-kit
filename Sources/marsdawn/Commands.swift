@@ -631,13 +631,19 @@ extension MarsDawnCommand {
             // it (#165), so asking would leave a person with an error and an agent with "ok".
             if let refusal = Open.folderRefusal(folders: folders, app: app) { throw refusal }
             // Files asking for the same line travel in one event; the line applies to all of them.
-            for group in RevealEvent.groups(for: targets) {
-                let configuration = openConfiguration()
-                configuration.appleEvent = RevealEvent.openDocuments(urls: group.urls, line: group.line)
-                if let opener = Self.opener {
-                    try await opener.call(group.urls, app, configuration)
-                } else {
-                    _ = try await NSWorkspace.shared.open(group.urls, withApplicationAt: app, configuration: configuration)
+            // With the app not running, behind the cold-launch lock, so `open`s started together
+            // launch it once and none of their files is dropped (mars-dawn#514).
+            if !targets.isEmpty {
+                try await ColdLaunchEnvironment.gate.run(app: app) {
+                    for group in RevealEvent.groups(for: targets) {
+                        let configuration = openConfiguration()
+                        configuration.appleEvent = RevealEvent.openDocuments(urls: group.urls, line: group.line)
+                        if let opener = Self.opener {
+                            try await opener.call(group.urls, app, configuration)
+                        } else {
+                            _ = try await NSWorkspace.shared.open(group.urls, withApplicationAt: app, configuration: configuration)
+                        }
+                    }
                 }
             }
             // Folders travel on their own, with no reveal line: a folder has no line to land on.
