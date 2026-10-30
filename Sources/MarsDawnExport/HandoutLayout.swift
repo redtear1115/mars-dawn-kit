@@ -154,6 +154,27 @@ enum HandoutLayout {
       header.append(titleLine, dateLine);
       content.before(header);
     }
+    // A span or wide table is kept whole (the stylesheet), so when it doesn't fit under its
+    // heading it moves to the next page and leaves the heading alone at the foot of this one
+    // (mars-dawn#491). Export's keep-with-next skips blocks taller than its budget, so wrap the
+    // heading (and a heading run, or a kept heading pair, right before it) with the table here.
+    const isHeading = (node) => node && /^H[1-6]$/.test(node.tagName);
+    const endsWithHeading = (node) => node && node.classList.contains("keep-with-next") && isHeading(node.lastElementChild);
+    const keepHeadingWith = (table) => {
+      if (table.parentElement !== content) return;
+      const lead = [];
+      let previous = table.previousElementSibling;
+      while (isHeading(previous) || endsWithHeading(previous)) {
+        lead.unshift(previous);
+        if (!isHeading(previous)) break;
+        previous = previous.previousElementSibling;
+      }
+      if (lead.length === 0) return;
+      const keep = document.createElement("div");
+      keep.className = "keep-with-next";
+      lead[0].before(keep);
+      keep.append(...lead, table);
+    };
     // Each table against the body's and the column's right edges as they will print: text
     // keeps its size in px, the page is `scale` times wider. A table whose natural width fits
     // the body stays; one that can wrap, at word breaks, within body and column spans; one
@@ -184,7 +205,10 @@ enum HandoutLayout {
         [table.style.maxWidth, table.style.width] = saved;
         if (offset + narrower > full + 0.5) kind = "wide";
       }
-      if (kind !== "natural") table.setAttribute(attribute + "-" + kind, "");
+      if (kind !== "natural") {
+        table.setAttribute(attribute + "-" + kind, "");
+        keepHeadingWith(table);
+      }
       fits.push({ kind: kind, width: natural, text: table.textContent });
     }
     return fits;
