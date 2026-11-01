@@ -260,14 +260,32 @@ enum ManualLayout {
         var top: CGFloat
     }
 
-    /// The page and position of a marker that occurs exactly once in `document`, else nil.
+    /// The page and position of a marker in `document`: where it occurs exactly once, else nil.
+    /// One exception (kit#250): since macOS 27.2, WebKit prints a heading that starts a new page
+    /// (`break-before: page`, every `#` after the first) with its marker's text twice, once at the
+    /// foot of the page before and once where the heading really is. Two hits on consecutive pages
+    /// are that heading, on the later page. Any other repeat is still nil: a marker that can't be
+    /// placed gets no number, never a wrong one.
     static func place(_ marker: String, in document: PDFDocument) -> Placement? {
-        let found = document.findString(marker, withOptions: [])
-        guard found.count == 1, let selection = found.first, selection.pages.count == 1,
-              let page = selection.pages.first else { return nil }
-        let index = document.index(for: page)
-        guard index != NSNotFound else { return nil }
-        return Placement(page: index, top: selection.bounds(for: page).maxY)
+        var hits: [Placement] = []
+        for selection in document.findString(marker, withOptions: []) {
+            guard selection.pages.count == 1, let page = selection.pages.first else { return nil }
+            let index = document.index(for: page)
+            guard index != NSNotFound else { return nil }
+            hits.append(Placement(page: index, top: selection.bounds(for: page).maxY))
+        }
+        return pick(hits)
+    }
+
+    /// The rule above, on the hits alone: one hit, or two on consecutive pages (the later).
+    static func pick(_ hits: [Placement]) -> Placement? {
+        switch hits.count {
+        case 1: return hits[0]
+        case 2:
+            let sorted = hits.sorted { $0.page < $1.page }
+            return sorted[1].page == sorted[0].page + 1 ? sorted[1] : nil
+        default: return nil
+        }
     }
 
     /// The body's first page (index) from the end-of-front marker: the page after it, or 0 when

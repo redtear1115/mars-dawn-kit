@@ -325,6 +325,20 @@ struct ManualLayoutTests {
     /// exactly once, so those chapters lost their number and bookmark (mars-dawn#555). The
     /// message says, for each marker, how often pass A's text has it and what PDFKit's search
     /// returns, so a red run shows which way it broke.
+    /// The placement rule on its own, on every macOS: one hit is placed; two hits on consecutive
+    /// pages (macOS 27.2's doubled marker of a page-starting heading) are the later page; anything
+    /// else gets no placement.
+    @Test func aMarkerIsPlacedOnceOrOnTheLaterOfTwoConsecutivePages() {
+        let a = ManualLayout.Placement(page: 3, top: 40), b = ManualLayout.Placement(page: 4, top: 700)
+        #expect(ManualLayout.pick([]) == nil)
+        #expect(ManualLayout.pick([a]) == a)
+        #expect(ManualLayout.pick([a, b]) == b)
+        #expect(ManualLayout.pick([b, a]) == b)
+        #expect(ManualLayout.pick([a, ManualLayout.Placement(page: 6, top: 700)]) == nil, "not consecutive")
+        #expect(ManualLayout.pick([a, ManualLayout.Placement(page: 3, top: 500)]) == nil, "same page")
+        #expect(ManualLayout.pick([a, b, ManualLayout.Placement(page: 5, top: 1)]) == nil, "three")
+    }
+
     @Test func chaptersThatStartAPageAreNumberedAndBookmarked() async throws {
         var parts = ["---\ntitle: Rover Handbook\n---"]
         for chapter in 1...4 {
