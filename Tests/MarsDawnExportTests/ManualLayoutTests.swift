@@ -317,6 +317,67 @@ struct ManualLayoutTests {
         #expect(ManualProbe.outline(run.document).count == 6)
     }
 
+    // MARK: Chapters that start a page (kit#250)
+
+    /// Four chapters of two sections, each `#` after the first starting a new page: every heading
+    /// is numbered with the page it is on, and the bookmarks are four chapters with their own two
+    /// sections each. On macOS 27.2 the markers of the page-starting chapters stopped being found
+    /// exactly once, so those chapters lost their number and bookmark (mars-dawn#555). The
+    /// message says, for each marker, how often pass A's text has it and what PDFKit's search
+    /// returns, so a red run shows which way it broke.
+    /// The placement rule on its own, on every macOS: one hit is placed; two hits on consecutive
+    /// pages (macOS 27.2's doubled marker of a page-starting heading) are the later page; anything
+    /// else gets no placement.
+    @Test func aMarkerIsPlacedOnceOrOnTheLaterOfTwoConsecutivePages() {
+        let a = ManualLayout.Placement(page: 3, top: 40), b = ManualLayout.Placement(page: 4, top: 700)
+        #expect(ManualLayout.pick([]) == nil)
+        #expect(ManualLayout.pick([a]) == a)
+        #expect(ManualLayout.pick([a, b]) == b)
+        #expect(ManualLayout.pick([b, a]) == b)
+        #expect(ManualLayout.pick([a, ManualLayout.Placement(page: 6, top: 700)]) == nil, "not consecutive")
+        #expect(ManualLayout.pick([a, ManualLayout.Placement(page: 3, top: 500)]) == nil, "same page")
+        #expect(ManualLayout.pick([a, b, ManualLayout.Placement(page: 5, top: 1)]) == nil, "three")
+    }
+
+    @Test func chaptersThatStartAPageAreNumberedAndBookmarked() async throws {
+        var parts = ["---\ntitle: Rover Handbook\n---"]
+        for chapter in 1...4 {
+            parts.append("# Chapter \(chapter)")
+            for section in 1...2 {
+                parts.append("## Section \(chapter).\(section)\n\n" + String(repeating: "Martian sunrise paragraph for pagination. ", count: 30))
+            }
+        }
+        let run = try await ManualProbe.export(parts.joined(separator: "\n\n"))
+        defer { try? FileManager.default.removeItem(at: run.directory) }
+        let report = run.report
+        let passA = try #require(PDFDocument(data: report.passA))
+        let passAText = passA.string ?? ""
+        let diagnosis = report.headings.indices.map { index -> String in
+            let marker = ManualLayout.headingMarker(report.token, index)
+            let inText = passAText.components(separatedBy: marker).count - 1
+            let onPages = (0..<passA.pageCount).filter { passA.page(at: $0)?.string?.contains(marker) == true }
+            let found = passA.findString(marker, withOptions: [])
+            let pages = found.map { $0.pages.map { passA.index(for: $0) } }
+            return "\(report.headings[index].text): text \(inText)x on pages \(onPages), findString \(found.count) \(pages)"
+        }
+        #expect(report.headings.count == 12)
+        let truth = ManualProbe.truthPages(headings: report.headings, pageTexts: run.pageTexts, bodyStart: report.bodyStart)
+        for (index, heading) in report.headings.enumerated() {
+            let page = try #require(truth[index], "\(heading.text) not found in the PDF")
+            #expect(report.numbers[index] == page - report.bodyStart + 1,
+                    "\(heading.text): numbered \(String(describing: report.numbers[index])), on body page \(page - report.bodyStart + 1); markers \(diagnosis)")
+        }
+        let outline = ManualProbe.outline(run.document)
+        let chapters = outline.filter { $0.depth == 0 }.map(\.label)
+        #expect(chapters == ["Chapter 1", "Chapter 2", "Chapter 3", "Chapter 4"], "\(outline.map { "\($0.depth) \($0.label)" }); markers \(diagnosis)")
+        var current = ""
+        for entry in outline {
+            if entry.depth == 0 { current = entry.label; continue }
+            #expect(entry.depth == 1 && entry.label.hasPrefix("Section \(current.dropFirst("Chapter ".count))."),
+                    "\(entry.label) is under \(current)")
+        }
+    }
+
     // MARK: SEC-4: the private folder
 
     static let sample = "---\ntitle: Temp TTITLE\n---\n\n# One\n\nText.\n\n## Two\n\nMore.\n"
