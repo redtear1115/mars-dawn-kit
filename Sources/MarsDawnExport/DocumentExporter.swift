@@ -211,7 +211,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         }
         guard let html = rendered?.html else { throw CancellationError() }
         renderedHTML = html
-        var updateScript = PreviewWebView.updateScript(html: html, calloutTitles: calloutTitles)
+        var updateScript = PreviewWebView.updateScript(html: html, calloutTitles: calloutTitles) // PERF15-TEMP (was `let`)
         if Perf15.enabled { updateScript += "\n" + Perf15.layoutProbeScript } // PERF15-TEMP: same eval, forced layout + in-page timings
         Perf15.log("p15.updateScript", ["scriptUTF16": updateScript.utf16.count]) // PERF15-TEMP
         var p15PushResult: Any? // PERF15-TEMP
@@ -266,6 +266,11 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
             let p15Relayout = Perf15.begin("p15.relayout") // PERF15-TEMP
             let r = try? await webView.evaluateJavaScript(Perf15.timed("document.body.scrollHeight", extra: "document.body.scrollHeight")) // PERF15-TEMP
             Perf15.end(p15Relayout, ["page": Perf15.object(r)]) // PERF15-TEMP
+        } // PERF15-TEMP
+        if let chunk = Perf15.chunkSize { // PERF15-TEMP: DIAGNOSTIC VARIANT only (MARSDAWN_PERF15_CHUNK=N)
+            let p15Chunk = Perf15.begin("p15.diagChunk") // PERF15-TEMP
+            let r = try? await webView.evaluateJavaScript(Perf15.timed(Perf15.chunkScript(chunk), extra: "document.getElementById('content').children.length")) // PERF15-TEMP
+            Perf15.end(p15Chunk, ["page": Perf15.object(r), "chunk": chunk]) // PERF15-TEMP
         } // PERF15-TEMP
     }
 
@@ -371,7 +376,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
                     ready = (parsed as? [String: Any])?["ready"] as? Bool ?? false // PERF15-TEMP
                     Perf15.end(p15Poll, ["n": polls, "page": parsed]) // PERF15-TEMP
                 } else { // PERF15-TEMP
-                ready = try await webView.callAsyncJavaScript(script, contentWorld: .page) as? Bool ?? false
+                ready = try await webView.callAsyncJavaScript(script, contentWorld: .page) as? Bool ?? false // PERF15-TEMP (was `let ready =`)
                 } // PERF15-TEMP
                 if ready {
                     Self.signposter.endInterval("waitForContent", signpost, "polls=\(polls) outcome=ready")

@@ -114,6 +114,27 @@ enum Perf15 { // PERF15-TEMP
         "(() => { const __t0 = performance.now(); const __r = \(script); const __ms = performance.now() - __t0; return JSON.stringify({ ms: __ms, extra: \(extra) }); })()" // PERF15-TEMP
     } // PERF15-TEMP
 
+    /// DIAGNOSTIC VARIANT: `MARSDAWN_PERF15_CHUNK=N` wraps every N children of #content in a plain div // PERF15-TEMP
+    /// just before printing, to test whether paint cost per page scales with #content's child count. // PERF15-TEMP
+    static let chunkSize: Int? = ProcessInfo.processInfo.environment["MARSDAWN_PERF15_CHUNK"].flatMap(Int.init).flatMap { $0 > 0 ? $0 : nil } // PERF15-TEMP
+    static func chunkScript(_ n: Int) -> String { // PERF15-TEMP
+        """
+        (() => {
+          const content = document.getElementById("content");
+          const kids = [...content.children];
+          const frag = document.createDocumentFragment();
+          for (let i = 0; i < kids.length; i += \(n)) {
+            const d = document.createElement("div");
+            d.className = "perf15-chunk";
+            d.append(...kids.slice(i, i + \(n)));
+            frag.append(d);
+          }
+          content.replaceChildren(frag);
+          return document.body.scrollHeight;
+        })()
+        """ // PERF15-TEMP
+    } // PERF15-TEMP
+
     /// The readiness poll body, with its own in-page duration (callAsyncJavaScript body). // PERF15-TEMP
     static let pollScript = """
     const __t0 = performance.now();

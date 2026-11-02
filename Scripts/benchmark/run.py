@@ -20,6 +20,7 @@ import os  # PERF15-TEMP
 import re
 import statistics
 import subprocess
+import tempfile  # PERF15-TEMP
 import sys
 import time
 from datetime import datetime, timedelta, timezone
@@ -397,7 +398,8 @@ def run_one_export(binary_path, input_path, output_pdf, capture_signposts=True):
     wall_start = datetime.now()
     start = time.perf_counter()
     try:
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        stderr_file = tempfile.TemporaryFile(mode="w+")  # PERF15-TEMP: a stderr PIPE that nobody reads until exit deadlocks once stderr > 64 KB
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=stderr_file, text=True,
                                 env={**os.environ, "MARSDAWN_PERF15": "1"})  # PERF15-TEMP
     except OSError as exc:
         elapsed = time.perf_counter() - start
@@ -414,21 +416,28 @@ def run_one_export(binary_path, input_path, output_pdf, capture_signposts=True):
         if ret is not None:
             break
         if time.perf_counter() - start > EXPORT_TIMEOUT_SECONDS:
+            if marsdawn_pid:  # PERF15-TEMP: kill marsdawn itself, not only /usr/bin/time
+                subprocess.run(["kill", str(marsdawn_pid)], capture_output=True)  # PERF15-TEMP
             proc.kill()
             timed_out = True
             break
         time.sleep(WEBCONTENT_POLL_SECONDS)
 
     try:
-        stdout, stderr = proc.communicate(timeout=30)
+        stdout, _ = proc.communicate(timeout=30)  # PERF15-TEMP (was `stdout, stderr =`)
     except subprocess.TimeoutExpired:
         proc.kill()
-        stdout, stderr = proc.communicate()
+        stdout, _ = proc.communicate()  # PERF15-TEMP (was `stdout, stderr =`)
+    stderr_file.seek(0)  # PERF15-TEMP
+    stderr = stderr_file.read()  # PERF15-TEMP
+    stderr_file.close()  # PERF15-TEMP
     elapsed = time.perf_counter() - start
     wall_end = datetime.now()
 
     if timed_out:
-        return _export_failure(elapsed, f"timed out after {EXPORT_TIMEOUT_SECONDS}s")
+        failure = _export_failure(elapsed, f"timed out after {EXPORT_TIMEOUT_SECONDS}s")  # PERF15-TEMP
+        failure["perf15"] = [json.loads(l[len(PERF15_LINE_PREFIX):]) for l in (stderr or "").splitlines() if l.startswith(PERF15_LINE_PREFIX)]  # PERF15-TEMP: keep progress on timeout
+        return failure  # PERF15-TEMP
 
     # marsdawn's own CPU time, from /usr/bin/time's "real/user/sys" header line.
     # This is the CLI process only - it does not include the WebContent child.
