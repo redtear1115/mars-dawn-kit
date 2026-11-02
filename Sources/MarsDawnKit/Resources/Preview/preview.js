@@ -810,22 +810,43 @@
     return tag.length <= 35 && languageTagPattern.test(tag) && /^ja(-|$)/i.test(tag) ? tag : null;
   }
 
-  function update(html, lines) {
-    if (lines) lineCount = lines;
-    invalidateAnchors();
-    const root = content();
+  // The HTML's blocks as `update()` puts them on the page, before anything renders in them.
+  function parseBlocks(html) {
     const template = document.createElement("template");
     template.innerHTML = html;
     // First, before the filter and the pool see the fragment, so its children are exactly those
     // of the same document without a marker. Every update sets or clears it.
     const language = takeContentLanguage(template.content);
-    if (language) root.lang = language;
-    else root.removeAttribute("lang");
     // Defence in depth for RawHTMLSafety.swift: drop every element that can open a connection or
     // a nested document before anything reaches the page. Template content is inert, so none of
     // these has loaded anything yet.
     template.content.querySelectorAll(blockedElements).forEach((el) => el.remove());
-    const incoming = [...template.content.children];
+    return { language, incoming: [...template.content.children] };
+  }
+
+  // An update onto an empty page has nothing to reuse, so it leaves its blocks' keys for the next
+  // update to work out, from the same HTML, to the same keys (mars-dawn#15): `blockKey` copies and
+  // serialises every block, up to 6.3 s of a 10 MB export, and an export or Quick Look page never
+  // updates again. The app's preview pays it once, at the first edit.
+  let unkeyed = null;
+  function keyUnkeyedBlocks() {
+    if (!unkeyed) return;
+    const { html, blocks } = unkeyed;
+    unkeyed = null;
+    const pristine = parseBlocks(html).incoming;
+    blocks.forEach((el, i) => { el._mdKey = blockKey(pristine[i]); });
+  }
+
+  function update(html, lines) {
+    if (lines) lineCount = lines;
+    invalidateAnchors();
+    const root = content();
+    const { language, incoming } = parseBlocks(html);
+    if (language) root.lang = language;
+    else root.removeAttribute("lang");
+    const empty = root.children.length === 0;
+    if (empty) unkeyed = null;
+    else keyUnkeyedBlocks();
 
     // Pool existing blocks by key so unchanged ones (and their rendered diagrams) are reused.
     const pool = new Map();
@@ -839,6 +860,11 @@
     const fragment = document.createDocumentFragment();
     const fresh = [];
     for (const el of incoming) {
+      if (empty) {
+        fresh.push(el);
+        fragment.appendChild(el);
+        continue;
+      }
       const key = blockKey(el);
       const reusable = pool.get(key);
       if (reusable && reusable.length) {
@@ -866,6 +892,7 @@
       }
     }
 
+    if (empty) unkeyed = { html, blocks: fresh };
     root.replaceChildren(fragment);
 
     refreshRemoteBar();

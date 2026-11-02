@@ -248,24 +248,111 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
     """
 
     /// Wraps each heading with the block that follows it, so a page never ends on a heading.
-    /// Runs from the last heading up, so a heading followed by a subheading keeps both with
-    /// the text after them. Blocks taller than about 40% of a page are left alone: keeping
-    /// those together would leave large gaps.
-    private static let keepHeadingsWithNextScript = """
+    /// A heading followed by a subheading is decided after it, so the pair is kept with the text
+    /// after them. Blocks taller than about 40% of a page are left alone: keeping those together
+    /// would leave large gaps.
+    ///
+    /// Reads and writes go in rounds (mars-dawn#15): reading `offsetHeight` right after each wrap
+    /// laid the whole page out again for every heading, 8.5 s for 5,279 headings in a 10 MB file.
+    /// A round measures every heading whose next block is final (not a heading still to decide;
+    /// a decided one is either itself or its wrapper by then), then wraps the ones that fit, so
+    /// there is one layout per round and as many rounds as the longest run of headings. A wrap
+    /// moves nothing else on the page (its margins collapse through it), so every height is the
+    /// one a wrap-then-read loop would see, with one exception, kept for last: wrapping the
+    /// page's first block takes it out of `.markdown-body > :first-child`, which gives it back
+    /// its top margin and moves everything below.
+    static let keepHeadingsWithNextScript = """
     (() => {
       const budget = 300;
-      const headings = [...document.querySelectorAll("#content > :is(h1, h2, h3, h4, h5, h6)")];
-      for (const heading of headings.reverse()) {
-        const next = heading.nextElementSibling;
-        if (!next || next.offsetHeight > budget) continue;
+      const content = document.getElementById("content");
+      if (!content) return 0;
+      const wrap = (heading, next) => {
         const keep = document.createElement("div");
         keep.className = "keep-with-next";
         heading.before(keep);
         keep.append(heading, next);
+      };
+      let pending = [...content.querySelectorAll(":scope > :is(h1, h2, h3, h4, h5, h6)")];
+      let firstWrap = null;
+      while (pending.length) {
+        const waiting = new Set(pending);
+        const ready = pending.filter((heading) => !waiting.has(heading.nextElementSibling));
+        pending = pending.filter((heading) => waiting.has(heading.nextElementSibling));
+        const measured = ready.map((heading) => {
+          const next = heading.nextElementSibling;
+          return [heading, next, next ? next.offsetHeight : 0];
+        });
+        for (const [heading, next, height] of measured) {
+          if (!next || height > budget) continue;
+          if (heading === content.firstElementChild) firstWrap = [heading, next];
+          else wrap(heading, next);
+        }
       }
+      if (firstWrap) wrap(...firstWrap);
       return 0;
     })()
     """
+
+    /// How many blocks go in one print group (mars-dawn#15); see `groupBlocksForPrint()`. Measured
+    /// on the benchmark's 5 MB file (3,057 pages): 57.2 s ungrouped, 28.3 s with 50, 28.5 s with
+    /// √blocks per group, 27.6 s with two levels of ∛blocks. Past one level of about 50, the
+    /// remaining print time is not the walk, so the simplest grouping stays.
+    static let printGroupSize = 50
+
+    /// Tests only: false prints the page with its blocks ungrouped, the grouping's control.
+    var groupsBlocksForPrint = true
+    private var groupedForPrint = false
+    /// How many groups the page printed with (0: ungrouped), for the tests.
+    private(set) var printGroupCount = 0
+
+    /// Puts `#content`'s top-level blocks into plain `div`s of `printGroupSize`, once, right before
+    /// the page first prints (mars-dawn#15). Before WebKit prints the first page it paints every
+    /// page, and painting a page walked every top-level block of `#content`: 42,238 of them in a
+    /// 10 MB file, so the time grew with pages × blocks (4–5 minutes). Grouped, a page walks the
+    /// groups and the blocks of the groups it crosses.
+    ///
+    /// Here rather than in `prepare`: the handout's table fitting and the PNG export work on the
+    /// prepared page's top-level blocks, and only printing needs the groups.
+    ///
+    /// The groups change nothing that prints. A `div` with no margin, padding or border lets its
+    /// first and last blocks' margins collapse through it as they did between the blocks, and
+    /// forced breaks (`export-page-break`, the handbook's `export-h1-break`) and `break-inside`
+    /// apply at any depth. Of the stylesheet's selectors that depend on a block's place under
+    /// `#content`, `.markdown-body > :first-child` (the first block has no top margin) is
+    /// extended to the first group's first block by the rule below, at the same specificity
+    /// (`:where`); the print rule for the last chain of last children still holds, since the
+    /// last group is a last child. The class carries a fresh token, so the document's own HTML
+    /// can't match it.
+    func groupBlocksForPrint() async {
+        guard groupsBlocksForPrint, !groupedForPrint else { return }
+        groupedForPrint = true
+        let className = ManualLayout.className(ManualLayout.makeToken(), "group")
+        let groups = try? await webView.evaluateJavaScript(Self.groupBlocksScript(className: className, size: Self.printGroupSize))
+        printGroupCount = (groups as? Int) ?? 0
+    }
+
+    /// `className` is a token class (`ManualLayout.className`): letters, digits and a hyphen.
+    static func groupBlocksScript(className: String, size: Int) -> String {
+        """
+        (() => {
+          const content = document.getElementById("content");
+          if (!content || content.children.length <= \(size)) return 0;
+          const style = document.createElement("style");
+          style.textContent = ".markdown-body > :where(.\(className):first-child) > :first-child { margin-top: 0; }";
+          document.head.append(style);
+          const nodes = [...content.childNodes];
+          const groups = [];
+          for (let i = 0; i < nodes.length; i += \(size)) {
+            const group = document.createElement("div");
+            group.className = "\(className)";
+            group.append(...nodes.slice(i, i + \(size)));
+            groups.push(group);
+          }
+          content.replaceChildren(...groups);
+          return groups.length;
+        })()
+        """
+    }
 
     /// Forced page breaks, done here and not in the renderer, so the preview and Quick Look
     /// never see them. A `<!--BREAK-->` on its own line (the renderer's `div.html-block` that
@@ -552,6 +639,8 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
 
     /// Runs one print operation to completion through `runModal(for:)`.
     func run(_ operation: NSPrintOperation, host: NSWindow) async -> Bool {
+        // Every layout's print goes through here, after its own changes to the page.
+        await groupBlocksForPrint()
         let paginateSignpost = Self.signposter.beginInterval("paginate", id: Self.signposter.makeSignpostID())
         defer { Self.signposter.endInterval("paginate", paginateSignpost) }
         return await withCheckedContinuation { continuation in

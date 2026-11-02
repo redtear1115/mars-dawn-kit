@@ -102,6 +102,74 @@ struct PreviewUpdatePoolTests {
         try await expectMatchesFresh(webView, final, "reordered")
     }
 
+    // MARK: The first update (mars-dawn#15)
+
+    /// Tags every block on the page with its index, in the page's own world (where `update` runs).
+    private func tagBlocks(_ webView: PreviewWKWebView) async throws {
+        _ = try await webView.callAsyncJavaScript(
+            "[...document.getElementById('content').children].forEach((el, i) => { el._poolProbe = i; }); return 0;",
+            contentWorld: .page
+        )
+    }
+
+    /// Each block's tag after the next update: its old index if it is the same element, else -1.
+    private func tags(_ webView: PreviewWKWebView) async throws -> [Int] {
+        try await webView.callAsyncJavaScript(
+            "return [...document.getElementById('content').children].map((el) => el._poolProbe ?? -1);",
+            contentWorld: .page
+        ) as? [Int] ?? []
+    }
+
+    private static let firstRender = "# Title\n\nKept paragraph.\n\n```swift\nlet x = 1\n```\n\nEdited paragraph.\n\n$$\nx^2\n$$\n\n- a\n- b\n"
+
+    /// An update onto an empty page leaves its blocks' keys for the next update, which must still
+    /// reuse exactly the unchanged blocks, as the same elements, and only those.
+    @Test func theUpdateAfterAFirstRenderReusesTheUnchangedBlocks() async throws {
+        let webView = try await loadedPreview()
+        try await push(Self.firstRender, to: webView)
+        try await settle(webView)
+        try await tagBlocks(webView)
+        let final = Self.firstRender.replacingOccurrences(of: "Edited paragraph.", with: "Edited paragraph, changed.")
+        try await push(final, to: webView)
+        try await settle(webView)
+        #expect(try await tags(webView) == [0, 1, 2, -1, 4, 5])
+        try await expectMatchesFresh(webView, final, "after a first render")
+    }
+
+    /// The same HTML again reuses every block; a third update still does (the keys stay).
+    @Test func repeatingTheFirstRenderReusesEveryBlock() async throws {
+        let webView = try await loadedPreview()
+        try await push(Self.firstRender, to: webView)
+        try await settle(webView)
+        try await tagBlocks(webView)
+        try await push(Self.firstRender, to: webView)
+        try await settle(webView)
+        #expect(try await tags(webView) == [0, 1, 2, 3, 4, 5])
+        let inserted = "New first.\n\n" + Self.firstRender
+        try await push(inserted, to: webView)
+        try await settle(webView)
+        #expect(try await tags(webView) == [-1, 0, 1, 2, 3, 4, 5])
+        try await expectMatchesFresh(webView, inserted, "third update")
+    }
+
+    /// Emptied and filled again, the page is a first render once more, and the update after it
+    /// reuses its blocks; nothing of the earlier first render is left to key.
+    @Test func aPageEmptiedAndFilledAgainIsAFirstRender() async throws {
+        let webView = try await loadedPreview()
+        try await push("Earlier.\n\nDocument.\n", to: webView)
+        try await settle(webView)
+        try await push("", to: webView)
+        try await settle(webView)
+        try await push(Self.firstRender, to: webView)
+        try await settle(webView)
+        try await tagBlocks(webView)
+        let final = Self.firstRender.replacingOccurrences(of: "- b", with: "- c")
+        try await push(final, to: webView)
+        try await settle(webView)
+        #expect(try await tags(webView) == [0, 1, 2, 3, 4, -1])
+        try await expectMatchesFresh(webView, final, "emptied and filled")
+    }
+
     // MARK: Bursts
 
     /// Blocks the edits draw from: prose, headings, lists, a table, code, math, a quote.
