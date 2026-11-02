@@ -153,6 +153,8 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
             baseDirectory: assets.baseDirectory, footnoteBackLabel: footnoteBackLabel, softBreaksAsLineBreaks: softBreaksAsLineBreaks
         )
         try Self.refuseOverTheByteCap(markdown, options: options)
+        Perf15.log("markdown", ["utf8Bytes": markdown.utf8.count]) // PERF15-TEMP
+        let p15Rules = Perf15.begin("p15.rules") // PERF15-TEMP
         // The network rules go on before the page loads; without them, nothing loads.
         let rules: WKContentRuleList
         do {
@@ -162,6 +164,8 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
             throw ExportError.pageLoadFailed(error)
         }
         webView.applyContentRuleList(rules)
+        Perf15.end(p15Rules) // PERF15-TEMP
+        let p15Template = Perf15.begin("p15.template") // PERF15-TEMP
         // Its own id, not the exclusive one: two exports, or an export during a preview load,
         // would otherwise report one tangled "template" interval instead of two.
         templateSignpost = Self.signposter.beginInterval("template", id: Self.signposter.makeSignpostID())
@@ -172,6 +176,8 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
                 failPageLoad(URLError(.cancelled))
             }
         }
+        Perf15.end(p15Template) // PERF15-TEMP
+        let p15Setup = Perf15.begin("p15.setupScripts") // PERF15-TEMP
         _ = try? await webView.evaluateJavaScript(PreviewWebView.themeScript(theme))
         // The export page has no window to offer a "Load Images" or "Grant Access" button (both
         // are hidden by print CSS anyway), so it only needs placeholder labels. A blocked remote
@@ -191,29 +197,44 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
             missingLabel: PreviewWebView.unloadableImagePlaceholderLabel,
             blockedLabel: PreviewWebView.unloadableImagePlaceholderLabel
         ))
+        Perf15.end(p15Setup) // PERF15-TEMP
 
         // One deadline covers rendering, updating the page and waiting for its content.
         let deadline = ContinuousClock.now + Self.contentTimeout
         let rendered = try await withExportDeadline(deadline, timeoutError: ExportError.contentTimedOut) {
             let renderSignpost = Self.signposter.beginInterval("render", id: Self.signposter.makeSignpostID())
             defer { Self.signposter.endInterval("render", renderSignpost) }
-            return await MarkdownRenderer.renderResult(markdown, options: options)
+            let p15Render = Perf15.begin("p15.render") // PERF15-TEMP
+            let p15Result = await MarkdownRenderer.renderResult(markdown, options: options) // PERF15-TEMP
+            Perf15.end(p15Render, ["htmlChars": p15Result?.html.utf16.count ?? -1]) // PERF15-TEMP
+            return p15Result // PERF15-TEMP
         }
         guard let html = rendered?.html else { throw CancellationError() }
         renderedHTML = html
-        let updateScript = PreviewWebView.updateScript(html: html, calloutTitles: calloutTitles)
+        var updateScript = PreviewWebView.updateScript(html: html, calloutTitles: calloutTitles)
+        if Perf15.enabled { updateScript += "\n" + Perf15.layoutProbeScript } // PERF15-TEMP: same eval, forced layout + in-page timings
+        Perf15.log("p15.updateScript", ["scriptUTF16": updateScript.utf16.count]) // PERF15-TEMP
+        var p15PushResult: Any? // PERF15-TEMP
         try await withExportDeadline(deadline, timeoutError: ExportError.contentTimedOut) { @MainActor [webView] in
             let pushSignpost = Self.signposter.beginInterval("push", id: Self.signposter.makeSignpostID())
             defer { Self.signposter.endInterval("push", pushSignpost) }
-            _ = try await webView.evaluateJavaScript(updateScript)
+            let p15Push = Perf15.begin("p15.push") // PERF15-TEMP
+            p15PushResult = try await webView.evaluateJavaScript(updateScript) // PERF15-TEMP (was `_ =`)
+            Perf15.end(p15Push, ["page": Perf15.object(p15PushResult)]) // PERF15-TEMP
         }
         // A collapsed `<details>` prints nothing of its body, so a PDF would lose it. Open every
         // one, before the wait so that diagrams and images inside get laid out. The script is
         // constant: nothing from the document goes into it. An exclusive group (`name`) lets only
         // one of its members stay open, so the name goes first. Front matter is left as it is
         // (print CSS hides it).
+        let p15Details = Perf15.begin("p15.openAllDetails") // PERF15-TEMP
         _ = try await webView.evaluateJavaScript(Self.openAllDetailsScript)
+        Perf15.end(p15Details) // PERF15-TEMP
+        let p15Wait = Perf15.begin("p15.waitForContent") // PERF15-TEMP
         try await waitForContent(until: deadline)
+        Perf15.end(p15Wait) // PERF15-TEMP
+        if Perf15.enabled { Perf15.log("p15.mermaid", ["page": Perf15.object(try? await webView.evaluateJavaScript(Perf15.mermaidProbeScript))]) } // PERF15-TEMP
+        let p15Errors = Perf15.begin("p15.diagramErrors") // PERF15-TEMP
         // JSON-encoded in JS so an unknown fenceLine/line can be genuinely absent from each
         // object, rather than `null`, matching what `DiagramError` expects to decode.
         let errorsJSON = try? await webView.evaluateJavaScript(
@@ -232,9 +253,20 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
             try? JSONDecoder().decode([DiagramError].self, from: Data($0.utf8))
         } ?? []
         diagramErrors = diagramErrorDetails.map(\.message)
-        _ = try? await webView.evaluateJavaScript(Self.keepHeadingsWithNextScript)
+        Perf15.end(p15Errors) // PERF15-TEMP
+        let p15Keep = Perf15.begin("p15.keepHeadings") // PERF15-TEMP
+        let p15KeepResult = try? await webView.evaluateJavaScript( // PERF15-TEMP
+            Perf15.timed(Self.keepHeadingsWithNextScript, extra: "document.querySelectorAll('.keep-with-next').length")) // PERF15-TEMP
+        Perf15.end(p15Keep, ["page": Perf15.object(p15KeepResult)]) // PERF15-TEMP
+        let p15Breaks = Perf15.begin("p15.pageBreaks") // PERF15-TEMP
         // After keep-with-next, so a heading kept with its block is broken before as one unit.
-        _ = try? await webView.evaluateJavaScript(Self.pageBreaksScript(manual: layout == .manual))
+        let p15BreaksResult = try? await webView.evaluateJavaScript(Perf15.timed(Self.pageBreaksScript(manual: layout == .manual))) // PERF15-TEMP (was `_ =`, untimed)
+        Perf15.end(p15Breaks, ["page": Perf15.object(p15BreaksResult)]) // PERF15-TEMP
+        if Perf15.enabled { // PERF15-TEMP: layout after the DOM changes above, before printing
+            let p15Relayout = Perf15.begin("p15.relayout") // PERF15-TEMP
+            let r = try? await webView.evaluateJavaScript(Perf15.timed("document.body.scrollHeight", extra: "document.body.scrollHeight")) // PERF15-TEMP
+            Perf15.end(p15Relayout, ["page": Perf15.object(r)]) // PERF15-TEMP
+        } // PERF15-TEMP
     }
 
     private static let openAllDetailsScript = """
@@ -331,7 +363,16 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         do {
             while ContinuousClock.now < deadline {
                 polls += 1
-                let ready = try await webView.callAsyncJavaScript(script, contentWorld: .page) as? Bool ?? false
+                let ready: Bool // PERF15-TEMP (was `let ready = <the call below>`)
+                if Perf15.enabled { // PERF15-TEMP: same checks, plus the poll's own in-page time
+                    let p15Poll = Perf15.begin("p15.poll") // PERF15-TEMP
+                    let raw = try await webView.callAsyncJavaScript(Perf15.pollScript, contentWorld: .page) // PERF15-TEMP
+                    let parsed = Perf15.object(raw) // PERF15-TEMP
+                    ready = (parsed as? [String: Any])?["ready"] as? Bool ?? false // PERF15-TEMP
+                    Perf15.end(p15Poll, ["n": polls, "page": parsed]) // PERF15-TEMP
+                } else { // PERF15-TEMP
+                ready = try await webView.callAsyncJavaScript(script, contentWorld: .page) as? Bool ?? false
+                } // PERF15-TEMP
                 if ready {
                     Self.signposter.endInterval("waitForContent", signpost, "polls=\(polls) outcome=ready")
                     return
@@ -506,9 +547,11 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
             calloutTitles: calloutTitles
         )
         try await inspect?(exporter)
+        let p15Op = Perf15.begin("p15.printOperationSetup") // PERF15-TEMP
         let operation = exporter.printOperation(printInfo: printInfo)
         configure(operation.printInfo, operation)
         let host = window ?? exporter.hiddenWindow()
+        Perf15.end(p15Op) // PERF15-TEMP
         if layout == .manual {
             // Decided on the configured job, before anything prints: only a file can give the
             // first pass the page numbers come from.
@@ -541,6 +584,8 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         }
         try hooks.beforePrint?(operation)
         let completed = await exporter.run(operation, host: host)
+        let p15Repair = Perf15.begin("p15.toUnicodeRepair") // PERF15-TEMP
+        defer { Perf15.end(p15Repair) } // PERF15-TEMP
         // A PDF saved to a file gets its text layer repaired: CJK radicals where the page shows
         // ideographs (mars-dawn-kit#18). Printing to paper has no text layer to repair.
         if completed, operation.printInfo.jobDisposition == .save,
@@ -554,6 +599,12 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
     func run(_ operation: NSPrintOperation, host: NSWindow) async -> Bool {
         let paginateSignpost = Self.signposter.beginInterval("paginate", id: Self.signposter.makeSignpostID())
         defer { Self.signposter.endInterval("paginate", paginateSignpost) }
+        let p15Paginate = Perf15.begin("p15.paginate") // PERF15-TEMP
+        let p15Sampler = Perf15.enabled ? Perf15.PageSampler { [operation] in operation.currentPage } : nil // PERF15-TEMP
+        defer { // PERF15-TEMP
+            let sampled = p15Sampler?.stop() // PERF15-TEMP
+            Perf15.end(p15Paginate, ["pageMarks": sampled?.marks ?? [], "samples": sampled?.samples ?? 0]) // PERF15-TEMP
+        } // PERF15-TEMP
         return await withCheckedContinuation { continuation in
             let completion = Completion { continuation.resume(returning: $0) }
             operation.runModal(
@@ -660,7 +711,9 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
             operation.showsPrintPanel = false
             operation.showsProgressPanel = false
         }
+        let p15Open = Perf15.begin("p15.pdfDocumentOpen") // PERF15-TEMP
         guard result.completed, let document = PDFDocument(url: url) else { throw ExportError.printFailed }
+        Perf15.end(p15Open, ["pages": document.pageCount]) // PERF15-TEMP
         return PDFResult(
             url: url, pageCount: document.pageCount,
             diagramErrors: result.diagramErrors, diagramErrorDetails: result.diagramErrorDetails

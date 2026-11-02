@@ -811,11 +811,13 @@
   }
 
   function update(html, lines) {
+    const __p15 = window.__perf15 = { updateStart: performance.now(), htmlChars: html.length }; // PERF15-TEMP
     if (lines) lineCount = lines;
     invalidateAnchors();
     const root = content();
     const template = document.createElement("template");
     template.innerHTML = html;
+    __p15.parseMs = performance.now() - __p15.updateStart; // PERF15-TEMP
     // First, before the filter and the pool see the fragment, so its children are exactly those
     // of the same document without a marker. Every update sets or clears it.
     const language = takeContentLanguage(template.content);
@@ -866,21 +868,40 @@
       }
     }
 
+    __p15.poolMs = performance.now() - __p15.updateStart - __p15.parseMs; // PERF15-TEMP
+    let __t = performance.now(); // PERF15-TEMP
     root.replaceChildren(fragment);
+    __p15.replaceChildrenMs = performance.now() - __t; __t = performance.now(); // PERF15-TEMP
 
     refreshRemoteBar();
     const pending = [];
+    __p15.refreshRemoteBarMs = performance.now() - __t; __t = performance.now(); // PERF15-TEMP
+    __p15.highlightMs = 0; __p15.mermaidCollectMs = 0; // PERF15-TEMP
     const highlightBudget = { used: highlightedChars() };
+    __p15.highlightedCharsMs = performance.now() - __t; // PERF15-TEMP
     for (const el of fresh) {
+      __t = performance.now(); // PERF15-TEMP
       highlightCode(el, highlightBudget);
+      __p15.highlightMs += performance.now() - __t; __t = performance.now(); // PERF15-TEMP
       const blocks = el.classList.contains("mermaid-block") ? [el] : el.querySelectorAll(".mermaid-block");
       for (const block of blocks) pending.push([block, staleSVGs.shift()]);
+      __p15.mermaidCollectMs += performance.now() - __t; // PERF15-TEMP
     }
+    __p15.freshBlocks = fresh.length; // PERF15-TEMP
+    __p15.codeBlocks = content().querySelectorAll("pre > code").length; // PERF15-TEMP
+    __p15.highlightedBlocks = content().querySelectorAll("pre > code.hljs").length; // PERF15-TEMP
+    __p15.highlightedChars = highlightBudget.used; // PERF15-TEMP
+    __t = performance.now(); // PERF15-TEMP
     // Synchronous, and only over elements the pool didn't reuse: math whose source hasn't
     // changed keeps the KaTeX output it already has.
     renderMath();
+    __p15.mathMs = performance.now() - __t; __t = performance.now(); // PERF15-TEMP
     reapplySync();
+    __p15.reapplySyncMs = performance.now() - __t; // PERF15-TEMP
+    __p15.mermaidCount = pending.length; __p15.mermaidStart = performance.now(); // PERF15-TEMP
     pendingWork = renderMermaidSequentially(capMermaid(pending));
+    pendingWork.then(() => { __p15.mermaidEnd = performance.now(); __p15.mermaidMs = __p15.mermaidEnd - __p15.mermaidStart; }); // PERF15-TEMP
+    __p15.updateSyncMs = performance.now() - __p15.updateStart; // PERF15-TEMP
     if (pending.length) {
       pendingWork.then(() => {
         invalidateAnchors();

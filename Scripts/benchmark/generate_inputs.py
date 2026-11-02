@@ -47,6 +47,8 @@ SEEDS = {
     "10kb": 110_001,
     "100kb": 110_002,
     "1mb": 110_003,
+    "2mb": 110_005,  # PERF15-TEMP: mars-dawn#15 profile points
+    "5mb": 110_006,  # PERF15-TEMP
     "10mb": 110_004,
     "dense_boundary": 110_099,
 }
@@ -59,6 +61,8 @@ TARGET_BYTES = {
     "10kb": 10 * 1024,
     "100kb": 100 * 1024,
     "1mb": 1 * 1024 * 1024,
+    "2mb": 2 * 1024 * 1024,  # PERF15-TEMP
+    "5mb": 5 * 1024 * 1024,  # PERF15-TEMP
     "10mb": 10 * 1024 * 1024,
     # K1 (not yet merged into kit main) introduces a 500k-node fallback at
     # roughly 2.4 MB of dense Markdown. This fixture sits right at that
@@ -73,6 +77,8 @@ MERMAID_COUNTS = {
     "10kb": 1,
     "100kb": 2,
     "1mb": 4,
+    "2mb": 5,  # PERF15-TEMP
+    "5mb": 6,  # PERF15-TEMP
     "10mb": 8,
     "dense_boundary": 2,
 }

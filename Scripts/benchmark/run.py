@@ -16,6 +16,7 @@ machine:
 
 import argparse
 import json
+import os  # PERF15-TEMP
 import re
 import statistics
 import subprocess
@@ -30,7 +31,7 @@ BENCHMARK_DIR = Path(__file__).resolve().parent
 FALLBACK_PROBE_DIR = BENCHMARK_DIR / "fallback_probe"
 DEFAULT_INPUTS_DIR = BENCHMARK_DIR / "inputs"
 DEFAULT_RESULTS_DIR = BENCHMARK_DIR / "results"
-SIZE_ORDER = ["10kb", "100kb", "1mb", "10mb"]
+SIZE_ORDER = ["10kb", "100kb", "1mb", "2mb", "5mb", "10mb"]  # PERF15-TEMP: 2mb, 5mb added
 
 # A cell's spread is flagged as possible noise when (max - min) exceeds this
 # fraction of the median. 11 runs on a quiet machine typically land well
@@ -222,16 +223,21 @@ def sample_webcontent_processes():
     Matches both the plain XPC service and the ExtensionKit .appex form seen on this
     OS version; both show up with "WebKit.WebContent" somewhere in their comm path.
     """
-    out = run_text(["ps", "-A", "-o", "pid,time,comm"])
+    out = run_text(["ps", "-A", "-o", "pid,time,rss,comm"])  # PERF15-TEMP: rss column added
     result = {}
     for line in out.splitlines()[1:]:
-        parts = line.strip().split(None, 2)
-        if len(parts) != 3:
+        parts = line.strip().split(None, 3)  # PERF15-TEMP: was 2
+        if len(parts) != 4:  # PERF15-TEMP: was 3
             continue
-        pid, time_str, comm = parts
+        pid, time_str, rss_kb, comm = parts  # PERF15-TEMP
         if "WebKit.WebContent" in comm:
             result[pid] = time_str
+            WEBCONTENT_RSS_KB[pid] = max(WEBCONTENT_RSS_KB.get(pid, 0), int(rss_kb))  # PERF15-TEMP
     return result
+
+
+WEBCONTENT_RSS_KB = {}  # PERF15-TEMP: pid -> max rss (KB) seen by ps sampling
+PERF15_LINE_PREFIX = "PERF15 "  # PERF15-TEMP
 
 
 def find_child_pid(parent_pid, name_hint):
@@ -255,7 +261,7 @@ def find_child_pid(parent_pid, name_hint):
 
 # subsystem/category the exporter's signposts are logged under (see
 # Sources/MarsDawnExport/DocumentExporter.swift's doc comment).
-SIGNPOST_SUBSYSTEM = "dev.southern-light.marsdawn"
+SIGNPOST_SUBSYSTEM = "dev.southern-light.marsdawn-kit"  # the kit's exporter logs here, not under the app's subsystem
 SIGNPOST_CATEGORY = "Performance"
 SIGNPOST_INTERVALS = ["template", "render", "push", "waitForContent", "paginate"]
 
@@ -391,7 +397,8 @@ def run_one_export(binary_path, input_path, output_pdf, capture_signposts=True):
     wall_start = datetime.now()
     start = time.perf_counter()
     try:
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                                env={**os.environ, "MARSDAWN_PERF15": "1"})  # PERF15-TEMP
     except OSError as exc:
         elapsed = time.perf_counter() - start
         return _export_failure(elapsed, f"couldn't start process: {exc}")
@@ -442,6 +449,14 @@ def run_one_export(binary_path, input_path, output_pdf, capture_signposts=True):
     if marsdawn_user is not None and marsdawn_sys is not None:
         process_tree_cpu_seconds = marsdawn_user + marsdawn_sys + (webcontent_cpu_seconds or 0.0)
 
+    perf15 = []  # PERF15-TEMP
+    for line in stderr.splitlines():  # PERF15-TEMP
+        if line.startswith(PERF15_LINE_PREFIX):  # PERF15-TEMP
+            try:  # PERF15-TEMP
+                perf15.append(json.loads(line[len(PERF15_LINE_PREFIX):]))  # PERF15-TEMP
+            except json.JSONDecodeError:  # PERF15-TEMP
+                pass  # PERF15-TEMP
+    webcontent_peak_rss_kb = max((WEBCONTENT_RSS_KB.get(pid, 0) for pid in tracked_webcontent), default=None)  # PERF15-TEMP
     rss_match = MAX_RSS_RE.search(stderr)
     footprint_match = FOOTPRINT_RE.search(stderr)
     peak_rss = int(rss_match.group(1)) if rss_match else None
@@ -483,7 +498,9 @@ def run_one_export(binary_path, input_path, output_pdf, capture_signposts=True):
         "diagram_errors": parsed.get("diagramErrors") if isinstance(parsed, dict) else None,
         "json": parsed,
         "parse_error": parse_error,
-        "stderr_tail": "\n".join(stderr.strip().splitlines()[-10:]),
+        "stderr_tail": "\n".join(l for l in stderr.strip().splitlines() if not l.startswith(PERF15_LINE_PREFIX))[-2000:],  # PERF15-TEMP: PERF15 lines filtered
+        "perf15": perf15,  # PERF15-TEMP
+        "webcontent_peak_rss_kb_sampled": webcontent_peak_rss_kb,  # PERF15-TEMP
     }
 
 
