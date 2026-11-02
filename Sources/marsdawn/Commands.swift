@@ -101,10 +101,15 @@ struct CLIFailure: Error, CustomStringConvertible {
         /// The input is over the renderer's byte cap (`ParseLimits.defaultMaxBytes`); nothing was
         /// rendered or written. Exits 5, like `export_failed`.
         case inputTooLarge = "input_too_large"
+        /// `export --format png --heading` named a heading the document doesn't have (kit #243);
+        /// nothing was rendered or written. Exits 2, like `input_not_found`: what was asked for
+        /// isn't there.
+        case headingNotFound = "heading_not_found"
 
         var code: Code {
             switch self {
             case .inputTooLarge: .exportFailed
+            case .headingNotFound: .inputNotFound
             }
         }
     }
@@ -730,24 +735,58 @@ extension MarsDawnCommand {
 extension MarsDawnCommand {
     struct Export: AsyncParsableCommand {
         static let configuration = CommandConfiguration(
-            abstract: "Export a Markdown file to a paginated PDF, rendered like MarsDawn's preview.",
+            abstract: "Export a Markdown file to a paginated PDF, or to PNG images, rendered like MarsDawn's preview.",
             discussion: """
             Runs on its own: the MarsDawn app does not have to be installed. Relative images \
             resolve against the input file's folder. Web images are left out unless \
             --allow-remote-images is given. A newline inside a paragraph is a space, as in \
             CommonMark, unless --breaks is given, and without it a newline between two Chinese \
             or Japanese characters is dropped.
+
+            --format png renders the document as the preview shows it, one continuous page \
+            --width pixels wide (\(DocumentImageRenderer.widthRange.lowerBound)–\
+            \(DocumentImageRenderer.widthRange.upperBound), default \(DocumentImageRenderer.defaultWidth)), \
+            to check how it renders. A page taller than \(DocumentImageRenderer.maxHeight) pixels is cut \
+            into several images, always between two blocks, never inside a table, code block or \
+            diagram, named <out>-1.png, <out>-2.png and so on. --lines a-b and --heading <text> \
+            render only part of the document, widened to whole blocks. --paper, --layout and \
+            --toc-title don't apply to a PNG.
             """
         )
+
+        enum Format: String, CaseIterable, ExpressibleByArgument {
+            case pdf, png
+        }
 
         @Argument(help: "The Markdown file to export.")
         var file: String
 
-        @Option(name: .shortAndLong, help: "Where to write the PDF. Defaults to the input path with a .pdf extension.")
+        @Option(help: "What to write: pdf (the default) or png.")
+        var format: Format = .pdf
+
+        @Option(name: .shortAndLong, help: "Where to write the PDF. Defaults to the input path with a .pdf extension. With --format png, the PNG, or a folder to write it in; defaults to the input path with a .png extension.")
         var output: String?
 
         @Option(help: "Preview theme (light palette). Defaults to $MARSDAWN_THEME, or dawn.")
         var theme: PreviewTheme?
+
+        @Option(help: ArgumentHelp("PNG only: render with this theme.json instead of a built-in theme. It is validated as theme validate does.", valueName: "theme.json"))
+        var themeFile: String?
+
+        @Option(help: "PNG only: which palette to render, light (the default) or dark.")
+        var appearance: ThemePreviewRenderer.Appearance?
+
+        @Option(help: ArgumentHelp(
+            "PNG only: image width in pixels, \(DocumentImageRenderer.widthRange.lowerBound)–\(DocumentImageRenderer.widthRange.upperBound) (default \(DocumentImageRenderer.defaultWidth)).",
+            valueName: "n"
+        ))
+        var width: Int?
+
+        @Option(help: ArgumentHelp("PNG only: render only the blocks on lines a to b (counted from 1, as in the editor).", valueName: "a-b"))
+        var lines: LineRange?
+
+        @Option(help: ArgumentHelp("PNG only: render only the section under the first heading with this text, up to the next heading of the same or a higher level.", valueName: "text"))
+        var heading: String?
 
         @Option(help: "Paper size.")
         var paper: DocumentExporter.Paper = .a4
@@ -782,8 +821,41 @@ extension MarsDawnCommand {
             theme ?? environment["MARSDAWN_THEME"].flatMap(PreviewTheme.init(argument:)) ?? .dawn
         }
 
+        func validate() throws {
+            switch format {
+            case .pdf:
+                let pngOnly: [(String, Bool)] = [
+                    ("--theme-file", themeFile != nil), ("--appearance", appearance != nil), ("--width", width != nil),
+                    ("--lines", lines != nil), ("--heading", heading != nil),
+                ]
+                if let given = pngOnly.first(where: \.1) {
+                    throw ValidationError("\(given.0) applies only to --format png.")
+                }
+            case .png:
+                if theme != nil, themeFile != nil {
+                    throw ValidationError("Pass --theme or --theme-file, not both.")
+                }
+                if lines != nil, heading != nil {
+                    throw ValidationError("Pass --lines or --heading, not both.")
+                }
+                if let width, !DocumentImageRenderer.widthRange.contains(width) {
+                    throw ValidationError(
+                        "--width must be between \(DocumentImageRenderer.widthRange.lowerBound) and "
+                            + "\(DocumentImageRenderer.widthRange.upperBound), but \(width) was given."
+                    )
+                }
+                if let heading, DocumentImageRenderer.normalizedTitle(heading).isEmpty {
+                    throw ValidationError("--heading needs the heading's text.")
+                }
+            }
+        }
+
         @MainActor
         func run() async throws {
+            if format == .png {
+                try await runPNG()
+                return
+            }
             // No MarsDawnApp.require() here: export is the same rendering the app does, and it
             // ships in this package, so it must work with nothing else installed (Homebrew builds
             // and tests the tool on machines that have no MarsDawn.app). `open` still needs it.
@@ -868,7 +940,163 @@ extension MarsDawnCommand {
                 },
             ]
         }
+
+        // MARK: --format png (kit #243)
+
+        /// Where the PNG goes: `-o` as a file, or, when `-o` is a folder (or ends in `/`), the
+        /// input's name with `.png` in it; without `-o`, beside the input. With several images,
+        /// each is this name with `-1`, `-2`… before the extension (`numbered`).
+        func pngDestination(for input: URL) -> URL {
+            let name = input.deletingPathExtension().appendingPathExtension("png").lastPathComponent
+            guard let output else { return input.deletingLastPathComponent().appendingPathComponent(name) }
+            let url = URL(fileURLWithPath: (output as NSString).expandingTildeInPath).standardizedFileURL
+            var isDirectory: ObjCBool = false
+            if output.hasSuffix("/") || (FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) && isDirectory.boolValue) {
+                return url.appendingPathComponent(name)
+            }
+            return url
+        }
+
+        /// `plan.png` → `plan-2.png`.
+        static func numbered(_ url: URL, _ number: Int) -> URL {
+            let ext = url.pathExtension
+            let stem = url.deletingPathExtension().lastPathComponent
+            return url.deletingLastPathComponent().appendingPathComponent("\(stem)-\(number)" + (ext.isEmpty ? "" : ".\(ext)"))
+        }
+
+        @MainActor
+        func runPNG(inspect: ((PreviewWKWebView) async throws -> Void)? = nil) async throws {
+            let input = try existingFile(file)
+            let markdown: String
+            do {
+                markdown = try String(contentsOf: input, encoding: .utf8)
+            } catch {
+                throw CLIFailure(code: .inputNotFound, message: "Couldn’t read \(input.path) as UTF-8 text.")
+            }
+
+            // The theme: a theme.json, validated as `theme validate` does (invalid exits 1, before
+            // anything is rendered), or a built-in one.
+            let previewTheme: PreviewTheme
+            var registry: ThemeRegistry?
+            if let themeFile {
+                let report = try ThemeInput.validate(path: themeFile)
+                guard let validated = report.theme else {
+                    ThemeInput.writeInvalid(report, json: options.json, write: OutputOptions.sink?.call ?? { print($0) })
+                    throw ExitCode(1)
+                }
+                previewTheme = PreviewTheme(validated: validated)
+                registry = ThemeRegistry(serving: [validated])
+            } else {
+                previewTheme = resolvedTheme()
+            }
+
+            // The lines to show.
+            let lineCount = DocumentImageRenderer.lineCount(markdown)
+            var range: ClosedRange<Int>?
+            if let heading {
+                guard let section = DocumentImageRenderer.headingLines(heading, markdown: markdown) else {
+                    throw CLIFailure(.headingNotFound, message: "\(input.path) has no heading \"\(heading)\". Nothing was written.")
+                }
+                range = section
+            } else if let lines {
+                guard lines.lower <= lineCount else {
+                    throw ValidationError("--lines starts at line \(lines.lower), but \(input.path) has \(lineCount) line\(lineCount == 1 ? "" : "s").")
+                }
+                range = lines.lower...min(lines.upper, lineCount)
+            }
+
+            let appearance = appearance ?? .light
+            let width = width ?? DocumentImageRenderer.defaultWidth
+            let result: DocumentImageRenderer.Result
+            do {
+                result = try await DocumentImageRenderer.render(
+                    markdown: markdown,
+                    theme: previewTheme,
+                    registry: registry,
+                    appearance: appearance,
+                    width: width,
+                    baseDirectory: input.deletingLastPathComponent(),
+                    allowRemoteImages: allowRemoteImages,
+                    softBreaksAsLineBreaks: breaks,
+                    lines: range,
+                    calloutTitles: .preferred(),
+                    inspect: inspect
+                )
+            } catch DocumentExporter.ExportError.inputTooLarge(let limit) {
+                throw CLIFailure.inputTooLarge(input, limit: limit)
+            } catch {
+                throw CLIFailure(code: .exportFailed, message: "Export failed: \(error.localizedDescription)")
+            }
+
+            // Every destination is checked before any is written, so a refused one leaves none.
+            let base = pngDestination(for: input)
+            let images = result.images
+            let destinations = images.count == 1 ? [base] : images.indices.map { Self.numbered(base, $0 + 1) }
+            let checked = try destinations.map { try OutputFile.check($0.path, force: force, command: "export") }
+            for (image, url) in zip(images, checked) {
+                try OutputFile.write(image.png, to: url, force: force)
+            }
+
+            let warnings = Self.pngWarnings(diagramErrors: result.diagramErrors, oversizedBlocks: result.oversizedBlocks)
+            var text = zip(images, checked).map { image, url in
+                "Exported \(url.path) (\(image.width)×\(image.height), lines \(image.firstLine)-\(image.lastLine))"
+            }.joined(separator: "\n")
+            for warning in warnings {
+                let line = (warning["line"] as? Int).map { "line \($0): " } ?? ""
+                text += "\nwarning: \(line)\(warning["message"] as? String ?? "")"
+            }
+            options.report(
+                [
+                    "format": "png",
+                    "theme": previewTheme.id,
+                    "appearance": appearance.rawValue,
+                    "images": zip(images, checked).map { image, url -> [String: Any] in
+                        ["path": url.path, "width": image.width, "height": image.height, "lines": "\(image.firstLine)-\(image.lastLine)"]
+                    },
+                    "warnings": warnings,
+                ],
+                text: text
+            )
+            SkillHint.emitAfterSuccess(json: options.json)
+        }
+
+        /// `--format png`'s warnings, in the JSON's shape: each `{kind, line?, message}`. A Mermaid
+        /// error's line is the error's own line when Mermaid names one, else its fence's.
+        static func pngWarnings(diagramErrors: [DocumentExporter.DiagramError], oversizedBlocks: [Int]) -> [[String: Any]] {
+            diagramErrors.map { error -> [String: Any] in
+                var entry: [String: Any] = ["kind": "mermaid_error", "message": "Mermaid diagram failed to render: \(error.message.trimmingCharacters(in: .whitespacesAndNewlines))"]
+                if let line = error.line ?? error.fenceLine { entry["line"] = line }
+                return entry
+            } + oversizedBlocks.map { line -> [String: Any] in
+                [
+                    "kind": "oversized_block", "line": line,
+                    "message": "The block on line \(line) is taller than \(DocumentImageRenderer.maxHeight) pixels; its image is as tall as it is.",
+                ]
+            }
+        }
     }
+}
+
+/// `--lines a-b` (or `--lines a`): a range of source lines, counted from 1.
+struct LineRange: ExpressibleByArgument, Equatable {
+    var lower: Int
+    var upper: Int
+
+    init(lower: Int, upper: Int) {
+        self.lower = lower
+        self.upper = upper
+    }
+
+    init?(argument: String) {
+        let parts = argument.split(separator: "-", omittingEmptySubsequences: false)
+        guard (1...2).contains(parts.count),
+              let lower = Int(parts[0]), let upper = Int(parts[parts.count - 1]),
+              lower >= 1, upper >= lower
+        else { return nil }
+        self.init(lower: lower, upper: upper)
+    }
+
+    var defaultValueDescription: String { "\(lower)-\(upper)" }
 }
 
 // MARK: - theme validate
@@ -1153,26 +1381,26 @@ struct OutputPathFailure: Error, CustomStringConvertible {
     static let exitCode: Int32 = 64
 }
 
-/// Where `theme preview` writes (kit #139): only a regular file, in a folder that exists, never
+/// Where `theme preview` and `export --format png` write (kit #139, #243): only a regular file, in a folder that exists, never
 /// through a symlink. The bytes go to a new file made with `O_CREAT | O_EXCL | O_NOFOLLOW` beside
 /// the destination, which is then renamed over it -- `rename` replaces the directory entry and
 /// never follows a link there, and without `--force` the rename is exclusive (`RENAME_EXCL`), so
 /// a file that appears in the meantime is not replaced either.
 enum OutputFile {
-    static func check(_ path: String, force: Bool) throws -> URL {
+    static func check(_ path: String, force: Bool, command: String = "theme preview") throws -> URL {
         let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath).standardizedFileURL
         let folder = url.deletingLastPathComponent()
         var isDirectory: ObjCBool = false
         guard !url.lastPathComponent.isEmpty, url.path != "/",
               FileManager.default.fileExists(atPath: folder.path, isDirectory: &isDirectory), isDirectory.boolValue
         else {
-            throw OutputPathFailure(kind: .folderMissing, message: "The folder for \(url.path) doesn't exist. Create it first; theme preview doesn't.")
+            throw OutputPathFailure(kind: .folderMissing, message: "The folder for \(url.path) doesn't exist. Create it first; \(command) doesn't.")
         }
         var info = stat()
         if lstat(url.path, &info) == 0 {
             switch info.st_mode & S_IFMT {
             case S_IFLNK:
-                throw OutputPathFailure(kind: .symlink, message: "\(url.path) is a symlink. theme preview never writes through one; name the file itself.")
+                throw OutputPathFailure(kind: .symlink, message: "\(url.path) is a symlink. \(command) never writes through one; name the file itself.")
             case S_IFREG:
                 if !force { throw CLIFailure(code: .outputExists, message: "\(url.path) already exists. Pass --force to replace it.") }
             default:

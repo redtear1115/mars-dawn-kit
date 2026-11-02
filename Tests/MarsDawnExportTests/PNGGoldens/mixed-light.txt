@@ -1,0 +1,1 @@
+OS build: Version 26.6.2 (Build 25G83) | WebKit: 21624.5.1.11.3 | Paper: png

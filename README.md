@@ -81,6 +81,27 @@ swift run marsdawn export notes.md -o notes.pdf --theme classic --paper a4
     line — `fenceLine` plus Mermaid's line number from its message — present only when Mermaid's
     message names one, which not every error does).
   - It renders on its own: the MarsDawn app does not have to be installed. Only `open` needs the app.
+- `export <file> --format png [-o out.png | folder] [--theme <name> | --theme-file theme.json] [--appearance light|dark] [--width N] [--lines a-b | --heading <text>] [--allow-remote-images] [--breaks] [--force] [--json]`
+  renders the document as the preview shows it, one continuous page, to PNG, so an agent can check
+  its tables, diagrams, math and images (kit #243). Without `--format` (or with `--format pdf`),
+  `export` writes the PDF exactly as before, and the PNG-only options are a usage error there.
+  - The page is `--width` pixels wide (`600`–`2000`, default `1200`), in the light palette unless
+    `--appearance dark`. `--theme-file` is validated as `theme validate` does; an invalid one exits
+    `1` and nothing is written.
+  - `--lines a-b` renders only the top-level blocks that overlap those lines, whole;
+    `--heading <text>` only the section under the first heading with that text (case and runs of
+    spaces ignored), up to the next heading of the same or a higher level. A heading that isn't
+    there exits `2` with `error: "heading_not_found"`.
+  - A page taller than `8000` pixels is cut into several images, `<out>-1.png`, `<out>-2.png`…, each
+    cut between two top-level blocks — never inside a table, code block or diagram, and after a
+    heading only when nothing else fits. A single block taller than `8000` gets an image of its own,
+    as tall as it is, and an `oversized_block` warning.
+  - `-o` follows `theme preview`'s rules (a regular file in a folder that exists; never a symlink;
+    `--force` to replace); `-o <folder>` writes `<folder>/<input>.png`. Every image's path is checked
+    before any is written.
+  - `--json` prints `ok`, `format` (`"png"`), `theme`, `appearance`, `images` (each `{path, width,
+    height, lines}`, `lines` like `"1-212"`) and `warnings` (each `{kind, line, message}`;
+    `mermaid_error` with the error's line, or its fence's, and `oversized_block`).
 - `theme validate <file> [--require-complete] [--json]` checks a `theme.json` against every rule
   a MarsDawn theme must meet, the same validator the app uses: exit `0` valid, `1` invalid (each
   problem listed with its rule id; under `issues` in `--json`). Only a regular file of at most
@@ -130,7 +151,7 @@ swift run marsdawn export notes.md -o notes.pdf --theme classic --paper a4
   `--json` output never change. Set `MARSDAWN_NO_SKILL_HINT=1` to turn it off.
 - `--version` prints the release number and nothing else, so a package manager can compare it against its own. Bumping it is part of cutting a release; see [RELEASING.md](RELEASING.md).
 - `--generate-completion-script bash|zsh|fish` writes a shell completion script to stdout.
-- Exit codes: 1 invalid theme (`theme` commands only), 2 input not found, 3 MarsDawn not installed (`open` only), 4 output exists, 5 export failed, 6 this MarsDawn can't take a folder (`open` only), 7 `skill --install` couldn't write the skill (`skill_install_failed`), 64 usage error (including `skill --install`'s `skill_differs` and `skill_unsafe_symlink`, `skill_target_not_a_file` (refused even with `--force`) and `skill_unreadable` (refused without `--force`), `open --wait`'s `wait_out_of_range`, and `theme preview`'s `output_folder_missing`, `output_symlink` and `output_not_a_file`).
+- Exit codes: 1 invalid theme (`theme` commands and `export --theme-file` only), 2 input not found (or `heading_not_found` from `export --format png --heading`), 3 MarsDawn not installed (`open` only), 4 output exists, 5 export failed, 6 this MarsDawn can't take a folder (`open` only), 7 `skill --install` couldn't write the skill (`skill_install_failed`), 64 usage error (including `skill --install`'s `skill_differs` and `skill_unsafe_symlink`, `skill_target_not_a_file` (refused even with `--force`) and `skill_unreadable` (refused without `--force`), `open --wait`'s `wait_out_of_range`, and `theme preview`'s and `export --format png`'s `output_folder_missing`, `output_symlink` and `output_not_a_file`).
 - `MARSDAWN_APP_PATH` overrides where the tool looks for the MarsDawn app. It exists for testing, so
   it's only honoured for a bundle whose `CFBundleIdentifier` is `dev.southern-light.marsdawn` or
   starts with `dev.southern-light.marsdawn.` (a throwaway verification copy); anything else is

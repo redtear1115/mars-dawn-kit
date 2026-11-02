@@ -77,6 +77,31 @@ On success it exits 0 and prints one JSON line:
 
 If `diagramErrors` isn't empty, the PDF was still written: tell the user which diagrams failed.
 
+## Check how it renders
+
+After writing a document with tables, Mermaid diagrams, math or images, render it to PNG and look
+at the images before the user reads it:
+
+```sh
+marsdawn export plan.md --format png --json
+```
+
+It renders what MarsDawn's preview shows, as one continuous page `--width` pixels wide (600–2000,
+default 1200). Options: `-o out.png` or `-o <folder>` (default: beside the input),
+`--theme dawn|classic|modern|vivid` or `--theme-file theme.json`, `--appearance light|dark`,
+`--force` to replace existing PNGs. `--lines 40-80` renders only the blocks on those lines and
+`--heading "Rollout"` only the section under that heading, up to the next heading of the same or
+a higher level; both widen to whole blocks. A heading that isn't there exits 2 with
+`heading_not_found`.
+
+A page taller than 8000 pixels becomes several images, `plan-1.png`, `plan-2.png` and so on, cut
+between blocks, never inside a table, code block or diagram. The JSON lists them under `images`,
+each `{path, width, height, lines}`, where `lines` is the source lines it shows, like `"1-212"`.
+`warnings` lists what to fix, each `{kind, line, message}`: `mermaid_error` is a diagram that
+failed to render (the diagram shows its error in the image too), `oversized_block` a single block
+taller than 8000 pixels, whose image is as tall as it is. Without `--format`, `export` writes a PDF
+as before.
+
 ## Themes
 
 `marsdawn theme validate theme.json --json` checks a MarsDawn theme file with the app's own
@@ -94,15 +119,16 @@ On failure with `--json` it prints `{"ok": false, "error": <kind>, "message": ..
 | Code | `error` | Meaning |
 |---|---|---|
 | 0 | — | Success. With --json, stdout is one JSON line. |
-| 1 | — | The theme isn't valid. Only the `theme` commands return this; with --json its problems are under `issues`. |
+| 1 | — | The theme isn't valid. Only the `theme` commands and `export --theme-file` return this; with --json its problems are under `issues`. |
 | 2 | `input_not_found` | The input file isn't there. |
+| 2 | `heading_not_found` | `export --format png --heading` named a heading the document doesn't have. Nothing was written. |
 | 3 | `app_not_installed` | MarsDawn isn't installed. Only `open` returns this. |
-| 4 | `output_exists` | The PDF (or `theme preview`'s PNG) already exists. Pass --force to replace it, or -o to write elsewhere. |
+| 4 | `output_exists` | The PDF (or a PNG from `export --format png` or `theme preview`) already exists. Pass --force to replace it, or -o to write elsewhere. |
 | 5 | `export_failed` | Rendering failed. With `--layout handbook` that includes a document whose page numbers couldn't be worked out; nothing is written, so retry with the `document` layout. |
 | 5 | `input_too_large` | The input is larger than 16 MiB (16,777,216 bytes), the most `export` renders. Nothing was written. Only `export` returns this. |
 | 6 | `app_cannot_open_folders` | This MarsDawn can't show a folder, so nothing was opened. Only `open` returns this. |
 | 7 | `skill_install_failed` | `skill --install` couldn't create the folder or write the file, or the final rename failed. An existing SKILL.md is left as it was. Only `skill --install` returns this. |
-| 64 | — | Usage error. ArgumentParser's own errors — a bad option or value — print as text on stderr, never as JSON. With --json, the command-checked usage refusals instead print `{"ok": false, "error": <kind>, "message": ...}` on stdout: `open --wait`'s `wait_out_of_range`; `skill --install`'s `skill_differs`, `skill_unsafe_symlink`, `skill_target_not_a_file`, `skill_unreadable`; `theme preview -o`'s `output_folder_missing`, `output_symlink`, `output_not_a_file`. |
+| 64 | — | Usage error. ArgumentParser's own errors — a bad option or value — print as text on stderr, never as JSON. With --json, the command-checked usage refusals instead print `{"ok": false, "error": <kind>, "message": ...}` on stdout: `open --wait`'s `wait_out_of_range`; `skill --install`'s `skill_differs`, `skill_unsafe_symlink`, `skill_target_not_a_file`, `skill_unreadable`; `theme preview -o`'s and `export --format png -o`'s `output_folder_missing`, `output_symlink`, `output_not_a_file`. |
 
 ## Review: open what you wrote
 
