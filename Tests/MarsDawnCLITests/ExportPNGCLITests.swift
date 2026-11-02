@@ -237,32 +237,31 @@ struct ExportPNGCLITests {
         return markdown
     }()
 
-    /// A shorter export over a longer one's numbered images (kit #246): with --force they go and
-    /// each is a `stale_image_removed` warning; without it they stay and each is a `stale_image`
-    /// warning. Either way the new image is written.
-    @Test func staleNumberedImagesAreRemovedWithForceAndReportedWithout() throws {
+    /// A shorter export over a longer one's numbered images (kit #246): with or without --force
+    /// they stay, contents unchanged, and each is a `stale_image` warning. A name and a PNG
+    /// signature can't prove the file came from an earlier export, so it is never deleted.
+    /// Either way the new image is written.
+    @Test func staleNumberedImagesAreKeptAndReportedWithAndWithoutForce() throws {
         let (root, input) = try Self.scratch(Self.longDocument)
         defer { try? FileManager.default.removeItem(at: root) }
         let long = try CLIProcess.run(["export", input.path, "--format", "png", "--width", "600", "--json"], in: root)
         #expect(long.status == 0, "\(long.stderr)")
         let numbered = try #require(try long.jsonObject()["images"] as? [[String: Any]]).compactMap { $0["path"] as? String }
         try #require(numbered.count > 1, "positive fixture: several images")
+        let originals = try numbered.map { try Data(contentsOf: URL(fileURLWithPath: $0)) }
 
         try Data(Self.document.utf8).write(to: input)
-        let kept = try CLIProcess.run(["export", input.path, "--format", "png", "--json"], in: root)
-        #expect(kept.status == 0, "\(kept.stderr)")
-        let keptWarnings = try #require(try kept.jsonObject()["warnings"] as? [[String: Any]])
-        let stale = keptWarnings.filter { $0["kind"] as? String == "stale_image" }.compactMap { $0["message"] as? String }
-        #expect(stale.count == numbered.count && zip(stale, numbered).allSatisfy { $0.contains($1) }, "\(keptWarnings)")
-        #expect(numbered.allSatisfy { FileManager.default.fileExists(atPath: $0) }, "without --force nothing is removed")
-
-        let forced = try CLIProcess.run(["export", input.path, "--format", "png", "--force", "--json"], in: root)
-        #expect(forced.status == 0, "\(forced.stderr)")
-        let forcedWarnings = try #require(try forced.jsonObject()["warnings"] as? [[String: Any]])
-        let removed = forcedWarnings.filter { $0["kind"] as? String == "stale_image_removed" }.compactMap { $0["message"] as? String }
-        #expect(removed.count == numbered.count && zip(removed, numbered).allSatisfy { $0.contains($1) }, "\(forcedWarnings)")
-        #expect(numbered.allSatisfy { !FileManager.default.fileExists(atPath: $0) }, "the old numbered images are gone")
-        #expect(FileManager.default.fileExists(atPath: root.appendingPathComponent("plan.png").path))
+        for arguments in [["--json"], ["--force", "--json"]] {
+            let run = try CLIProcess.run(["export", input.path, "--format", "png"] + arguments, in: root)
+            #expect(run.status == 0, "\(arguments): \(run.stderr)")
+            let warnings = try #require(try run.jsonObject()["warnings"] as? [[String: Any]])
+            let stale = warnings.filter { $0["kind"] as? String == "stale_image" }.compactMap { $0["message"] as? String }
+            #expect(stale.count == numbered.count && zip(stale, numbered).allSatisfy { $0.contains($1) }, "\(arguments): \(warnings)")
+            #expect(!warnings.contains { ($0["message"] as? String ?? "").localizedCaseInsensitiveContains("remove") }, "\(arguments): \(warnings)")
+            let current = numbered.map { FileManager.default.contents(atPath: $0) }
+            #expect(current == originals.map { Optional($0) }, "\(arguments): the old numbered images are still there, unchanged")
+            #expect(FileManager.default.fileExists(atPath: root.appendingPathComponent("plan.png").path), "\(arguments)")
+        }
     }
 
     @Test func aLongDocumentIsWrittenAsNumberedImages() throws {

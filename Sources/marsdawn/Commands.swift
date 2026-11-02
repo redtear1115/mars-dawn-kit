@@ -1037,7 +1037,7 @@ extension MarsDawnCommand {
             try OutputFile.writeAll(zip(images, checked).map { image, url -> (data: Data, url: URL) in (image.png, url) }, force: force)
 
             let warnings = Self.pngWarnings(diagramErrors: result.diagramErrors, oversizedBlocks: result.oversizedBlocks)
-                + Self.staleImageWarnings(base: base.standardizedFileURL, imageCount: images.count, force: force)
+                + Self.staleImageWarnings(base: base.standardizedFileURL, imageCount: images.count)
             var text = zip(images, checked).map { image, url in
                 "Exported \(url.path) (\(image.width)×\(image.height), lines \(image.firstLine)-\(image.lastLine))"
             }.joined(separator: "\n")
@@ -1083,9 +1083,11 @@ extension MarsDawnCommand {
         /// wrote `base` alone), counted up only while each is there, so an unrelated
         /// `plan-2024.png` beside them is never taken for one. Only a regular file (lstat; never a
         /// symlink) that is a PNG counts: `-o notes.md` must never take the input `notes.md` for
-        /// an image. With `force` each is removed (`stale_image_removed`); without, each stays and
-        /// is a `stale_image` warning. Call it after this run's images are written.
-        static func staleImageWarnings(base: URL, imageCount: Int, force: Bool) -> [[String: Any]] {
+        /// an image. Each is a `stale_image` warning and is never removed, with or without
+        /// `--force`: a name and a PNG signature can't prove a file came from an earlier export, so
+        /// it may be the user's own. `--force` only replaces this run's own destinations. Call it
+        /// after this run's images are written.
+        static func staleImageWarnings(base: URL, imageCount: Int) -> [[String: Any]] {
             var stale: [URL] = []
             if imageCount > 1, isPNGFile(base) { stale.append(base) }
             var number = imageCount > 1 ? imageCount + 1 : 1
@@ -1094,13 +1096,7 @@ extension MarsDawnCommand {
                 number += 1
             }
             return stale.map { url -> [String: Any] in
-                guard force else {
-                    return ["kind": "stale_image", "message": "\(url.path) is left from an earlier export; pass --force to remove it."]
-                }
-                guard unlink(url.path) == 0 else {
-                    return ["kind": "stale_image", "message": "\(url.path) is left from an earlier export, and couldn’t be removed."]
-                }
-                return ["kind": "stale_image_removed", "message": "Removed \(url.path), left from an earlier export with more images."]
+                ["kind": "stale_image", "message": "\(url.path) may be left from an earlier export and isn’t part of this one; it was left as it is."]
             }
         }
 
