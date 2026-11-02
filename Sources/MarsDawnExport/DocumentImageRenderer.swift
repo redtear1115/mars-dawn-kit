@@ -16,7 +16,9 @@ import WebKit
 ///    `data-line` to the line before the next block's (the last block runs to the end of the
 ///    file). A block with no `data-line` of its own (the footnotes, which stand at the end) belongs
 ///    to the block before it. With a line range, every block that doesn't overlap it is hidden,
-///    so a block is always shown whole (as Copy for AI widens a selection to whole blocks).
+///    so a block is always shown whole (as Copy for AI widens a selection to whole blocks). A
+///    heading kept with the block after it (`keep-with-next`) is two blocks here, so a range on
+///    the block alone doesn't bring in its heading (kit #246); the pair is still never cut apart.
 /// 2. The page is laid out at `width` CSS pixels and measured.
 /// 3. It is cut into images of at most `maxHeight` pixels, each cut halfway into the gap between
 ///    two top-level blocks, never inside one: a table, a code block or a diagram is never split
@@ -256,12 +258,35 @@ package enum DocumentImageRenderer {
     /// Marks every top-level block of `#content` with the lines it covers (`data-md-first`,
     /// `data-md-last`) and hides the ones outside `lower...upper`. Only numbers this function was
     /// given go into the script; nothing from the document does.
+    ///
+    /// A heading and the short block after it are one top-level `div.keep-with-next`
+    /// (`DocumentExporter`'s keep-with-next, which may nest: a heading, then a subheading kept with
+    /// its block). Such a wrapper is a group, not a block (kit #246): each of its children gets
+    /// lines of its own by the same rules as a top-level block, and the ones outside the range are
+    /// hidden, so `--lines` on a table under a heading shows the table without the heading. The
+    /// wrapper is hidden only when none of its children is shown, and its lines are those of its
+    /// shown children, so the lines reported are only what the image shows. The wrapper stays
+    /// the top-level block that slicing sees, so a cut never falls inside it.
     package static func selectBlocksScript(lineCount: Int, lower: Int, upper: Int) -> String {
         """
         (() => {
           const content = document.getElementById("content");
           if (!content) return 0;
-          const blocks = [...content.children];
+          // The blocks that get lines of their own, in page order: the top-level children, each
+          // keep-with-next wrapper replaced by its children. A wrapper goes into `groups` after
+          // its children, so a wrapper inside another is settled before the one around it.
+          const isGroup = (el) => el.tagName === "DIV" && el.classList.contains("keep-with-next");
+          const blocks = [];
+          const groups = [];
+          const collect = (el) => {
+            if (isGroup(el)) {
+              for (const child of el.children) collect(child);
+              groups.push(el);
+            } else {
+              blocks.push(el);
+            }
+          };
+          for (const el of content.children) collect(el);
           const lineOf = (el) => {
             const own = el.getAttribute("data-line") ?? el.querySelector("[data-line]")?.getAttribute("data-line");
             const n = Number(own);
@@ -286,6 +311,17 @@ package enum DocumentImageRenderer {
             blocks[i].dataset.mdFirst = String(first);
             blocks[i].dataset.mdLast = String(last);
             if (first > \(upper) || last < \(lower)) blocks[i].style.display = "none";
+          }
+          // A group is shown while any of its children is (a child already hidden, such as a
+          // page-break marker, doesn't count), with the lines of the children shown.
+          for (const group of groups) {
+            const shown = [...group.children].filter((el) => el.style.display !== "none" && el.dataset.mdFirst);
+            if (shown.length === 0) {
+              group.style.display = "none";
+              continue;
+            }
+            group.dataset.mdFirst = String(Math.min(...shown.map((el) => Number(el.dataset.mdFirst))));
+            group.dataset.mdLast = String(Math.max(...shown.map((el) => Number(el.dataset.mdLast))));
           }
           return 0;
         })()

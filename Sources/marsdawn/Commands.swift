@@ -1028,16 +1028,16 @@ extension MarsDawnCommand {
                 throw CLIFailure(code: .exportFailed, message: "Export failed: \(error.localizedDescription)")
             }
 
-            // Every destination is checked before any is written, so a refused one leaves none.
+            // Every destination is checked before any is written, so a refused one leaves none,
+            // and they are written as one (kit #246), so a failure part-way leaves none either.
             let base = pngDestination(for: input)
             let images = result.images
             let destinations = images.count == 1 ? [base] : images.indices.map { Self.numbered(base, $0 + 1) }
             let checked = try destinations.map { try OutputFile.check($0.path, force: force, command: "export") }
-            for (image, url) in zip(images, checked) {
-                try OutputFile.write(image.png, to: url, force: force)
-            }
+            try OutputFile.writeAll(zip(images, checked).map { image, url -> (data: Data, url: URL) in (image.png, url) }, force: force)
 
             let warnings = Self.pngWarnings(diagramErrors: result.diagramErrors, oversizedBlocks: result.oversizedBlocks)
+                + Self.staleImageWarnings(base: base.standardizedFileURL, imageCount: images.count)
             var text = zip(images, checked).map { image, url in
                 "Exported \(url.path) (\(image.width)×\(image.height), lines \(image.firstLine)-\(image.lastLine))"
             }.joined(separator: "\n")
@@ -1073,6 +1073,45 @@ extension MarsDawnCommand {
                     "message": "The block on line \(line) is taller than \(DocumentImageRenderer.maxHeight) pixels; its image is as tall as it is.",
                 ]
             }
+        }
+
+        /// Images an earlier export to the same name left beside this run's (kit #246): after a
+        /// run that wrote `plan-1.png`…`plan-5.png`, one that writes three would leave
+        /// `plan-4.png` and `plan-5.png` there, read as part of the new set, and one that writes
+        /// `plan.png` would leave all five. Those are `base` itself when this run wrote numbered
+        /// images, and the numbered names after the last one this run wrote (from `-1` when it
+        /// wrote `base` alone), counted up only while each is there, so an unrelated
+        /// `plan-2024.png` beside them is never taken for one. Only a regular file (lstat; never a
+        /// symlink) that is a PNG counts: `-o notes.md` must never take the input `notes.md` for
+        /// an image. Each is a `stale_image` warning and is never removed, with or without
+        /// `--force`: a name and a PNG signature can't prove a file came from an earlier export, so
+        /// it may be the user's own. `--force` only replaces this run's own destinations. Call it
+        /// after this run's images are written.
+        static func staleImageWarnings(base: URL, imageCount: Int) -> [[String: Any]] {
+            var stale: [URL] = []
+            if imageCount > 1, isPNGFile(base) { stale.append(base) }
+            var number = imageCount > 1 ? imageCount + 1 : 1
+            while isPNGFile(numbered(base, number)) {
+                stale.append(numbered(base, number))
+                number += 1
+            }
+            return stale.map { url -> [String: Any] in
+                ["kind": "stale_image", "message": "\(url.path) may be left from an earlier export and isn’t part of this one; it was left as it is."]
+            }
+        }
+
+        /// A regular file (not a symlink, which is never opened) that starts with PNG's signature.
+        static func isPNGFile(_ url: URL) -> Bool {
+            var info = stat()
+            guard lstat(url.path, &info) == 0, info.st_mode & S_IFMT == S_IFREG else { return false }
+            let fd = open(url.path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
+            guard fd >= 0 else { return false }
+            defer { close(fd) }
+            var after = stat()
+            guard fstat(fd, &after) == 0, after.st_mode & S_IFMT == S_IFREG else { return false }
+            var bytes = [UInt8](repeating: 0, count: 8)
+            let count = bytes.withUnsafeMutableBytes { Darwin.read(fd, $0.baseAddress, 8) }
+            return count == 8 && bytes == [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]
         }
     }
 }
@@ -1385,7 +1424,8 @@ struct OutputPathFailure: Error, CustomStringConvertible {
 /// through a symlink. The bytes go to a new file made with `O_CREAT | O_EXCL | O_NOFOLLOW` beside
 /// the destination, which is then renamed over it -- `rename` replaces the directory entry and
 /// never follows a link there, and without `--force` the rename is exclusive (`RENAME_EXCL`), so
-/// a file that appears in the meantime is not replaced either.
+/// a file that appears in the meantime is not replaced either. Several files written together
+/// (`writeAll`) are all staged before any is renamed (kit #246).
 enum OutputFile {
     static func check(_ path: String, force: Bool, command: String = "theme preview") throws -> URL {
         let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath).standardizedFileURL
@@ -1411,6 +1451,54 @@ enum OutputFile {
     }
 
     static func write(_ data: Data, to url: URL, force: Bool) throws {
+        let temporary = try stage(data, beside: url)
+        try commit(temporary, to: url, force: force)
+    }
+
+    /// Writes several files as one (kit #246), for `export --format png`'s numbered images: a
+    /// failure part-way leaves none of this run's files behind, where writing them one by one
+    /// left `plan-1.png` and `plan-2.png` beside nothing after a failed `plan-3.png`. Every item
+    /// is first staged in its own temporary file (as `write` does); if one can't be, every
+    /// temporary of this run is removed and nothing has been renamed. Only when all are staged are
+    /// they renamed into place, each as `write` would (`RENAME_EXCL` without `force`). If a rename
+    /// fails, the destinations this run already created (those that weren't there before) are
+    /// removed and the remaining temporaries too; a file `--force` already replaced can't be put
+    /// back. `failStaging` is for tests: it makes staging the item at that index (from 0) fail.
+    static func writeAll(_ items: [(data: Data, url: URL)], force: Bool, failStaging: ((Int) -> Bool)? = nil) throws {
+        var staged: [URL] = []
+        for (index, item) in items.enumerated() {
+            do {
+                if failStaging?(index) == true {
+                    throw CLIFailure(code: .exportFailed, message: "Couldn’t write beside \(item.url.path).")
+                }
+                staged.append(try stage(item.data, beside: item.url))
+            } catch {
+                for temporary in staged { unlink(temporary.path) }
+                throw error
+            }
+        }
+        var created: [URL] = []
+        for (index, item) in items.enumerated() {
+            var info = stat()
+            let existed = lstat(item.url.path, &info) == 0
+            do {
+                try commit(staged[index], to: item.url, force: force)
+            } catch {
+                // Only a regular file is removed: a symlink put there since is someone else's.
+                for url in created {
+                    var current = stat()
+                    if lstat(url.path, &current) == 0, current.st_mode & S_IFMT == S_IFREG { unlink(url.path) }
+                }
+                for temporary in staged[(index + 1)...] { unlink(temporary.path) }
+                throw error
+            }
+            if !existed { created.append(item.url) }
+        }
+    }
+
+    /// Writes `data` to a new temporary file beside `url` (`.name.UUID.tmp`, made with
+    /// `O_CREAT | O_EXCL | O_NOFOLLOW`) and returns it. On failure nothing is left.
+    private static func stage(_ data: Data, beside url: URL) throws -> URL {
         let folder = url.deletingLastPathComponent()
         let temporary = folder.appendingPathComponent(".\(url.lastPathComponent).\(UUID().uuidString).tmp")
         let fd = open(temporary.path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0o644)
@@ -1434,6 +1522,12 @@ enum OutputFile {
             unlink(temporary.path)
             throw CLIFailure(code: .exportFailed, message: "Couldn’t write beside \(url.path).")
         }
+        return temporary
+    }
+
+    /// Renames a staged `temporary` over `url`, exclusively without `force`. On failure the
+    /// temporary is removed.
+    private static func commit(_ temporary: URL, to url: URL, force: Bool) throws {
         let renamed = force
             ? rename(temporary.path, url.path)
             : renamex_np(temporary.path, url.path, UInt32(RENAME_EXCL))

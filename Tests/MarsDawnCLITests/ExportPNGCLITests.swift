@@ -103,12 +103,31 @@ struct ExportPNGCLITests {
     @Test func linesAreWidenedToWholeBlocks() throws {
         let (root, input) = try Self.scratch()
         defer { try? FileManager.default.removeItem(at: root) }
-        // Line 8 is the table's delimiter row: the whole table, with its heading, which the page
-        // keeps with a short block after it (`keep-with-next`), and nothing else.
+        // Line 8 is the table's delimiter row: the whole table, which runs to the line before the
+        // next heading, and nothing else. Not its heading, although the page keeps the two together
+        // (`keep-with-next`) (kit #246).
         let run = try CLIProcess.run(["export", input.path, "--format", "png", "--lines", "8-8", "--json"], in: root)
         #expect(run.status == 0, "\(run.stderr)")
         let images = try #require(try run.jsonObject()["images"] as? [[String: Any]])
-        #expect(images.first?["lines"] as? String == "5-10", "\(images)")
+        #expect(images.first?["lines"] as? String == "7-10", "\(images)")
+    }
+
+    /// `--lines` on the table alone draws the table without the heading kept with it (kit #246):
+    /// its image is shorter than the one of the heading and the table, and reports only the table's
+    /// lines.
+    @Test func aTableRangeShowsOnlyTheTable() throws {
+        let (root, input) = try Self.scratch()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let table = try CLIProcess.run(["export", input.path, "--format", "png", "--lines", "7-9", "-o", "table.png", "--json"], in: root)
+        #expect(table.status == 0, "\(table.stderr)")
+        let tableImage = try #require((try table.jsonObject()["images"] as? [[String: Any]])?.first)
+        #expect(tableImage["lines"] as? String == "7-10", "\(tableImage)")
+        let both = try CLIProcess.run(["export", input.path, "--format", "png", "--lines", "5-9", "-o", "both.png", "--json"], in: root)
+        #expect(both.status == 0, "\(both.stderr)")
+        let bothImage = try #require((try both.jsonObject()["images"] as? [[String: Any]])?.first)
+        #expect(bothImage["lines"] as? String == "5-10", "\(bothImage)")
+        let tableHeight = try #require(tableImage["height"] as? Int), bothHeight = try #require(bothImage["height"] as? Int)
+        #expect(tableHeight < bothHeight, "the table alone (\(tableHeight) px) is shorter than heading and table (\(bothHeight) px)")
     }
 
     @Test func aHeadingThatIsNotThereExitsTwoAndWritesNothing() throws {
@@ -207,13 +226,46 @@ struct ExportPNGCLITests {
         #expect(missing.status == 2)
     }
 
-    @Test func aLongDocumentIsWrittenAsNumberedImages() throws {
+    /// A document tall enough at 600 px to be cut into several images.
+    static let longDocument: String = {
         var markdown = "# Long\n\n"
         for section in 1...14 {
             markdown += "## Section \(section)\n\n| k | v |\n|---|---|\n"
             markdown += (1...30).map { "| row\($0) | \($0) |" }.joined(separator: "\n") + "\n\n```\n"
             markdown += (1...30).map { "code line \($0)" }.joined(separator: "\n") + "\n```\n\n"
         }
+        return markdown
+    }()
+
+    /// A shorter export over a longer one's numbered images (kit #246): with or without --force
+    /// they stay, contents unchanged, and each is a `stale_image` warning. A name and a PNG
+    /// signature can't prove the file came from an earlier export, so it is never deleted.
+    /// Either way the new image is written.
+    @Test func staleNumberedImagesAreKeptAndReportedWithAndWithoutForce() throws {
+        let (root, input) = try Self.scratch(Self.longDocument)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let long = try CLIProcess.run(["export", input.path, "--format", "png", "--width", "600", "--json"], in: root)
+        #expect(long.status == 0, "\(long.stderr)")
+        let numbered = try #require(try long.jsonObject()["images"] as? [[String: Any]]).compactMap { $0["path"] as? String }
+        try #require(numbered.count > 1, "positive fixture: several images")
+        let originals = try numbered.map { try Data(contentsOf: URL(fileURLWithPath: $0)) }
+
+        try Data(Self.document.utf8).write(to: input)
+        for arguments in [["--json"], ["--force", "--json"]] {
+            let run = try CLIProcess.run(["export", input.path, "--format", "png"] + arguments, in: root)
+            #expect(run.status == 0, "\(arguments): \(run.stderr)")
+            let warnings = try #require(try run.jsonObject()["warnings"] as? [[String: Any]])
+            let stale = warnings.filter { $0["kind"] as? String == "stale_image" }.compactMap { $0["message"] as? String }
+            #expect(stale.count == numbered.count && zip(stale, numbered).allSatisfy { $0.contains($1) }, "\(arguments): \(warnings)")
+            #expect(!warnings.contains { ($0["message"] as? String ?? "").localizedCaseInsensitiveContains("remove") }, "\(arguments): \(warnings)")
+            let current = numbered.map { FileManager.default.contents(atPath: $0) }
+            #expect(current == originals.map { Optional($0) }, "\(arguments): the old numbered images are still there, unchanged")
+            #expect(FileManager.default.fileExists(atPath: root.appendingPathComponent("plan.png").path), "\(arguments)")
+        }
+    }
+
+    @Test func aLongDocumentIsWrittenAsNumberedImages() throws {
+        let markdown = Self.longDocument
         let (root, input) = try Self.scratch(markdown)
         defer { try? FileManager.default.removeItem(at: root) }
         let run = try CLIProcess.run(["export", input.path, "--format", "png", "--width", "600", "--json"], in: root)
