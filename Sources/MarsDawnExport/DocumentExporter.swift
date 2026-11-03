@@ -517,6 +517,8 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
     ///     (#100).
     ///   - softBreaksAsLineBreaks: Likewise (#129).
     ///   - calloutTitles: Likewise (#135): the default titles of callouts in the printed page.
+    ///   - details: Whether every `<details>` prints open (`.expand`, the default) or only the
+    ///     ones open in the rendered page (`.asWritten`), mars-dawn#300. See `DetailsMode`.
     @discardableResult
     public static func run(
         markdown: String,
@@ -736,6 +738,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
     ///     (#100).
     ///   - softBreaksAsLineBreaks: Likewise (#129).
     ///   - calloutTitles: Likewise (#135): the default titles of callouts in the PDF.
+    ///   - details: Likewise: what happens to collapsible blocks (`DetailsMode`, mars-dawn#300).
     ///   - displayName: The handout layout's document name (S3 of mars-dawn#432), for its
     ///     footer and, without a front-matter title, its header: a file name without its
     ///     extension, never a path. Nil leaves the name out. Other layouts ignore it.
