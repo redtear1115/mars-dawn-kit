@@ -393,8 +393,6 @@ img { max-width: 100%; }
   right: 4px;
   z-index: 1;
   padding: 0 6px;
-  border-radius: var(--radius);
-  background: var(--surface);
   font-family: var(--font-body);
   font-size: 12px;
   line-height: 20px;
@@ -405,7 +403,6 @@ img { max-width: 100%; }
   display: block;
   width: 100%;
   padding: 0;
-  background: none;
   text-align: left;
   font-size: 13px;
   white-space: nowrap;
@@ -413,14 +410,9 @@ img { max-width: 100%; }
 .md-block-collapsed > .md-fold-block::before { content: "▸ " attr(data-summary); }
 :hover > .md-fold-toggle, :hover > .md-fold-block, .md-fold-toggle:focus-visible, .md-fold-block:focus-visible,
 .md-fold-toggle[aria-expanded="false"], .md-block-collapsed > .md-fold-block { opacity: 1; }
-.md-fold-toggle:hover, .md-fold-block:hover { color: var(--accent); }
 @media (prefers-reduced-motion: no-preference) {
   .md-fold-toggle, .md-fold-block { transition: opacity 0.15s ease; }
 }
-@media print {
-  .md-fold-toggle, .md-fold-block { display: none !important; }
-}
-
 /* ---- Print and PDF export: light palette on white paper, paginated ----
    The page tint would stop where the content ends, so the paper stays white;
    code, tables and quotes keep their surface tones. Margins come from NSPrintInfo. */
@@ -478,5 +470,7 @@ img { max-width: 100%; }
   a:hover { text-decoration: none; }
   .image-placeholder button { display: none; }
   .remote-images-bar { display: none !important; }
+  /* Viewer folding (mars-dawn#300): print is the file, so no control shows. */
+  .md-fold-toggle, .md-fold-block { display: none !important; }
   .mermaid-block.stale .mermaid-output { opacity: 1; }
 }
