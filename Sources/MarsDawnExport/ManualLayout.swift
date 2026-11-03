@@ -172,7 +172,9 @@ enum ManualLayout {
       content.before(cover);
       state.cover = cover;
     }
-    const headings = [...content.querySelectorAll("h1[id], h2[id]")].filter((h) => !h.closest("details.front-matter"));
+    // A heading in a closed `<details>` doesn't print (front matter; any other only in the
+    // as-written export, mars-dawn#300), so it has no page to list.
+    const headings = [...content.querySelectorAll("h1[id], h2[id]")].filter((h) => !h.closest("details.front-matter, details:not([open])"));
     // Read before the anchors below go in.
     const texts = headings.map((h) => {
       const clone = h.cloneNode(true);

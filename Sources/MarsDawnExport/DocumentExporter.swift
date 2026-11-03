@@ -74,6 +74,8 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
     private var pageLoad: CheckedContinuation<Void, Error>?
     private let allowRemoteImages: Bool
     let layout: ExportLayout
+    /// What `prepare` does with the page's `<details>` (mars-dawn#300).
+    let details: DetailsMode
     private var templateSignpost: OSSignpostIntervalState?
 
     /// - Parameters:
@@ -85,11 +87,16 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
     ///   - scopeRoot: The folder images may be read from, which must contain `baseDirectory`: a
     ///     folder the user granted, so `../` images above the document load as they do in the
     ///     app's preview. Nil, the default, is the document's own folder, as before.
-    init(baseDirectory: URL?, allowRemoteImages: Bool, width: CGFloat = 700, scopeRoot: URL? = nil, layout: ExportLayout = .document) {
+    ///   - details: Whether every `<details>` is opened (the default) or left as rendered.
+    init(
+        baseDirectory: URL?, allowRemoteImages: Bool, width: CGFloat = 700, scopeRoot: URL? = nil, layout: ExportLayout = .document,
+        details: DetailsMode = .expand
+    ) {
         assets.baseDirectory = baseDirectory
         assets.scopeRoot = scopeRoot
         self.allowRemoteImages = allowRemoteImages
         self.layout = layout
+        self.details = details
         let configuration = PreviewWebView.makeConfiguration(assets: assets)
         configuration.preferences.shouldPrintBackgrounds = true
         webView = PreviewWKWebView(frame: NSRect(x: 0, y: 0, width: width, height: 1000), configuration: configuration)
@@ -207,12 +214,14 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
             defer { Self.signposter.endInterval("push", pushSignpost) }
             _ = try await webView.evaluateJavaScript(updateScript)
         }
-        // A collapsed `<details>` prints nothing of its body, so a PDF would lose it. Open every
-        // one, before the wait so that diagrams and images inside get laid out. The script is
-        // constant: nothing from the document goes into it. An exclusive group (`name`) lets only
-        // one of its members stay open, so the name goes first. Front matter is left as it is
-        // (print CSS hides it).
-        _ = try await webView.evaluateJavaScript(Self.openAllDetailsScript)
+        // A collapsed `<details>` prints nothing of its body, so a PDF would lose it. `.expand`
+        // opens every one, before the wait so that diagrams and images inside get laid out.
+        // `.asWritten` leaves each as rendered and marks the page so print CSS doesn't open the
+        // closed ones (preview.css: a reader's ⌘P prints them open). The script is constant:
+        // nothing from the document goes into it. An exclusive group (`name`) lets only one of
+        // its members stay open, so the name goes first, in both modes. Front matter is left as
+        // it is (print CSS hides it).
+        _ = try await webView.evaluateJavaScript(Self.detailsScript(details))
         try await waitForContent(until: deadline)
         // JSON-encoded in JS so an unknown fenceLine/line can be genuinely absent from each
         // object, rather than `null`, matching what `DiagramError` expects to decode.
@@ -237,15 +246,23 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         _ = try? await webView.evaluateJavaScript(Self.pageBreaksScript(manual: layout == .manual))
     }
 
-    private static let openAllDetailsScript = """
-    (() => {
-      for (const details of document.querySelectorAll("details:not(.front-matter)")) {
-        details.removeAttribute("name");
-        details.setAttribute("open", "");
-      }
-      return 0;
-    })()
-    """
+    /// The class on `<html>` that keeps print CSS from opening closed `<details>` (`.asWritten`).
+    /// The document can't set it: its HTML goes inside `#content`.
+    static let detailsAsWrittenClass = "marsdawn-details-as-written"
+
+    static func detailsScript(_ mode: DetailsMode) -> String {
+        let expand = mode == .expand
+        return """
+        (() => {
+          document.documentElement.classList.toggle("\(detailsAsWrittenClass)", \(expand ? "false" : "true"));
+          for (const details of document.querySelectorAll("details:not(.front-matter)")) {
+            details.removeAttribute("name");
+            if (\(expand ? "true" : "false")) details.setAttribute("open", "");
+          }
+          return 0;
+        })()
+        """
+    }
 
     /// Wraps each heading with the block that follows it, so a page never ends on a heading.
     /// A heading followed by a subheading is decided after it, so the pair is kept with the text
@@ -510,6 +527,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         footnoteBackLabel: String = MarkdownRenderer.Options().footnoteBackLabel,
         softBreaksAsLineBreaks: Bool = false,
         layout: ExportLayout = .document,
+        details: DetailsMode = .expand,
         tocTitle: String = "Contents",
         displayName: String? = nil,
         calloutTitles: CalloutTitles? = nil,
@@ -520,7 +538,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         try await runReportingDiagrams(
             markdown: markdown, theme: theme, baseDirectory: baseDirectory, allowRemoteImages: allowRemoteImages,
             scopeRoot: scopeRoot, footnoteBackLabel: footnoteBackLabel, softBreaksAsLineBreaks: softBreaksAsLineBreaks,
-            layout: layout, tocTitle: tocTitle, displayName: displayName, calloutTitles: calloutTitles, printInfo: printInfo, window: window, configure: configure
+            layout: layout, details: details, tocTitle: tocTitle, displayName: displayName, calloutTitles: calloutTitles, printInfo: printInfo, window: window, configure: configure
         ).completed
     }
 
@@ -541,6 +559,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         footnoteBackLabel: String = MarkdownRenderer.Options().footnoteBackLabel,
         softBreaksAsLineBreaks: Bool = false,
         layout: ExportLayout = .document,
+        details: DetailsMode = .expand,
         tocTitle: String = "Contents",
         displayName: String? = nil,
         calloutTitles: CalloutTitles? = nil,
@@ -551,7 +570,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         let result = try await runReportingDiagramDetails(
             markdown: markdown, theme: theme, baseDirectory: baseDirectory, allowRemoteImages: allowRemoteImages,
             scopeRoot: scopeRoot, footnoteBackLabel: footnoteBackLabel, softBreaksAsLineBreaks: softBreaksAsLineBreaks,
-            layout: layout, tocTitle: tocTitle, displayName: displayName, calloutTitles: calloutTitles, printInfo: printInfo, window: window, configure: configure
+            layout: layout, details: details, tocTitle: tocTitle, displayName: displayName, calloutTitles: calloutTitles, printInfo: printInfo, window: window, configure: configure
         )
         return (result.completed, result.diagramErrors)
     }
@@ -567,6 +586,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         footnoteBackLabel: String = MarkdownRenderer.Options().footnoteBackLabel,
         softBreaksAsLineBreaks: Bool = false,
         layout: ExportLayout = .document,
+        details: DetailsMode = .expand,
         tocTitle: String = "Contents",
         displayName: String? = nil,
         calloutTitles: CalloutTitles? = nil,
@@ -577,7 +597,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         try await runReportingDiagramDetails(
             markdown: markdown, theme: theme, baseDirectory: baseDirectory, allowRemoteImages: allowRemoteImages,
             scopeRoot: scopeRoot, footnoteBackLabel: footnoteBackLabel, softBreaksAsLineBreaks: softBreaksAsLineBreaks,
-            layout: layout, tocTitle: tocTitle, displayName: displayName, calloutTitles: calloutTitles, printInfo: printInfo, window: window, inspect: nil, configure: configure
+            layout: layout, details: details, tocTitle: tocTitle, displayName: displayName, calloutTitles: calloutTitles, printInfo: printInfo, window: window, inspect: nil, configure: configure
         )
     }
 
@@ -595,6 +615,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         footnoteBackLabel: String = MarkdownRenderer.Options().footnoteBackLabel,
         softBreaksAsLineBreaks: Bool = false,
         layout: ExportLayout = .document,
+        details: DetailsMode = .expand,
         tocTitle: String = "Contents",
         displayName: String? = nil,
         calloutTitles: CalloutTitles? = nil,
@@ -608,7 +629,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         let printableWidth = layout.printableWidth(paperWidth: printInfo.paperSize.width)
         let exporter = DocumentExporter(
             baseDirectory: baseDirectory, allowRemoteImages: allowRemoteImages, width: printableWidth,
-            scopeRoot: scopeRoot, layout: layout
+            scopeRoot: scopeRoot, layout: layout, details: details
         )
         active.insert(exporter)
         defer { active.remove(exporter) }
@@ -729,6 +750,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         footnoteBackLabel: String = MarkdownRenderer.Options().footnoteBackLabel,
         softBreaksAsLineBreaks: Bool = false,
         layout: ExportLayout = .document,
+        details: DetailsMode = .expand,
         tocTitle: String = "Contents",
         displayName: String? = nil,
         calloutTitles: CalloutTitles? = nil
@@ -737,7 +759,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
             markdown: markdown, to: url, theme: theme, baseDirectory: baseDirectory,
             allowRemoteImages: allowRemoteImages, paper: paper, scopeRoot: scopeRoot,
             footnoteBackLabel: footnoteBackLabel, softBreaksAsLineBreaks: softBreaksAsLineBreaks,
-            layout: layout, tocTitle: tocTitle, displayName: displayName, calloutTitles: calloutTitles, inspect: nil
+            layout: layout, details: details, tocTitle: tocTitle, displayName: displayName, calloutTitles: calloutTitles, inspect: nil
         )
     }
 
@@ -753,6 +775,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         footnoteBackLabel: String = MarkdownRenderer.Options().footnoteBackLabel,
         softBreaksAsLineBreaks: Bool = false,
         layout: ExportLayout = .document,
+        details: DetailsMode = .expand,
         tocTitle: String = "Contents",
         displayName: String? = nil,
         calloutTitles: CalloutTitles? = nil,
@@ -765,7 +788,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         let result = try await runReportingDiagramDetails(
             markdown: markdown, theme: theme, baseDirectory: baseDirectory,
             allowRemoteImages: allowRemoteImages, scopeRoot: scopeRoot, footnoteBackLabel: footnoteBackLabel,
-            softBreaksAsLineBreaks: softBreaksAsLineBreaks, layout: layout, tocTitle: tocTitle, displayName: displayName,
+            softBreaksAsLineBreaks: softBreaksAsLineBreaks, layout: layout, details: details, tocTitle: tocTitle, displayName: displayName,
             calloutTitles: calloutTitles, printInfo: printInfo, window: nil, inspect: inspect, hooks: hooks
         ) { info, operation in
             info.jobDisposition = .save
