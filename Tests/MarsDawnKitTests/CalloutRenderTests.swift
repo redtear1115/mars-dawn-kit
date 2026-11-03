@@ -77,7 +77,6 @@ struct CalloutRenderTests {
              html: "<p data-line=\"1\">:::info</p>\n<ul data-line=\"2\">\n<li data-line=\"2\">a\n:::\n</li>\n<li data-line=\"4\">b\n</li>\n</ul>\n"),
         Case(name: "more lazy text follows the absorbed closer", source: ":::info\n- a\n:::\nmore",
              html: "<p data-line=\"1\">:::info</p>\n<ul data-line=\"2\">\n<li data-line=\"2\">a\n:::\nmore\n</li>\n</ul>\n"),
-        Case(name: "spoiler without a title", source: ":::spoiler\nx\n:::", html: "<p data-line=\"1\">:::spoiler\nx\n:::</p>\n"),
         Case(name: "outer opener never closed", source: ":::info\n:::warning\nx\n:::",
              html: "<p data-line=\"1\">:::info</p>\n" + callout("warning", line: 2, "<p data-line=\"3\">x</p>\n")),
         // Kit #189: a marker written with an escape or an entity is text, as in HackMD.
@@ -91,8 +90,62 @@ struct CalloutRenderTests {
              html: "<blockquote data-line=\"1\">\n<p data-line=\"1\">:::info\nx\n:::</p>\n</blockquote>\n"),
         Case(name: "a title with math is not a marker", source: ":::info $x^2$\nx\n:::",
              html: "<p data-line=\"1\">:::info <span class=\"math-inline\">x^2</span>\nx\n:::</p>\n"),
-        Case(name: "a title with formatting is not a marker", source: ":::info **b**\nx\n:::",
-             html: "<p data-line=\"1\">:::info <strong>b</strong>\nx\n:::</p>\n"),
+
+        // Kit #300: HackMD spoilers in full.
+        Case(name: "spoiler without a title has no summary", source: ":::spoiler\nx\n:::",
+             html: "<details data-line=\"1\">\n<p data-line=\"2\">x</p>\n</details>\n"),
+        Case(name: "spoiler state open with a title", source: ":::spoiler {state=\"open\"} Title\nx\n:::",
+             html: "<details data-line=\"1\" open>\n<summary>Title</summary>\n<p data-line=\"2\">x</p>\n</details>\n"),
+        Case(name: "spoiler state open without a title", source: ":::spoiler {state=\"open\"}\nx\n:::",
+             html: "<details data-line=\"1\" open>\n<p data-line=\"2\">x</p>\n</details>\n"),
+        Case(name: "spoiler state open in single quotes", source: ":::spoiler {state='open'} T\nx\n:::",
+             html: "<details data-line=\"1\" open>\n<summary>T</summary>\n<p data-line=\"2\">x</p>\n</details>\n"),
+        Case(name: "another state is title text", source: ":::spoiler {state=\"closed\"} T\nx\n:::",
+             html: "<details data-line=\"1\">\n<summary>{state=\u{201C}closed\u{201D}} T</summary>\n<p data-line=\"2\">x</p>\n</details>\n"),
+        Case(name: "state open written with curly quotes is title text", source: ":::spoiler {state=\u{201C}open\u{201D}} T\nx\n:::",
+             html: "<details data-line=\"1\">\n<summary>{state=\u{201C}open\u{201D}} T</summary>\n<p data-line=\"2\">x</p>\n</details>\n"),
+        Case(name: "state open after the title is title text", source: ":::spoiler T {state=\"open\"}\nx\n:::",
+             html: "<details data-line=\"1\">\n<summary>T {state=\u{201C}open\u{201D}}</summary>\n<p data-line=\"2\">x</p>\n</details>\n"),
+        Case(name: "state open on a callout is title text", source: ":::info {state=\"open\"}\nx\n:::",
+             html: callout("note", title: "<p class=\"callout-title callout-title-author\">{state=\u{201C}open\u{201D}}</p>", "<p data-line=\"2\">x</p>\n")),
+        Case(name: "a title with formatting", source: ":::info **b**\nx\n:::",
+             html: callout("note", title: #"<p class="callout-title callout-title-author"><strong>b</strong></p>"#, "<p data-line=\"2\">x</p>\n")),
+        Case(name: "a spoiler title with emphasis, code and a link", source: ":::spoiler *em* `c` [l](https://a.b) and <b>x</b>\nx\n:::",
+             html: "<details data-line=\"1\">\n<summary><em>em</em> <code>c</code> <a href=\"https://a.b\">l</a> and &lt;b&gt;x&lt;/b&gt;</summary>\n<p data-line=\"2\">x</p>\n</details>\n"),
+        Case(name: "nested spoilers by colon count", source: "::::spoiler Outer\nbefore\n:::spoiler Inner\ninner text\n:::\nF outer after\n::::",
+             html: "<details data-line=\"1\">\n<summary>Outer</summary>\n<p data-line=\"2\">before</p>\n"
+                + "<details data-line=\"3\">\n<summary>Inner</summary>\n<p data-line=\"4\">inner text</p>\n</details>\n"
+                + "<p data-line=\"6\">F outer after</p>\n</details>\n"),
+        Case(name: "nested callouts by colon count", source: "::::info\n:::warning\nx\n:::\ny\n::::",
+             html: callout("note", callout("warning", line: 2, "<p data-line=\"3\">x</p>\n") + "<p data-line=\"5\">y</p>\n")),
+        Case(name: "a shorter closer does not close a longer opener", source: "::::info\nx\n:::",
+             html: "<p data-line=\"1\">::::info\nx\n:::</p>\n"),
+        Case(name: "a shorter closer inside stays literal", source: "::::info\nx\n:::\ny\n::::",
+             html: callout("note", "<p data-line=\"2\">x\n:::\ny</p>\n")),
+        Case(name: "a longer closer closes a shorter opener", source: ":::info\nx\n::::",
+             html: callout("note", "<p data-line=\"2\">x</p>\n")),
+        Case(name: "unknown type with four colons stays literal", source: "::::nope\nx\n::::",
+             html: "<p data-line=\"1\">::::nope\nx\n::::</p>\n"),
+        Case(name: "no space before the state is not a marker", source: ":::spoiler{state=\"open\"}\nx\n:::",
+             html: "<p data-line=\"1\">:::spoiler{state=\u{201C}open\u{201D}}\nx\n:::</p>\n"),
+
+        // Kit #300: Obsidian's foldable callouts.
+        Case(name: "foldable collapsed", source: "> [!note]-\n> body",
+             html: "<details class=\"callout callout-note\" data-line=\"1\">\n<summary class=\"callout-title\"></summary>\n<p data-line=\"2\">body</p>\n</details>\n"),
+        Case(name: "foldable expanded", source: "> [!tip]+\n> body",
+             html: "<details class=\"callout callout-tip\" data-line=\"1\" open>\n<summary class=\"callout-title\"></summary>\n<p data-line=\"2\">body</p>\n</details>\n"),
+        Case(name: "foldable with a title, upper case", source: "> [!WARNING]- Mind *this*\n> body",
+             html: "<details class=\"callout callout-warning\" data-line=\"1\">\n<summary class=\"callout-title callout-title-author\">Mind <em>this</em></summary>\n<p data-line=\"2\">body</p>\n</details>\n"),
+        Case(name: "foldable expanded with a title", source: "> [!Important]+ Read me\n>\n> para",
+             html: "<details class=\"callout callout-important\" data-line=\"1\" open>\n<summary class=\"callout-title callout-title-author\">Read me</summary>\n<p data-line=\"3\">para</p>\n</details>\n"),
+        Case(name: "foldable caution", source: "> [!caution]-\n> body",
+             html: "<details class=\"callout callout-caution\" data-line=\"1\">\n<summary class=\"callout-title\"></summary>\n<p data-line=\"2\">body</p>\n</details>\n"),
+        Case(name: "foldable of another Obsidian type stays a quote", source: "> [!info]-\n> body",
+             html: "<blockquote data-line=\"1\">\n<p data-line=\"1\">[!info]-\nbody</p>\n</blockquote>\n"),
+        Case(name: "foldable sign without a space before the title stays a quote", source: "> [!note]-x\n> body",
+             html: "<blockquote data-line=\"1\">\n<p data-line=\"1\">[!note]-x\nbody</p>\n</blockquote>\n"),
+        Case(name: "a GitHub alert keeps no title", source: "> [!NOTE] Title\n> body",
+             html: "<blockquote data-line=\"1\">\n<p data-line=\"1\">[!NOTE] Title\nbody</p>\n</blockquote>\n"),
     ]
 
     @Test(arguments: cases)
@@ -111,6 +164,21 @@ struct CalloutRenderTests {
     @Test func aDetailsRunInsideACalloutIsGroupedThere() {
         let html = MarkdownRenderer.render(":::info\n\n<details>\n<summary>S</summary>\n\nbody\n\n</details>\n\n:::")
         #expect(html == Self.callout("note", "<div class=\"html-block\" data-line=\"3\"><details>\n<summary>S</summary>\n<p data-line=\"6\">body</p>\n</details>\n</div>\n"))
+    }
+
+    /// A plain GitHub alert is what it was before foldable callouts (#300): main's output at 6ef8ee7.
+    @Test func aPlainAlertIsUnchanged() {
+        #expect(MarkdownRenderer.render("> [!NOTE]\n> body\n> more\n>\n> - item") == "<div class=\"callout callout-note\" data-line=\"1\">\n"
+            + "<p class=\"callout-title\"></p>\n<p data-line=\"2\">body\nmore</p>\n<ul data-line=\"5\">\n<li data-line=\"5\">item\n</li>\n</ul>\n</div>\n")
+    }
+
+    /// A `<details>` run (#414) inside a foldable callout or a spoiler is grouped there, as in a callout.
+    @Test func aDetailsRunInsideAFoldableCalloutIsGroupedThere() {
+        let run = "<div class=\"html-block\" data-line=\"3\"><details>\n<summary>S</summary>\n<p data-line=\"6\">body</p>\n</details>\n</div>\n"
+        let foldable = MarkdownRenderer.render("> [!note]-\n>\n> <details>\n> <summary>S</summary>\n>\n> body\n>\n> </details>")
+        #expect(foldable == "<details class=\"callout callout-note\" data-line=\"1\">\n<summary class=\"callout-title\"></summary>\n" + run + "</details>\n")
+        let spoiler = MarkdownRenderer.render(":::spoiler\n\n<details>\n<summary>S</summary>\n\nbody\n\n</details>\n\n:::")
+        #expect(spoiler == "<details data-line=\"1\">\n" + run + "</details>\n")
     }
 
     /// The rendered HTML never depends on the process's language: the default title is not in it.

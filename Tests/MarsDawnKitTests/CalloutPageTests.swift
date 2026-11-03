@@ -173,5 +173,70 @@ struct CalloutPageTests {
         #expect(try await string("getComputedStyle(document.body).color", in: webView) == Self.rgb("#26211F"))
         #expect(try await string("String(document.querySelectorAll('script').length)", in: webView) == scriptsBefore, "no script element came of a label")
     }
+
+    // MARK: Kit #300: foldable callouts and spoilers
+
+    static let foldDocument = """
+    > [!note]-
+    > collapsed body
+
+    > [!TIP]+ Author *title*
+    > expanded body
+
+    :::spoiler D
+    spoiler d body
+    :::
+
+    :::spoiler {state="open"} E
+    spoiler e body
+    :::
+
+    :::spoiler
+    untitled body
+    :::
+    """
+
+    /// Whether the first element `selector` matches is shown: a closed `<details>` keeps its
+    /// content in the tree, but skips rendering it.
+    private func shown(_ selector: String, in webView: WKWebView) async throws -> Bool {
+        try await string("String(document.querySelector('\(selector)').checkVisibility())", in: webView) == "true"
+    }
+
+    @Test func foldableCalloutsAndSpoilersOpenAsWritten() async throws {
+        let titles = CalloutTitles(note: "附註", tip: "提示", important: "重要", warning: "警告", caution: "小心")
+        let webView = try await load(theme: .dawn, dark: false, markdown: Self.foldDocument, titles: titles)
+        #expect(try await string("String(document.querySelectorAll('details').length)", in: webView) == "5", "positive fixture: five details")
+
+        // `[!note]-`: closed, the localized default title shows, the body does not, the bar is the note's.
+        #expect(try await string("String(document.querySelector('details.callout-note').open)", in: webView) == "false")
+        #expect(try await drawnTitle("note", in: webView) == "附註")
+        #expect(try await string("document.querySelector('details.callout-note > summary.callout-title').textContent", in: webView) == "")
+        #expect(try await shown("details.callout-note > summary", in: webView))
+        #expect(try await !shown("details.callout-note > p", in: webView), "collapsed body hidden")
+        let palette = Dictionary(uniqueKeysWithValues: try #require(PreviewTheme.dawn.validated).light.cssVariables.map { ($0.name, $0.value) })
+        #expect(try await barColour("note", in: webView) == Self.rgb(try #require(palette["accent"])))
+        #expect(try await string("getComputedStyle(document.querySelector('details.callout-note > summary')).fontWeight", in: webView) == "650")
+        #expect(try await string("getComputedStyle(document.querySelector('details.callout-note > summary')).display", in: webView) == "list-item",
+                "the summary keeps its disclosure triangle")
+
+        // `[!TIP]+ Author *title*`: open, the author's title instead of the default, the body shown.
+        #expect(try await string("String(document.querySelector('details.callout-tip').open)", in: webView) == "true")
+        let before = try await string("getComputedStyle(document.querySelector('details.callout-tip > .callout-title'), '::before').content", in: webView)
+        #expect(before == "none" || before == "normal", "no default title beside the author's: \(before)")
+        #expect(try await string("document.querySelector('details.callout-tip > summary').textContent", in: webView) == "Author title")
+        #expect(try await shown("details.callout-tip > p", in: webView))
+
+        // Spoiler D is closed, E open, the untitled one closed with WebKit's own label.
+        let spoilers = "details:not(.callout)"
+        #expect(try await string("String([...document.querySelectorAll('\(spoilers)')].map((d) => d.open))", in: webView) == "false,true,false")
+        #expect(try await string("[...document.querySelectorAll('\(spoilers) > summary')].map((s) => s.textContent).join('|')", in: webView) == "D|E")
+        let bodies = "[...document.querySelectorAll('\(spoilers) > p')].map((p) => String(p.checkVisibility())).join(',')"
+        #expect(try await string(bodies, in: webView) == "false,true,false")
+
+        // Clicking the collapsed callout's title opens it, as any `<details>`.
+        _ = try await webView.callAsyncJavaScript("document.querySelector('details.callout-note > summary').click();", contentWorld: .page)
+        #expect(try await string("String(document.querySelector('details.callout-note').open)", in: webView) == "true")
+        #expect(try await shown("details.callout-note > p", in: webView))
+    }
 }
 #endif

@@ -181,6 +181,16 @@ struct CountMatchesPageTests {
         ":::info Title[^1]\nbody words\n:::\n\n[^1]: note words\n",
         ":::spoiler Title[^1]\nbody words\n:::\n\n[^1]: note words\n",
         ":::info Title words\nbody words\n:::\n",
+        // Kit #300: an opened spoiler shows its body; an untitled one only WebKit's label; a
+        // title's Markdown is its text; colon-count nesting; Obsidian foldables as opened or not.
+        ":::spoiler {state=\"open\"} Open title\nopen body words\n:::\n",
+        ":::spoiler\nhidden untitled words\n:::\n\nShown after.\n",
+        ":::spoiler *Styled* `code` title\nhidden body words\n:::\n\nShown after.\n",
+        "::::spoiler Outer\nouter words\n:::spoiler Inner\ninner words\n:::\nmore outer\n::::\n\nShown after.\n",
+        "::::info\nouter words\n:::warning Inner\ninner words\n:::\n::::\n",
+        "> [!note]- Folded title\n> hidden folded words\n\nShown after.\n",
+        "> [!WARNING]-\n> hidden folded words\n\nShown after.\n",
+        "> [!tip]+ Unfolded *title*\n> shown unfolded words\n",
     ]
 
 

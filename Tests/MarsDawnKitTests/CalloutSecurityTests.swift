@@ -16,8 +16,9 @@ struct CalloutSecurityTests {
         let bytes = Array(html.utf8)
         var found: [Element] = []
         var index = 0
-        let tag = try Regex(#"^<(/?)([a-zA-Z][a-zA-Z0-9]*)((?:\s+[a-zA-Z-]+="[^"<>]*")*)\s*>"#)
-        let attribute = try Regex(#"([a-zA-Z-]+)="([^"]*)""#)
+        // An attribute is `name="value"` or a bare `name` (`open`, kit #300), which reads as "".
+        let tag = try Regex(#"^<(/?)([a-zA-Z][a-zA-Z0-9]*)((?:\s+[a-zA-Z-]+(?:="[^"<>]*")?)*)\s*>"#)
+        let attribute = try Regex(#"([a-zA-Z-]+)(?:="([^"]*)")?"#)
         while index < bytes.count {
             guard bytes[index] == UInt8(ascii: "<") else {
                 index += 1
@@ -66,6 +67,45 @@ struct CalloutSecurityTests {
         }
     }
 
+    /// Kit #300: titles go through the inline path, so Markdown in them is markup; raw HTML in them,
+    /// at the top or inside emphasis or a link, is still escaped text, and a link keeps the
+    /// renderer's URL policy. The same for an Obsidian foldable callout's title.
+    static let hostileMarkdownTitles = [
+        "*</p><script>alert(1)</script>*",
+        "`x` <img src=x onerror=alert(1)>",
+        "[a](javascript:alert(1)) <svg/onload=alert(1)>",
+        "**b <iframe src=x></iframe>** [c](https://x.example \"t\\\" onclick=alert(1)\")",
+        "[<script>alert(1)</script>](https://x.example)",
+    ]
+
+    @Test(arguments: hostileTitles + hostileMarkdownTitles)
+    func aMarkdownTitleCarriesNoRawHTML(_ title: String) throws {
+        let sources = [
+            ":::info \(title)\n\nbody\n\n:::", ":::spoiler \(title)\nbody\n:::", ":::spoiler {state=\"open\"} \(title)\nbody\n:::",
+            "::::warning \(title)\nbody\n::::", "> [!note]- \(title)\n> body", "> [!TIP]+ \(title)\n> body",
+        ]
+        for source in sources {
+            let html = MarkdownRenderer.render(source)
+            let elements = try Self.elements(html)
+            #expect(html.contains("callout") || html.contains("<details"), "positive fixture: \(source.debugDescription) became a container")
+            #expect(elements.map(\.name).allSatisfy { ["div", "p", "details", "summary", "em", "strong", "code", "a"].contains($0) },
+                    "\(source.debugDescription): \(elements.map(\.name))")
+            for tag in ["<script", "<img", "<svg", "<iframe", "onerror=\"", "onclick=\"", "javascript:"] {
+                #expect(!html.contains(tag), "\(tag) in \(source.debugDescription): \(html)")
+            }
+            for element in elements where element.name == "a" {
+                #expect(Set(element.attributes.keys).isSubset(of: ["href", "title"]), "\(element)")
+            }
+        }
+    }
+
+    @Test func aMarkdownTitleIsExactlyItsInlineHTML() {
+        let html = MarkdownRenderer.render("> [!note]- *a* <b onclick=x>b</b>\n> body")
+        #expect(html.contains(#"<summary class="callout-title callout-title-author"><em>a</em> &lt;b onclick=x&gt;b&lt;/b&gt;</summary>"#), "\(html)")
+        let spoiler = MarkdownRenderer.render(":::spoiler `<i>` *</summary><script>x</script>*\nbody\n:::")
+        #expect(spoiler.contains("<summary><code>&lt;i&gt;</code> <em>&lt;/summary&gt;&lt;script&gt;x&lt;/script&gt;</em></summary>"), "\(spoiler)")
+    }
+
     @Test func theTitleIsExactlyTheEscapedText() {
         let html = MarkdownRenderer.render(":::warning </p><script>\nx\n:::")
         #expect(html.contains(#"<p class="callout-title callout-title-author">&lt;/p&gt;&lt;script&gt;</p>"#), "\(html)")
@@ -81,6 +121,10 @@ struct CalloutSecurityTests {
             "callout-title", "callout-title callout-title-author",
         ]
         var sources = Self.hostileTitles.flatMap { [":::info \($0)\nx\n:::", ":::spoiler \($0)\nx\n:::"] }
+        // Kit #300: foldable callouts and spoilers without a title or opened.
+        sources += Self.hostileTitles.flatMap { ["> [!note]- \($0)\n> x", "> [!caution]+ \($0)\n> x", ":::spoiler {state=\"open\"} \($0)\nx\n:::"] }
+        sources += ["note", "TIP", "Important", "warning", "CAUTION"].flatMap { ["> [!\($0)]-\n> body", "> [!\($0)]+\n> body"] }
+        sources += [":::spoiler\nx\n:::", ":::spoiler {state='open'}\nx\n:::", "::::spoiler A\n:::spoiler B\nx\n:::\n::::"]
         sources += ["NOTE", "TIP", "IMPORTANT", "WARNING", "CAUTION"].map { "> [!\($0)]\n> body" }
         sources += [":::success\n- a\n:::", ":::danger Title\n\n> [!TIP]\n> x\n\n:::"]
         var seen = 0
@@ -98,15 +142,20 @@ struct CalloutSecurityTests {
                     #expect(classes.contains(element.attributes["class"] ?? ""), "\(source.debugDescription): \(element)")
                 case "details":
                     seen += 1
-                    #expect(Set(element.attributes.keys).isSubset(of: ["data-line"]), "no author-derived `open` or anything else: \(element)")
+                    // `open` only ever bare: the author chooses whether, never what (kit #300).
+                    #expect(Set(element.attributes.keys).isSubset(of: ["class", "data-line", "open"]), "\(source.debugDescription): \(element)")
+                    #expect(element.attributes["open"].map { $0.isEmpty } ?? true, "\(element)")
+                    #expect(element.attributes["class"].map { classes.contains($0) && $0.hasPrefix("callout ") } ?? true, "\(element)")
                 case "summary":
-                    #expect(element.attributes.isEmpty, "\(element)")
+                    seen += 1
+                    #expect(Set(element.attributes.keys).isSubset(of: ["class"]), "\(element)")
+                    #expect(element.attributes["class"].map { $0.hasPrefix("callout-title") && classes.contains($0) } ?? true, "\(element)")
                 default:
                     break
                 }
             }
         }
-        #expect(seen >= 30, "positive fixture: the walk saw the callout elements (\(seen))")
+        #expect(seen >= 90, "positive fixture: the walk saw the callout elements (\(seen))")
     }
 
     // MARK: Cost
