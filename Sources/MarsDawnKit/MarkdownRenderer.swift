@@ -405,6 +405,8 @@ private struct HTMLVisitor: MarkupVisitor {
     private let calloutSource: Callouts.Source?
     /// Paragraphs that end in a `:::` closer a list absorbed: how many inline children to keep (#135).
     private var trims: [Callouts.Position: Int] = [:]
+    /// Set while a callout or spoiler title is written: raw HTML in it is escaped as text (#300).
+    private var escapingInlineHTML = false
 
     init(options: MarkdownRenderer.Options, lineOffset: Int, math: MathExtractor.Extraction,
          footnotes: FootnoteExtraction, source: String, escapes: EscapeMap = .none, inNote: Bool = false) {
@@ -592,18 +594,40 @@ private struct HTMLVisitor: MarkupVisitor {
     // MARK: Callouts (#135)
 
     /// The start of a callout or a spoiler, with its title element. The type is a fixed class
-    /// string; the only author text is an author title, as escaped text. A default title is
+    /// string; the only author text is an author title (`titleHTML`). A default title is
     /// empty here: the stylesheet draws it, in the page's language (preview.css, setLabels), so the
     /// HTML never depends on the locale.
-    private func calloutOpening(_ opening: Callouts.Opening) -> String {
+    private mutating func calloutOpening(_ opening: Callouts.Opening) -> String {
         switch opening {
         case .callout(let style, let title, let line):
-            let heading = title.map { "<p class=\"callout-title callout-title-author\">\(escapeHTML($0))</p>\n" }
+            let heading = title.map { "<p class=\"callout-title callout-title-author\">\(titleHTML($0))</p>\n" }
                 ?? "<p class=\"callout-title\"></p>\n"
             return "<div class=\"\(style.classAttribute)\"\(lineAttribute(line: line))>\n" + heading
-        case .spoiler(let title, let line):
-            return "<details\(lineAttribute(line: line))>\n<summary>\(escapeHTML(title))</summary>\n"
+        case .spoiler(let title, let open, let line):
+            // No title: no `<summary>`, the same element as a GitHub `<details>` without one (#300).
+            let summary = title.map { "<summary>\(titleHTML($0))</summary>\n" } ?? ""
+            return "<details\(lineAttribute(line: line))\(open ? " open" : "")>\n" + summary
         }
+    }
+
+    /// The start of an Obsidian foldable callout (#300): a `<details>` with the callout's classes,
+    /// its title a `<summary>` with the title's classes, so one set of styles serves both.
+    private mutating func foldableOpening(_ style: Callouts.Style, fold: Callouts.Fold, line: Int?) -> String {
+        let summary = fold.title.map { "<summary class=\"callout-title callout-title-author\">\(titleHTML($0))</summary>\n" }
+            ?? "<summary class=\"callout-title\"></summary>\n"
+        return "<details class=\"\(style.classAttribute)\"\(lineAttribute(line: line))\(fold.open ? " open" : "")>\n" + summary
+    }
+
+    /// An author's title through the inline path, as a paragraph's text would be written, except
+    /// that raw HTML is escaped as text (#300): a title never holds raw HTML.
+    private mutating func titleHTML(_ title: Callouts.Title) -> String {
+        var html = textHTML(title.lead, searchable: false)
+        guard let parent = title.nodes.first?.parent else { return html }
+        let saved = escapingInlineHTML
+        escapingInlineHTML = true
+        defer { escapingInlineHTML = saved }
+        html += visitChildren(parent, children: title.nodes)
+        return html
     }
 
     /// The blocks of a container with its markers applied, in one forward pass: an opener writes
@@ -834,7 +858,11 @@ private struct HTMLVisitor: MarkupVisitor {
     mutating func visitBlockQuote(_ blockQuote: BlockQuote) -> String {
         if let alert = Callouts.alert(in: blockQuote) {
             let events = (containers ? Callouts.events(for: alert.blocks, source: calloutSource) : nil) ?? alert.blocks.map { .content($0, trim: nil) }
-            return calloutOpening(.callout(alert.style, title: nil, line: blockQuote.range?.lowerBound.line))
+            let line = blockQuote.range?.lowerBound.line
+            if let fold = alert.fold {
+                return foldableOpening(alert.style, fold: fold, line: line) + renderEvents(events) + "</details>\n"
+            }
+            return calloutOpening(.callout(alert.style, title: nil, line: line))
                 + renderEvents(events) + "</div>\n"
         }
         return "<blockquote\(lineAttribute(blockQuote))>\n\(visitBlockChildren(blockQuote))</blockquote>\n"
@@ -997,7 +1025,7 @@ private struct HTMLVisitor: MarkupVisitor {
     }
 
     mutating func visitInlineHTML(_ inlineHTML: InlineHTML) -> String {
-        neutralizingLinkTags(inlineHTML.rawHTML)
+        escapingInlineHTML ? escapeHTML(inlineHTML.rawHTML) : neutralizingLinkTags(inlineHTML.rawHTML)
     }
 
     /// Reached only for a soft break outside any container's children; `visitInline` decides the

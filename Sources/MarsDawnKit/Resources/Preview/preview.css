@@ -121,6 +121,12 @@ blockquote > :last-child { margin-bottom: 0; }
 .callout-important > .callout-title:not(.callout-title-author)::before { content: var(--callout-title-important); }
 .callout-warning > .callout-title:not(.callout-title-author)::before { content: var(--callout-title-warning); }
 .callout-caution > .callout-title:not(.callout-title-author)::before { content: var(--callout-title-caution); }
+/* Obsidian's foldable callouts (#300) are `details.callout`, their title a `summary.callout-title`:
+   the rules above already reach them (the default title included), and the summary keeps
+   WebKit's disclosure triangle. Closed, the summary is the last thing shown but not the last
+   child, so it takes the top margin at the bottom too. */
+summary.callout-title { cursor: pointer; }
+details.callout:not([open]) > summary.callout-title { margin-bottom: 0.6em; }
 
 code {
   font: 0.88em var(--font-mono);
@@ -371,6 +377,7 @@ img { max-width: 100%; }
      after it (when that block is short) and keeps the pair on one page. */
   .keep-with-next { break-inside: avoid; page-break-inside: avoid; }
   p, li, blockquote { orphans: 3; widows: 3; }
+  /* `.callout` is also an Obsidian foldable callout's `details.callout` (#300). */
   pre, blockquote, .callout, tr, img, .mermaid-block, .math-block, .image-placeholder, .footnotes li {
     break-inside: avoid;
     page-break-inside: avoid;
