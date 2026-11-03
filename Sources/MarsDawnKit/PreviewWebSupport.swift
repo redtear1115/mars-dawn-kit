@@ -275,7 +275,7 @@ public enum PreviewWebView {
         // The labels' wording travels with every update, so each host (app, Quick Look, export)
         // shows the kit's own localization without a separate call.
         let titles = (calloutTitles ?? .preferred()).labelsObject
-        return "window.MarsDawn && MarsDawn.setLabels({ diagramLimitNote: \(jsonStringLiteral(diagramLimitNoteLabel)), calloutTitles: \(titles) }); "
+        return "window.MarsDawn && MarsDawn.setLabels({ diagramLimitNote: \(jsonStringLiteral(diagramLimitNoteLabel)), calloutTitles: \(titles), fold: \(foldLabelsObject) }); "
             + "window.MarsDawn && MarsDawn.update(\(jsonStringLiteral(html)), \(lineCount));"
     }
 
@@ -283,6 +283,57 @@ public enum PreviewWebView {
     /// many diagrams (mars-dawn-kit#95). The kit owns this wording, as with the http image label.
     public nonisolated static var diagramLimitNoteLabel: String {
         String(localized: "Not rendered: too many diagrams in this document. Source shown.", bundle: .module)
+    }
+
+    // MARK: Viewer folding (mars-dawn#300)
+    //
+    // The reader folds the page, never the file: the page posts nothing about it, keeps no
+    // state beyond the session, and prints and exports everything. The kit owns the labels, as
+    // with `diagramLimitNoteLabel`; they travel with every update in `updateScript`.
+    // PROPOSED COPY, pending approval (mars-dawn#300): only English and zh-Hant have them;
+    // the other languages fall back to English until the copy is approved.
+
+    /// Folds the page to its headings down to `level` (1...6, clamped): View ▸ Collapse All to H2
+    /// passes 2, leaving the h1 and h2 headings and whatever comes before the first heading.
+    public nonisolated static func collapseAllScript(level: Int) -> String {
+        "window.MarsDawn && MarsDawn.collapseAll && MarsDawn.collapseAll(\(min(6, max(1, level))));"
+    }
+
+    /// Unfolds every heading, code block, image and diagram the reader folded.
+    public nonisolated static func expandAllScript() -> String {
+        "window.MarsDawn && MarsDawn.expandAll && MarsDawn.expandAll();"
+    }
+
+    /// A folded code block's row, e.g. "Code, 40 lines": a format with one `%d`, which the page
+    /// fills in. Only blocks of more than 20 lines can fold, so it is never singular.
+    public nonisolated static var foldCodeLabelFormat: String { kitString("Code, %d lines") }
+    /// A folded image's row.
+    public nonisolated static var foldImageLabel: String { kitString("Image") }
+    /// A folded Mermaid diagram's row.
+    public nonisolated static var foldDiagramLabel: String { kitString("Diagram") }
+    /// Accessible name of a heading's arrow while its section is shown.
+    public nonisolated static var collapseSectionLabel: String { kitString("Collapse section") }
+    /// Accessible name of a heading's arrow while its section is folded.
+    public nonisolated static var expandSectionLabel: String { kitString("Expand section") }
+    /// Accessible name of a code block's, image's or diagram's control while it is shown.
+    public nonisolated static var collapseBlockLabel: String { kitString("Collapse") }
+    /// Accessible name of that control while the block is folded.
+    public nonisolated static var expandBlockLabel: String { kitString("Expand") }
+
+    /// The `fold` member of `setLabels`'s object.
+    nonisolated static var foldLabelsObject: String {
+        let labels: [(String, String)] = [
+            ("code", foldCodeLabelFormat), ("image", foldImageLabel), ("diagram", foldDiagramLabel),
+            ("collapseSection", collapseSectionLabel), ("expandSection", expandSectionLabel),
+            ("collapse", collapseBlockLabel), ("expand", expandBlockLabel),
+        ]
+        return "{ " + labels.map { "\($0.0): \(jsonStringLiteral($0.1))" }.joined(separator: ", ") + " }"
+    }
+
+    /// `key` from the kit's own table in the process's preferred language. Plain lookup, so a
+    /// `%d` in the key is part of the key (no format arguments are applied here).
+    private nonisolated static func kitString(_ key: String) -> String {
+        Bundle.module.localizedString(forKey: key, value: nil, table: nil)
     }
 
     /// JavaScript that scrolls the preview to a (fractional, 1-based) source line.

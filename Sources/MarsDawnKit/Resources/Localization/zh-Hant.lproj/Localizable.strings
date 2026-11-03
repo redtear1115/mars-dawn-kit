@@ -37,3 +37,13 @@
 "This file isn't valid {format}." = "此檔案不是有效的 {format}。";
 "To read it as text, choose View ▸ Source Only in MarsDawn." = "若要以純文字閱讀，請在 MarsDawn 選擇「顯示方式」▸「只顯示原始碼」。";
 "Show Source Only" = "只顯示原始碼";
+
+/* Viewer folding (mars-dawn#300). PROPOSED COPY, pending copy approval: not yet approved.
+   English is the key; only zh-Hant has these, so the other languages fall back to English. */
+"Code, %d lines" = "程式碼 %d 行";
+"Image" = "圖片";
+"Diagram" = "圖表";
+"Collapse section" = "收合段落";
+"Expand section" = "展開段落";
+"Collapse" = "收合";
+"Expand" = "展開";
