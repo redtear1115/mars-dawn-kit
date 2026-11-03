@@ -258,9 +258,12 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
     /// a decided one is either itself or its wrapper by then), then wraps the ones that fit, so
     /// there is one layout per round and as many rounds as the longest run of headings. A wrap
     /// moves nothing else on the page (its margins collapse through it), so every height is the
-    /// one a wrap-then-read loop would see, with one exception, kept for last: wrapping the
-    /// page's first block takes it out of `.markdown-body > :first-child`, which gives it back
-    /// its top margin and moves everything below.
+    /// one a wrap-then-read loop would see, with one exception, kept for last: the page's first
+    /// block. That loop went from the last heading up, so it wrapped the first block last, and a
+    /// document's own CSS can select by it (`#content > h1:first-child ~ …`): wrapped early, such
+    /// a rule would stop matching before the later rounds measure. (With the built-in stylesheet
+    /// it changes no height: the wrap takes the heading out of `.markdown-body > :first-child`,
+    /// and the top margin that gives back only moves the blocks below.)
     static let keepHeadingsWithNextScript = """
     (() => {
       const budget = 300;
@@ -323,12 +326,33 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
     /// (`:where`); the print rule for the last chain of last children still holds, since the
     /// last group is a last child. The class carries a fresh token, so the document's own HTML
     /// can't match it.
+    ///
+    /// A document that brings its own CSS is never grouped: its rules can depend on the blocks'
+    /// place (`#content > p`, `p + p`, `:nth-child`) or match any `div`, and the groups would
+    /// change what they select, so the PDF would differ from the preview. Rather than parse its
+    /// selectors (simple and safe beats clever), any `<style` in the rendered HTML, matched
+    /// without regard to case, turns grouping off; that also covers an SVG's `<style>` and a
+    /// style's `@import`. The renderer escapes all text (code, inline code, a Mermaid source),
+    /// so every `<style>` element on the page comes from that literal; the only false positive is
+    /// an attribute value, which just prints ungrouped. The HTML is checked rather than the page
+    /// because each rendered Mermaid SVG carries a `<style>` of its own, scoped to its own id.
+    /// The other ways CSS reaches a page are closed already: preview.js drops `<link>`
+    /// (`blockedElements`), and the handbook's cover and the handout's header are built from
+    /// escaped text. A `style` attribute applies to its element wherever the element is, so it
+    /// keeps the grouping.
     func groupBlocksForPrint() async {
         guard groupsBlocksForPrint, !groupedForPrint else { return }
         groupedForPrint = true
+        guard let renderedHTML, !Self.bringsItsOwnCSS(renderedHTML) else { return }
         let className = ManualLayout.className(ManualLayout.makeToken(), "group")
         let groups = try? await webView.evaluateJavaScript(Self.groupBlocksScript(className: className, size: Self.printGroupSize))
         printGroupCount = (groups as? Int) ?? 0
+    }
+
+    /// Whether the renderer's HTML has a `<style` anywhere, case ignored (Foundation folds more
+    /// than HTML's ASCII case, which can only add a false positive).
+    static func bringsItsOwnCSS(_ html: String) -> Bool {
+        html.range(of: "<style", options: [.caseInsensitive, .literal]) != nil
     }
 
     /// `className` is a token class (`ManualLayout.className`): letters, digits and a hyphen.

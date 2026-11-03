@@ -108,5 +108,48 @@ struct KeepWithNextTests {
         #expect(rounds == reference)
         if !markersShown { #expect(prepared == reference, "prepare's own run matches the reference") }
     }
+
+    /// The first heading is wrapped last, as the reference (last heading up) did: the document's
+    /// own CSS pads a kept pair while the h1 is still `#content`'s first child, so `### B`'s pair
+    /// is too tall for `## A` to be kept with it. Wrapping the h1 in the first round instead would
+    /// drop the padding before the second round measures, and keep `## A`.
+    static let firstChildCSSFixture = """
+    # Opening
+
+    Opening paragraph.
+
+    ## Heading A
+
+    ### Heading B
+
+    Text under B.
+
+    <style>#content > h1:first-child ~ .keep-with-next { padding-bottom: 400px; }</style>
+    """
+
+    @Test func theFirstHeadingIsWrappedLastForTheDocumentsOwnCSS() async throws {
+        let width = ExportLayout.document.printableWidth(paperWidth: DocumentExporter.Paper.a4.size.width)
+        let exporter = DocumentExporter(baseDirectory: nil, allowRemoteImages: false, width: width)
+        try await exporter.prepare(markdown: Self.firstChildCSSFixture, theme: .dawn)
+        let webView = exporter.webView
+        func state() async throws -> State {
+            let raw = try await webView.evaluateJavaScript(Self.stateScript) as? String ?? "{}"
+            return try JSONDecoder().decode(State.self, from: Data(raw.utf8))
+        }
+        let prepared = try await state()
+        _ = try await webView.evaluateJavaScript(Self.unwrapScript)
+        _ = try await webView.evaluateJavaScript(Self.wrapThenReadScript)
+        let reference = try await state()
+        _ = try await webView.evaluateJavaScript(Self.unwrapScript)
+        _ = try await webView.evaluateJavaScript(DocumentExporter.keepHeadingsWithNextScript)
+        let rounds = try await state()
+
+        // Positive: the h1 and B are kept, A is left alone because of the padding.
+        #expect(reference.firstKept, "the first heading kept")
+        #expect(reference.kept == 2, "the h1's and B's pairs kept")
+        #expect(reference.alone == 1, "A left alone")
+        #expect(rounds == reference)
+        #expect(prepared == reference, "prepare's own run matches the reference")
+    }
 }
 #endif

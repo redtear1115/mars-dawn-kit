@@ -141,6 +141,36 @@ struct PrintGroupingTests {
         _ = try await Self.expectSamePrint(markdown, layout: .document, minimumGroups: 3)
     }
 
+    /// The document's own CSS can select by a block's place under `#content` or match any `div`,
+    /// so a document that brings a `<style>` is printed ungrouped, exactly like the control.
+    /// Grouped, the first would print in 4 pages instead of 7 (its paragraphs no longer matched),
+    /// and the second would draw the bar beside every group, moving every line right.
+    @Test(arguments: [
+        "<style>#content > p { font-size: 28px; }</style>\n\n",
+        "<style>#content > div { border-left: 30px solid red; }</style>\n\n",
+        "<svg width=\"0\" height=\"0\"><STYLE>#content > p { font-size: 28px; }</STYLE></svg>\n\n",
+    ])
+    func aDocumentWithItsOwnCSSIsNotGrouped(style: String) async throws {
+        let printed = try await Self.expectSamePrint(style + Self.boundaries, layout: .document, minimumGroups: 0)
+        #expect(printed.groups == 0, "printed ungrouped")
+    }
+
+    /// A `style` attribute applies wherever its element is, and a Mermaid diagram's SVG brings a
+    /// `<style>` of its own on the page: neither turns grouping off.
+    @Test(arguments: [
+        "<p style=\"font-size: 28px; border-left: 4px solid red\">Styled paragraph.</p>\n\n<div style=\"margin: 12px\">Styled div.</div>\n\n",
+        "```mermaid\ngraph TD\n  A --> B\n```\n\n",
+    ])
+    func inlineStylesAndDiagramsStillGroup(opening: String) async throws {
+        _ = try await Self.expectSamePrint(opening + Self.boundaries, layout: .document, minimumGroups: 3)
+    }
+
+    @Test func authorCSSIsFoundInTheRenderedHTML() {
+        #expect(DocumentExporter.bringsItsOwnCSS("<p>a</p><style>p{}</style>"))
+        #expect(DocumentExporter.bringsItsOwnCSS("<svg><StYlE>p{}</StYlE></svg>"))
+        #expect(!DocumentExporter.bringsItsOwnCSS("<p style=\"color: red\">a</p><pre><code>&lt;style&gt;</code></pre>"))
+    }
+
     /// A short document has nothing to group, and prints as it did.
     @Test func aShortDocumentIsNotGrouped() async throws {
         let printed = try await Self.export("# Title\n\nOne paragraph.\n", layout: .document, grouped: true)
