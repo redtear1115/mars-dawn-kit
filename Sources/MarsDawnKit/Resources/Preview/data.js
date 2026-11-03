@@ -228,6 +228,84 @@
   // ordering (integer indices first), as it already does for JSON and ordinary YAML mappings.
   const treeYAMLSchema = yaml.CORE_SCHEMA.withTags(yaml.mergeTag);
 
+  // Occurrences, rather than object identities: an alias shares children with its anchor,
+  // but has its own marker. Input events are already byte/depth bounded; merge entries
+  // are charged again here, and the entire pass shares the original parse deadline.
+  function yamlSources(events, text, limits, start) {
+    // Most YAML needs no provenance metadata or additional scalar construction.
+    if (!events.some(event => event.type === yaml.EVENT_ALIAS || event.anchorStart >= 0)) return undefined;
+    const roots = [];
+    let resolvedMerge = false;
+    // Observe the library's resolved merge tag, including explicit tags and directives.
+    // The library still owns tag expansion and implicit/quoted scalar resolution.
+    const keySchema = treeYAMLSchema.withTags({ ...yaml.mergeTag, resolve(...args) {
+      const value = yaml.mergeTag.resolve(...args);
+      if (value !== yaml.NOT_RESOLVED) resolvedMerge = true;
+      return value;
+    } });
+    let anchors = new Map(), documentEvent, stack = [], mergeWork = 0;
+    const check = () => {
+      if (now() - start > limits.parseBudgetMilliseconds) throw new RangeError();
+    };
+    function attach(node) {
+      const frame = stack[stack.length - 1];
+      if (!frame) { roots.push(node); return; }
+      if (frame.sequence) { frame.node.children.set(frame.index++, node); return; }
+      if (frame.key === undefined) { frame.key = node; return; }
+      const key = frame.key;
+      frame.key = undefined;
+      if (key.merge) {
+        const sources = node.sequence ? node.children.values() : [node];
+        for (const source of sources) {
+          if (++mergeWork > limits.maximumAliases) throw new RangeError();
+          for (const [name, child] of source.children) {
+            check();
+            if (++mergeWork > limits.maximumAliases) throw new RangeError();
+            if (!frame.node.children.has(name)) {
+              frame.node.children.set(name, { ...child, marker: source.marker.startsWith("*") ? source.marker : "" });
+            }
+          }
+        }
+      } else {
+        frame.node.children.set(String(key.scalar), node);
+      }
+    }
+    for (const event of events) {
+      check();
+      if (event.type === yaml.EVENT_DOCUMENT) {
+        documentEvent = event;
+        anchors = new Map();
+      } else if (event.type === yaml.EVENT_POP) {
+        if (stack.length) attach(stack.pop().node);
+      } else {
+        const name = event.anchorStart >= 0 ? text.slice(event.anchorStart, event.anchorEnd) : "";
+        if (event.type === yaml.EVENT_ALIAS) {
+          attach({ ...anchors.get(name), marker: "*" + name });
+          continue;
+        }
+        const node = { marker: name ? "&" + name : "", children: new Map() };
+        if (name) anchors.set(name, node);
+        if (event.type === yaml.EVENT_SCALAR) {
+          const frame = stack[stack.length - 1];
+          // Values need no resolution here. Anchored scalars can later be alias keys.
+          if (name || frame && !frame.sequence && frame.key === undefined) {
+            resolvedMerge = false;
+            node.scalar = yaml.constructFromEvents([documentEvent, event, { type: yaml.EVENT_POP }],
+              { source: text, schema: keySchema, maxAliases: limits.maximumAliases,
+                maxTotalMergeKeys: limits.maximumAliases })[0];
+            node.merge = resolvedMerge;
+          }
+          attach(node);
+        } else {
+          node.sequence = event.type === yaml.EVENT_SEQUENCE;
+          stack.push({ node, sequence: node.sequence, index: 0, key: undefined });
+        }
+      }
+    }
+    check();
+    return roots;
+  }
+
   function parseYAML(text, limits) {
     const start = now();
     let events;
@@ -253,7 +331,11 @@
       return failed("YAML", yamlFailure(error));
     }
     if (!isArray(documents) || now() - start > limits.parseBudgetMilliseconds) return { outcome: "tooComplex" };
-    return { outcome: "ok", roots: documents };
+    try {
+      return { outcome: "ok", roots: documents, sources: yamlSources(events, text, limits, start) };
+    } catch (error) {
+      return failed("YAML", yamlFailure(error));
+    }
   }
 
   // MARK: Values
@@ -386,10 +468,14 @@
     return element("span", typeof key === "number" ? "data-key data-index" : "data-key", text);
   }
 
-  function appendKey(row, key, limits) {
+  function appendKey(row, key, limits, source) {
     const node = keyNode(key, limits);
+    if (node !== null) row.append(node);
+    if (source && source.marker) {
+      const shown = cut(source.marker, limits.keyDisplayCharacters);
+      row.append(element("span", "data-source", shown + (shown.length < source.marker.length ? "…" : "")));
+    }
     if (node === null) return;
-    row.append(node);
     row.append(element("span", "data-punct", ": "));
   }
 
@@ -447,17 +533,18 @@
       budget.stopped = true;
       return false;
     }
+    const source = parent.documents ? parent.sources?.[parent.next] : parent.sources?.get(key);
     const row = element("div", documentRow ? "data-node data-document" : "data-node");
     if (isContainer(value) && isAncestor(parent, value)) {
       row.classList.add("data-leaf");
-      appendKey(row, key, limits);
+      appendKey(row, key, limits, source);
       row.append(element("span", "data-cycle", labels.cycle));
       parent.group.append(row);
       return null;
     }
     if (!isContainer(value)) {
       row.classList.add("data-leaf");
-      appendKey(row, key, limits);
+      appendKey(row, key, limits, source);
       const scalar = scalarNode(value, limits);
       row.append(scalar.span);
       if (scalar.button) row.append(scalar.button);
@@ -467,7 +554,7 @@
     const list = isArray(value);
     const toggle = button("data-toggle");
     toggle.setAttribute("aria-expanded", "false");
-    appendKey(toggle, key, limits);
+    appendKey(toggle, key, limits, source);
     const items = childCount(value);
     toggle.append(element("span", "data-punct", list ? "[" : "{"));
     const size = items === 1 ? labels.itemCountOne : labels.itemCount;
@@ -478,7 +565,7 @@
     group.hidden = true;
     row.append(toggle, group);
     parent.group.append(row);
-    const record = { value, parent, depth: parent.depth + 1, group, toggle, next: 0, count: items, opened: false, more: null };
+    const record = { sources: source ? source.children : null, value, parent, depth: parent.depth + 1, group, toggle, next: 0, count: items, opened: false, more: null };
     toggles.set(toggle, record);
     return record;
   }
@@ -519,10 +606,10 @@
   }
 
   // The automatic pass: levels 1 to autoExpandDepth open, breadth first, until the budget is out.
-  function drawTree(view, roots, limits) {
+  function drawTree(view, roots, limits, sources) {
     const panel = element("div", "data-panel");
     view.append(panel);
-    const top = { value: roots, parent: null, depth: 0, group: panel, toggle: null, next: 0, count: roots.length, opened: false, more: null, documents: true };
+    const top = { sources, value: roots, parent: null, depth: 0, group: panel, toggle: null, next: 0, count: roots.length, opened: false, more: null, documents: true };
     const budget = makeBudget(limits);
     const queue = [top];
     for (let head = 0; head < queue.length && !budget.stopped; head++) {
@@ -612,7 +699,7 @@
       message(view, labels.tooComplex, "data-message-text");
       return "tooComplex";
     }
-    return drawTree(view, parsed.roots, limits);
+    return drawTree(view, parsed.roots, limits, parsed.sources);
   }
 
   // The page function's whole contract: one fixed string back, whatever happens. An update

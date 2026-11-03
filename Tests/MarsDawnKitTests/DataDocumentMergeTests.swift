@@ -19,6 +19,88 @@ struct DataDocumentMergeTests {
         """, in: page) as? [String] ?? []
     }
 
+    private func rowScript(_ path: [String]) -> String {
+        let names = path.map { PreviewWebView.jsonStringLiteral($0) }.joined(separator: ",")
+        return """
+        (() => {
+          let group = document.querySelector('.data-document > .data-children');
+          let row;
+          for (const name of [\(names)]) {
+            row = Array.from(group.children).find(r =>
+              (r.querySelector(':scope > .data-key') || r.querySelector(':scope > .data-toggle > .data-key'))?.textContent === name);
+            group = row.querySelector(':scope > .data-children');
+          }
+          return row;
+        })()
+        """
+    }
+
+    private func marker(_ path: [String], in page: WKWebView) async throws -> String {
+        try await DataPage.string("""
+        (() => {
+          const row = \(rowScript(path));
+          return (row.querySelector(':scope > .data-source') || row.querySelector(':scope > .data-toggle > .data-source'))?.textContent || '';
+        })()
+        """, in: page)
+    }
+
+    @Test func singleMergeMarkersAccessibilityAndCopy() async throws {
+        let page = try await DataPage.load()
+        #expect(await DataPage.render("base: &base {host: localhost}\ndev: {<<: *base}\nx: *base\n", kind: .yaml, in: page) == .rendered)
+        #expect(try await marker(["base"], in: page) == "&base")
+        #expect(try await marker(["x"], in: page) == "*base")
+        #expect(try await marker(["dev", "host"], in: page) == "*base")
+        #expect(try await children("x", in: page) == ["host=\"localhost\""])
+        #expect(try await DataPage.string("(\(rowScript(["dev", "host"]))).textContent", in: page).contains("*base"))
+        #expect(try await DataPage.string("(\(rowScript(["base"]))).querySelector('.data-toggle').textContent", in: page).contains("&base"))
+        // Visible markers participate in row/toggle text, outside the copyable value.
+        #expect(try await DataPage.int("(\(rowScript(["dev", "host"]))).querySelectorAll('.data-value .data-source').length", in: page) == 0)
+        #expect(try await DataPage.int("(\(rowScript(["base"]))).querySelectorAll(':scope > .data-toggle > .data-source').length", in: page) == 1)
+        // Native copy uses selection; selecting the value must contain only its quoted text.
+        #expect(try await DataPage.string("""
+        (() => {
+          const row = \(rowScript(["dev", "host"]));
+          const range = document.createRange();
+          range.selectNodeContents(row.querySelector('.data-value'));
+          const selection = window.getSelection();
+          selection.removeAllRanges(); selection.addRange(range);
+          const copied = selection.toString(); selection.removeAllRanges();
+          return copied;
+        })()
+        """, in: page) == "\"localhost\"")
+        #expect(try await DataPage.string("getComputedStyle((\(rowScript(["dev", "host"]))).querySelector('.data-source')).webkitUserSelect", in: page) == "none")
+    }
+
+    @Test func multipleMergeSourceMarkers() async throws {
+        let page = try await DataPage.load()
+        #expect(await DataPage.render("a: &a {shared: 1, first: 2}\nb: &b {shared: 3, second: 4}\ndev: {<<: [*a, *b]}\n", kind: .yaml, in: page) == .rendered)
+        #expect(try await marker(["dev", "shared"], in: page) == "*a")
+        #expect(try await marker(["dev", "first"], in: page) == "*a")
+        #expect(try await marker(["dev", "second"], in: page) == "*b")
+    }
+
+    @Test func localOverrideHasNoSourceMarker() async throws {
+        let page = try await DataPage.load()
+        for body in ["<<: *base, host: local", "host: local, <<: *base"] {
+            #expect(await DataPage.render("base: &base {host: localhost, port: 42}\ndev: {\(body)}\n", kind: .yaml, in: page) == .rendered)
+            #expect(try await marker(["dev", "host"], in: page) == "")
+            #expect(try await marker(["dev", "port"], in: page) == "*base")
+            #expect(try await children("dev", in: page).contains("host=\"local\""))
+        }
+    }
+
+    @Test func nestedAliasKeepsOccurrenceMarkersAndExpansion() async throws {
+        let page = try await DataPage.load()
+        #expect(await DataPage.render("inner: &inner {host: localhost}\nbase: &base {nested: *inner}\nx: *base\n", kind: .yaml, in: page) == .rendered)
+        #expect(try await marker(["inner"], in: page) == "&inner")
+        #expect(try await marker(["base", "nested"], in: page) == "*inner")
+        #expect(try await marker(["x"], in: page) == "*base")
+        #expect(try await marker(["x", "nested"], in: page) == "*inner")
+        // Open the next level explicitly; auto expansion may stop at this depth.
+        _ = try await DataPage.value("(\(rowScript(["x", "nested"]))).querySelector('.data-toggle').click()", in: page)
+        #expect(try await DataPage.string("(\(rowScript(["x", "nested", "host"]))).querySelector('.data-value').textContent", in: page) == "\"localhost\"")
+    }
+
     @Test func singleMergeOwnValuesAndInsertionOrder() async throws {
         let page = try await DataPage.load()
         let text = "base: &a {host: localhost, port: 5432, tail: 1}\ndev:\n  before: 0\n  <<: *a\n  port: 5433\n  after: 2\n"
