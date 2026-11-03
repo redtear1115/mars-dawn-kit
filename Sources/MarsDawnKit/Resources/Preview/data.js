@@ -162,7 +162,8 @@
     if (!(error instanceof yaml.YAMLException)) return {};
     const reason = error.reason;
     if (typeof reason === "string"
-        && (reason.startsWith("nesting exceeded maxDepth") || reason.startsWith("aliases exceeded maxAliases"))) {
+        && (reason.startsWith("nesting exceeded maxDepth") || reason.startsWith("aliases exceeded maxAliases")
+            || reason.startsWith("merge keys exceeded maxTotalMergeKeys"))) {
       return { tooComplex: true };
     }
     const mark = error.mark;
@@ -218,6 +219,15 @@
     return { outcome: "parseError", format: "JSON" };
   }
 
+  // Only add merge semantics; all other CORE_SCHEMA scalar/tag behavior stays the same.
+  // constructFromEvents resolves implicit tags only for PLAIN scalar events: quoted "<<"
+  // (and explicitly tagged !!str <<) remain ordinary keys. Invalid merge sources use the
+  // parser's error, rather than displaying a partially merged document.
+  // Order is first insertion: merged keys enter at the << line, source mappings left to right;
+  // own keys override without moving an existing slot. Object.keys keeps its usual numeric-key
+  // ordering (integer indices first), as it already does for JSON and ordinary YAML mappings.
+  const treeYAMLSchema = yaml.CORE_SCHEMA.withTags(yaml.mergeTag);
+
   function parseYAML(text, limits) {
     const start = now();
     let events;
@@ -232,7 +242,12 @@
     let documents;
     try {
       documents = yaml.constructFromEvents(events, {
-        source: text, schema: yaml.CORE_SCHEMA, json: false, maxAliases: limits.maximumAliases,
+        source: text, schema: treeYAMLSchema, json: false, maxAliases: limits.maximumAliases,
+        // The vendor charges each source mapping and each candidate entry BEFORE copying,
+        // even overridden entries, across all documents. Bound merge work/allocation by the
+        // alias allowance; values stay shared, never recursively cloned. The existing budget,
+        // graph depth screen, cycle markers and rendered-node cap then see the merged graph.
+        maxTotalMergeKeys: limits.maximumAliases,
       });
     } catch (error) {
       return failed("YAML", yamlFailure(error));
