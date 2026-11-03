@@ -24,9 +24,9 @@ Lines: minX minY maxX maxY | text, whole points from the page's bottom left, sor
 60 198 109 213 | Warning
 
 --- Page 2 ---
-45 612 147 626 | CALLENDMARK99
+45 607 147 621 | CALLENDMARK99
 60 765 130 779 | Careful now
 60 741 232 755 | DANGBODY12 before the code.
-45 643 212 658 | SPOILBODY14 inside a spoiler.
+45 663 97 677 | Open me
+45 638 212 652 | SPOILBODY14 inside a spoiler.
 73 704 262 716 | const callout = 1; // CODEIN13
-45 663 107 677 | ▼ Open me
