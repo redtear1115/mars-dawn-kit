@@ -31,6 +31,26 @@ struct DataDocumentHostTests {
         #expect(DataDocumentPreview.update(data: Data(), kind: .json, sequence: 1, labels: .english).arguments["kind"] as? String == "json")
     }
 
+    /// JSON Lines (mars-dawn#563) travel as the literal "jsonl", which the page accepts, and use
+    /// the JSON byte cap.
+    @Test func jsonLinesTravelAsTheirLiteralUnderTheJSONCap() async throws {
+        let update = DataDocumentPreview.update(data: Data("1\n2\n".utf8), kind: .jsonl, sequence: 1, labels: .english)
+        #expect(update.arguments["kind"] as? String == "jsonl")
+        #expect(update.arguments["state"] as? String == "ok")
+        let cap = DataDocumentPreview.maximumJSONBytes
+        #expect(DataDocumentPreview.update(data: Data(repeating: 0x20, count: cap), kind: .jsonl, sequence: 1, labels: .english)
+            .arguments["state"] as? String == "ok")
+        let over = DataDocumentPreview.update(data: Data(repeating: 0x20, count: cap + 1), kind: .jsonl, sequence: 1, labels: .english)
+        #expect(over.arguments["state"] as? String == "overCap")
+        #expect(over.arguments["text"] == nil)
+        let source = try String(contentsOf: DataDocumentSecurityTests.preview.appendingPathComponent("data.js"), encoding: .utf8)
+        #expect(source.contains(#"input.kind === "jsonl""#))
+        let webView = try await DataPage.load()
+        #expect(await DataDocumentPreview.render(update, in: webView) == .rendered)
+        #expect(await DataDocumentPreview.render(over, in: webView) == .overCap)
+        #expect(try await DataPage.messageText(in: webView) == DataLabels.english.overCap.replacingOccurrences(of: "{size}", with: "16"))
+    }
+
     /// Every limit the page reads is one Swift sends (data.js has none of its own).
     @Test func theLimitsAreTheSwiftConstants() {
         let limits = DataDocumentPreview.limits
@@ -43,6 +63,7 @@ struct DataDocumentHostTests {
         #expect(limits["autoExpandBudgetMilliseconds"] == 200)
         #expect(limits["parseBudgetMilliseconds"] == 2_000)
         #expect(limits["maximumAliases"] == 100_000)
+        #expect(limits["maximumJSONLLines"] == 100_000)
         #expect(DataDocumentPreview.maximumDepth == 1_000)
         #expect(DataDocumentPreview.parseBudgetMilliseconds == 2_000)
         #expect(DataDocumentPreview.maximumAliases == 100_000)

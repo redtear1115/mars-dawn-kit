@@ -19,12 +19,16 @@ import WebKit
 /// for its source view. Accept both only from the main frame; the second may arrive more than once.
 public enum DataDocumentPreview {
     public enum Kind: Sendable {
-        case json, yaml
+        /// `jsonl` is JSON Lines (`.jsonl`, `.ndjson`; redtear1115/mars-dawn#563): one JSON value
+        /// per line, each shown as a top-level node labelled with its line number. It is checked
+        /// against the JSON byte cap.
+        case json, yaml, jsonl
 
         var literal: String {
             switch self {
             case .json: "json"
             case .yaml: "yaml"
+            case .jsonl: "jsonl"
             }
         }
     }
@@ -41,6 +45,11 @@ public enum DataDocumentPreview {
     public static let maximumYAMLBytes = 384 * 1024
     /// The most alias occurrences in one YAML document.
     public static let maximumAliases = 100_000
+    /// The most non-empty lines in one JSON Lines document (blank lines don't count). More shows
+    /// the whole document as "too complex": no partial tree, so no copy of its own is needed.
+    /// Each line is a parse of its own and a top-level row, so this bounds the per-line work and
+    /// the top-level list; 100,000 lines of about 160 bytes already fill `maximumJSONBytes`.
+    public static let maximumJSONLLines = 100_000
     /// The deepest nesting shown, in nodes (a scalar counts as a level, as in js-yaml's
     /// `maxDepth`); for YAML also the parser's own limit. Deeper documents are "too complex".
     public static let maximumDepth = 1_000
@@ -50,7 +59,7 @@ public enum DataDocumentPreview {
     public static let maximumRenderedNodes = 10_000
     /// The time one drawing pass may take before it stops and leaves the rest collapsed.
     public static let autoExpandBudgetMilliseconds = 200
-    /// The time a YAML parse may take before the document is "too complex".
+    /// The time a YAML or JSON Lines parse may take before the document is "too complex".
     public static let parseBudgetMilliseconds = 2_000
     /// How long `render(_:in:)` waits for the page: the parse budget, the drawing budget, and
     /// 3 s for moving the text to the page and JSON's parse, which has no budget of its own.
@@ -78,6 +87,7 @@ public enum DataDocumentPreview {
             "maximumJSONBytes": maximumJSONBytes,
             "maximumYAMLBytes": maximumYAMLBytes,
             "maximumAliases": maximumAliases,
+            "maximumJSONLLines": maximumJSONLLines,
             "maximumDepth": maximumDepth,
             "maximumTreeDepth": maximumDepth,
             "autoExpandDepth": autoExpandDepth,
@@ -152,7 +162,10 @@ public enum DataDocumentPreview {
             "limits": limits,
             "showsSourceButton": showsSourceButton,
         ]
-        let cap = kind == .json ? maximumJSONBytes : maximumYAMLBytes
+        let cap = switch kind {
+        case .json, .jsonl: maximumJSONBytes
+        case .yaml: maximumYAMLBytes
+        }
         if data.count > cap {
             arguments["state"] = "overCap"
         } else if let text = decode(data) {
