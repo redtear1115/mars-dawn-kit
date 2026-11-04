@@ -61,7 +61,7 @@ let package = Package(
             // CalloutLproj: two bundles whose Traditional Chinese folder is spelled `zh-hant` and
             // `zh-Hant` (CalloutFolderCaseTests): SwiftPM writes the one under Xcode 26, the other
             // under 27. Kept out of MarsDawnKitTests, whose tests reach the kit's own `Bundle.module`.
-            resources: [.copy("MermaidCorpus"), .copy("Corpus"), .copy("CalloutLproj")]
+            resources: [.copy("MermaidCorpus"), .copy("Corpus"), .copy("CalloutLproj"), .copy("Fixtures")]
         ),
         .testTarget(name: "MarsDawnCLITests", dependencies: ["marsdawn"]),
         // The validator's own tests (kit #125): Foundation only, like MarsDawnThemes itself, so a

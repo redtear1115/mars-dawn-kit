@@ -409,4 +409,14 @@ img { max-width: 100%; }
   .image-placeholder button { display: none; }
   .remote-images-bar { display: none !important; }
   .mermaid-block.stale .mermaid-output { opacity: 1; }
+
+  /* Collapsible blocks (redtear1115/mars-dawn#300). Paper can't be clicked, so a summary
+     prints as a bold line with no disclosure triangle, open or closed: a closed one reads as a
+     heading with nothing under it. Front matter is hidden above. */
+  details:not(.front-matter) > summary { display: block; list-style: none; font-weight: 600; margin-bottom: 0.5em; }
+  details:not(.front-matter) > summary::-webkit-details-marker { display: none; }
+  /* A reader who collapsed a block in the preview still gets its content on ⌘P. The exporter
+     opens every block itself, or, exporting "as written", puts this class on <html> so a
+     closed block prints its summary alone. */
+  :root:not(.marsdawn-details-as-written) details::details-content { content-visibility: visible; height: auto; }
 }
