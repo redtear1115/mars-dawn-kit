@@ -110,6 +110,23 @@ failed to render (the diagram shows its error in the image too), `oversized_bloc
 taller than 8000 pixels, whose image is as tall as it is. Without `--format`, `export` writes a PDF
 as before.
 
+## Collapsible sections
+
+When part of a document you write should start folded, use GitHub's `<details>`, with a blank
+line after `</summary>` and before `</details>` so the Markdown inside still renders:
+
+```markdown
+<details>
+<summary>Title</summary>
+
+Content
+
+</details>
+```
+
+MarsDawn also folds HackMD's `:::spoiler Title` and Obsidian's `> [!note]-`, but don't write
+those: GitHub shows `:::spoiler` as literal text, and only some tools fold `[!type]-`.
+
 ## Themes
 
 `marsdawn theme validate theme.json --json` checks a MarsDawn theme file with the app's own
