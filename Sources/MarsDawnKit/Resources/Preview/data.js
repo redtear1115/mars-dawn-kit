@@ -1,6 +1,6 @@
 "use strict";
 
-// The JSON and YAML tree page (kit #128). The host sends the document's text with
+// The JSON, JSON Lines and YAML tree page (kit #128, mars-dawn#563). The host sends the document's text with
 // `DataDocumentPreview.update(...)` through `callAsyncJavaScript`, and gets back one fixed string
 // naming what the page now shows. Every limit comes from the `limits` argument, which the kit
 // fills from its Swift constants; this file has no limit of its own.
@@ -64,7 +64,7 @@
   // MARK: Limits and labels from the host
 
   const limitNames = [
-    "maximumJSONBytes", "maximumYAMLBytes", "maximumAliases", "maximumDepth",
+    "maximumJSONBytes", "maximumYAMLBytes", "maximumAliases", "maximumJSONLLines", "maximumDepth",
     "maximumTreeDepth", "autoExpandDepth", "maximumRenderedNodes", "autoExpandBudgetMilliseconds",
     "parseBudgetMilliseconds", "valueDisplayCharacters", "keyDisplayCharacters",
   ];
@@ -217,6 +217,59 @@
       return failed("JSON", yamlFailure(error));
     }
     return { outcome: "parseError", format: "JSON" };
+  }
+
+  // A JSON Lines line that isn't valid JSON: where js-yaml's scanner puts the error on that line
+  // alone (the same fallback parseJSON uses), or no column. The line itself comes from the split.
+  function jsonlColumn(line, limits) {
+    if (!utf8AtMost(line, limits.maximumYAMLBytes)) return undefined;
+    try {
+      yaml.parseEvents(line, { maxDepth: parserDepth(limits) });
+    } catch (error) {
+      const failure = yamlFailure(error);
+      // A lone CR inside the line is a break to js-yaml; past it the column means nothing here.
+      if (failure.line === 1) return failure.column;
+    }
+    return undefined;
+  }
+
+  // JSON Lines (mars-dawn#563): every non-empty line is a JSON value of its own, shown as one
+  // top-level row labelled with its 1-based line number in the file. Lines are split on LF, a
+  // trailing CR is dropped, and empty or whitespace-only lines are skipped (not errors). A line
+  // that isn't JSON becomes an error row; the others are shown as usual. More than
+  // maximumJSONLLines non-empty lines, a line nested deeper than maximumTreeDepth, or a parse
+  // past parseBudgetMilliseconds makes the whole document too complex. A file with no value at
+  // all is not valid JSON, as an empty JSON file is.
+  function parseJSONL(text, limits) {
+    const start = now();
+    const body = text.charCodeAt(0) === 0xFEFF ? text.slice(1) : text;
+    const parts = body.split("\n");
+    const roots = [];
+    const lines = [];
+    const errors = [];
+    for (let index = 0; index < parts.length; index++) {
+      if (now() - start > limits.parseBudgetMilliseconds) return { outcome: "tooComplex" };
+      let line = parts[index];
+      if (line.charCodeAt(line.length - 1) === 0x0D) line = line.slice(0, -1);
+      if (line.trim() === "") continue;
+      if (roots.length >= limits.maximumJSONLLines) return { outcome: "tooComplex" };
+      let value;
+      try {
+        value = JSON.parse(line);
+      } catch (error) {
+        if (error instanceof RangeError) return { outcome: "tooComplex" };
+        errors[roots.length] = { line: index + 1, column: jsonlColumn(line, limits) };
+        lines.push(index + 1);
+        roots.push(null);
+        continue;
+      }
+      if (jsonTextNestsDeeperThan(line, limits.maximumTreeDepth)) return { outcome: "tooComplex" };
+      lines.push(index + 1);
+      roots.push(value);
+    }
+    if (now() - start > limits.parseBudgetMilliseconds) return { outcome: "tooComplex" };
+    if (roots.length === 0) return { outcome: "parseError", format: "JSON" };
+    return { outcome: "ok", roots, lines, errors };
   }
 
   // Only add merge semantics; all other CORE_SCHEMA scalar/tag behavior stays the same.
@@ -535,6 +588,18 @@
     }
     const source = parent.documents ? parent.sources?.[parent.next] : parent.sources?.get(key);
     const row = element("div", documentRow ? "data-node data-document" : "data-node");
+    // A JSON Lines line that isn't JSON: its line number as the key and the parse-error text.
+    const lineError = documentRow && parent.errors ? parent.errors[parent.next] : undefined;
+    if (lineError !== undefined) {
+      row.classList.add("data-leaf");
+      appendKey(row, key, limits, source);
+      const text = lineError.column === undefined
+        ? fill(labels.parseError, [["{format}", "JSON"]])
+        : fill(labels.parseErrorAt, [["{format}", "JSON"], ["{line}", count(lineError.line)], ["{column}", count(lineError.column)]]);
+      row.append(element("span", "data-error", text));
+      parent.group.append(row);
+      return null;
+    }
     if (isContainer(value) && isAncestor(parent, value)) {
       row.classList.add("data-leaf");
       appendKey(row, key, limits, source);
@@ -584,7 +649,8 @@
     }
     while (record.next < record.count) {
       const index = record.next;
-      const key = record.documents ? null : (isArray(record.value) ? index : childKeys(record.value)[index]);
+      // Documents have no key, except JSON Lines' values, which are keyed by their line number.
+      const key = record.documents ? (record.lines ? record.lines[index] : null) : (isArray(record.value) ? index : childKeys(record.value)[index]);
       const drawn = drawRow(record, key, childAt(record.value, index), limits, budget, record.documents);
       if (drawn === undefined) break;
       record.next += 1;
@@ -606,10 +672,12 @@
   }
 
   // The automatic pass: levels 1 to autoExpandDepth open, breadth first, until the budget is out.
-  function drawTree(view, roots, limits, sources) {
+  function drawTree(view, parsed, limits) {
+    const roots = parsed.roots;
     const panel = element("div", "data-panel");
     view.append(panel);
-    const top = { sources, value: roots, parent: null, depth: 0, group: panel, toggle: null, next: 0, count: roots.length, opened: false, more: null, documents: true };
+    const top = { sources: parsed.sources, value: roots, parent: null, depth: 0, group: panel, toggle: null, next: 0, count: roots.length, opened: false, more: null, documents: true,
+                  lines: parsed.lines, errors: parsed.errors };
     const budget = makeBudget(limits);
     const queue = [top];
     for (let head = 0; head < queue.length && !budget.stopped; head++) {
@@ -668,9 +736,9 @@
   function draw(kind, state, text, limits) {
     const view = freshView();
     keyCache = new WeakMap();
-    const format = kind === "json" ? "JSON" : "YAML";
+    const format = kind === "yaml" ? "YAML" : "JSON";
     if (state === "overCap") {
-      const cap = kind === "json" ? limits.maximumJSONBytes : limits.maximumYAMLBytes;
+      const cap = kind === "yaml" ? limits.maximumYAMLBytes : limits.maximumJSONBytes;
       // In MB (MiB) rounded down to two decimals, so "larger than {size} MB" stays true:
       // 16 MiB is 16, 384 KiB is 0.37.
       const size = count(Math.floor(cap / 10485.76) / 100);
@@ -682,7 +750,8 @@
       return "invalidEncoding";
     }
     if (state !== "ok" || typeof text !== "string") return "failed";
-    const parsed = kind === "json" ? parseJSON(text, limits) : parseYAML(text, limits);
+    const parsed = kind === "json" ? parseJSON(text, limits)
+      : kind === "jsonl" ? parseJSONL(text, limits) : parseYAML(text, limits);
     if (parsed.outcome === "parseError") {
       if (parsed.line !== undefined) {
         message(view, fill(labels.parseErrorAt, [["{format}", format], ["{line}", count(parsed.line)], ["{column}", count(parsed.column)]]), "data-error");
@@ -692,14 +761,15 @@
       }
       return "parseError";
     }
-    const tooDeep = parsed.outcome === "ok" && (kind === "json"
+    // JSON Lines checked each line's depth while parsing.
+    const tooDeep = parsed.outcome === "ok" && kind !== "jsonl" && (kind === "json"
       ? jsonTextNestsDeeperThan(text, limits.maximumTreeDepth)
       : nestsDeeperThan(parsed.roots, limits.maximumTreeDepth));
     if (parsed.outcome !== "ok" || tooDeep) {
       message(view, labels.tooComplex, "data-message-text");
       return "tooComplex";
     }
-    return drawTree(view, parsed.roots, limits, parsed.sources);
+    return drawTree(view, parsed, limits);
   }
 
   // The page function's whole contract: one fixed string back, whatever happens. An update
@@ -711,7 +781,7 @@
       if (typeof sequence !== "number" || !Number.isFinite(sequence)) return "failed";
       if (sequence < latestSequence) return shownOutcome === null ? "failed" : shownOutcome;
       const limits = readLimits(input.limits);
-      const kind = input.kind === "json" || input.kind === "yaml" ? input.kind : null;
+      const kind = input.kind === "json" || input.kind === "yaml" || input.kind === "jsonl" ? input.kind : null;
       if (limits === null || kind === null) return "failed";
       latestSequence = sequence;
       labels = readLabels(input.labels);
