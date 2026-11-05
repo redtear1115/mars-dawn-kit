@@ -337,6 +337,34 @@ struct PreviewMermaidErrorTests {
         #expect(try await blockState(0, in: webView)["svg"] as? Int == 1)
     }
 
+    /// The common way to get there: a heading's id comes from its text, so `# Mermaid` is enough.
+    /// The bundle then arrives to a page that was never misconfigured.
+    @Test func aHeadingCalledMermaidIsNotTheBundle() async throws {
+        let webView = try await loadedPreview()
+        try await render("# Mermaid\n\nJust words.\n", in: webView)
+        #expect(try await value("document.querySelector('h1').id", in: webView) as? String == "mermaid", "positive control")
+        _ = try await value("(() => { MarsDawn.setTheme('elegant'); return 0; })()", in: webView)
+
+        try await render("# Mermaid\n\nJust words.\n\n```mermaid\n\(valid)```\n", in: webView)
+        #expect(try await blockState(0, in: webView)["svg"] as? Int == 1)
+        #expect(try await value("mermaid.mermaidAPI.getConfig().theme", in: webView) as? String == "base")
+    }
+
+    /// With that heading and a bundle that fails, every diagram still settles, so export doesn't wait.
+    @Test func aHeadingCalledMermaidAndAFailedBundleSettleEveryDiagram() async throws {
+        let webView = try await loadedPreview()
+        _ = try await value("""
+        (() => {
+          document.head.appendChild = (node) => { setTimeout(() => node.onerror(new Event("error"))); return node; };
+          return 0;
+        })()
+        """, in: webView)
+        try await render("# Mermaid\n\n" + document(valid, valid), in: webView)
+        for index in 0...1 {
+            #expect(try await blockState(index, in: webView)["error"] as? Bool == true, "block \(index)")
+        }
+    }
+
     /// The script arrives and runs but defines nothing usable: as good as not loading.
     @Test func aBundleThatSetsNothingIsAFailure() async throws {
         let webView = try await loadedPreview()
