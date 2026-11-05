@@ -441,6 +441,30 @@ struct PreviewMermaidErrorTests {
         }
     }
 
+    /// The bundle has arrived and `mermaid.render` hasn't finished: the source still stays out of sight.
+    @Test func aDiagramKeepsItsSourceOutOfSightUntilItIsDrawn() async throws {
+        let webView = try await loadedPreview()
+        _ = try await value("""
+        (() => {
+          document.head.appendChild = (node) => {
+            window.mermaid = { initialize() {}, render: () => new Promise((_, reject) => { window.__fail = reject; }) };
+            setTimeout(() => node.onload(new Event("load")));
+            return node;
+          };
+          return 0;
+        })()
+        """, in: webView)
+        _ = try await webView.evaluateJavaScript(
+            PreviewWebView.updateScript(html: MarkdownRenderer.render(document(valid, valid)), lineCount: 40)
+        )
+        try await Task.sleep(for: .milliseconds(200))
+        let source = ##"getComputedStyle(document.querySelector("#content .mermaid-source")).visibility"##
+        #expect(try await value(source, in: webView) as? String == "hidden")
+        _ = try await value("(() => { window.__fail(new Error('no')); return 0; })()", in: webView)
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(try await value(source, in: webView) as? String == "visible", "a failed diagram shows its source")
+    }
+
     /// Stops the bundle's script element from reaching the page until `releaseBundle`.
     private func holdBundle(in webView: WKWebView) async throws {
         _ = try await value("""
