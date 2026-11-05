@@ -1,0 +1,24 @@
+OS build: Version 27.2 (Build 26B123) | WebKit: 22625.2.8.11.9 | Paper: a4
+Page count: 2
+Lines: minX minY maxX maxY | text, whole points from the page's bottom left, sorted by text; compared within 1 pt
+
+--- Page 1 ---
+57 319 220 331 | Image not available: ../outside.png
+57 241 326 253 | Image not available: /nonexistent-marsdawn/outside.png
+57 163 212 175 | Image not available: missing.png
+45 723 269 751 | Images IMGHEAD01
+45 520 271 534 | Paragraph before absolute image ABS03.
+45 123 334 137 | Paragraph before blocked remote image REMOTE08.
+45 601 285 615 | Paragraph before dot-relative image REL02.
+45 439 339 453 | Paragraph before dotdot-normalized image NORM04.
+45 201 295 215 | Paragraph before missing relative file MISS07.
+45 279 347 293 | Paragraph before nonexistent absolute path NOABS06.
+45 357 338 371 | Paragraph before out-of-scope parent image OOS05.
+45 682 260 696 | Paragraph before relative image REL01.
+54 88 176 100 | Web image: example.com
+
+--- Page 2 ---
+45 773 544 787 | A short closing paragraph to keep this fixture off the page-bottom edge (redtear1115/mars-
+45 701 270 716 | Last paragraph marker IMGENDMARK99.
+45 753 524 767 | dawn-kit#20), so the last marker below lands on real content rather than a trailing blank
+45 733 76 748 | page.
