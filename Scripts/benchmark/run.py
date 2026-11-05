@@ -237,12 +237,14 @@ def sample_webcontent_processes():
     return result
 
 
-def kill_export(pid):
-    """Ends the export `find_child_pid` found. It may already be gone, or never have been seen."""
-    if pid is None:
-        return
+def kill_export(proc):
+    """Ends /usr/bin/time, the export under it, and anything the export started.
+
+    `proc` runs in a process group of its own (`start_new_session`). Killing only `proc` would
+    leave the export running and holding stdout, and communicate() would wait for it.
+    """
     try:
-        os.kill(pid, signal.SIGKILL)
+        os.killpg(proc.pid, signal.SIGKILL)
     except ProcessLookupError:
         pass
 
@@ -407,7 +409,7 @@ def run_one_export(binary_path, input_path, output_pdf, capture_signposts=True):
         # A file, not a pipe: nothing reads stderr until the export exits, so a pipe blocks the
         # export for good once it writes more than the pipe buffers (about 64 KB).
         stderr_file = tempfile.TemporaryFile(mode="w+")
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=stderr_file, text=True)
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=stderr_file, text=True, start_new_session=True)
     except OSError as exc:
         elapsed = time.perf_counter() - start
         return _export_failure(elapsed, f"couldn't start process: {exc}")
@@ -423,11 +425,7 @@ def run_one_export(binary_path, input_path, output_pdf, capture_signposts=True):
         if ret is not None:
             break
         if time.perf_counter() - start > EXPORT_TIMEOUT_SECONDS:
-            # `proc` is /usr/bin/time. Killing only that leaves the export running and holding
-            # stdout, so the export goes first, and communicate() below has an end.
-            # With no name to match (a wrapper script may exec something else), the only child.
-            kill_export(marsdawn_pid or find_child_pid(proc.pid, ""))
-            proc.kill()
+            kill_export(proc)
             timed_out = True
             break
         time.sleep(WEBCONTENT_POLL_SECONDS)
@@ -436,8 +434,7 @@ def run_one_export(binary_path, input_path, output_pdf, capture_signposts=True):
     try:
         stdout, _ = proc.communicate(timeout=30)
     except subprocess.TimeoutExpired:
-        kill_export(marsdawn_pid)
-        proc.kill()
+        kill_export(proc)
         try:
             stdout, _ = proc.communicate(timeout=30)
         except subprocess.TimeoutExpired:
