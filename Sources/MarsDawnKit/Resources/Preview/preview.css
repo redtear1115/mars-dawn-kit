@@ -225,6 +225,7 @@ img { max-width: 100%; }
   top: 0;
   z-index: 10;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: center;
   gap: 12px;
@@ -243,6 +244,10 @@ img { max-width: 100%; }
   border-radius: calc(var(--radius) * 0.6);
   padding: 3px 10px;
   cursor: pointer;
+}
+.remote-images-bar button.remote-images-download {
+  color: var(--accent);
+  background: var(--bg);
 }
 .image-placeholder button {
   font: inherit;
