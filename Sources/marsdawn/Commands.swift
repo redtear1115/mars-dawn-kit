@@ -367,6 +367,8 @@ extension PreviewTheme: ExpressibleByArgument {
 }
 
 extension DocumentExporter.Paper: ExpressibleByArgument {}
+extension DetailsMode: ExpressibleByArgument {}
+
 extension ExportLayout: ExpressibleByArgument {
     /// `handbook` is the CLI value for the Handbook layout; `manual` is a deprecated alias kept for
     /// scripts that already pass it. Both give `.manual`, so the export and its `--json` result are
@@ -636,13 +638,19 @@ extension MarsDawnCommand {
             // it (#165), so asking would leave a person with an error and an agent with "ok".
             if let refusal = Open.folderRefusal(folders: folders, app: app) { throw refusal }
             // Files asking for the same line travel in one event; the line applies to all of them.
-            for group in RevealEvent.groups(for: targets) {
-                let configuration = openConfiguration()
-                configuration.appleEvent = RevealEvent.openDocuments(urls: group.urls, line: group.line)
-                if let opener = Self.opener {
-                    try await opener.call(group.urls, app, configuration)
-                } else {
-                    _ = try await NSWorkspace.shared.open(group.urls, withApplicationAt: app, configuration: configuration)
+            // With the app not running, behind the cold-launch lock, so `open`s started together
+            // launch it once and none of their files is dropped (mars-dawn#514).
+            if !targets.isEmpty {
+                try await ColdLaunchEnvironment.gate.run(app: app) {
+                    for group in RevealEvent.groups(for: targets) {
+                        let configuration = openConfiguration()
+                        configuration.appleEvent = RevealEvent.openDocuments(urls: group.urls, line: group.line)
+                        if let opener = Self.opener {
+                            try await opener.call(group.urls, app, configuration)
+                        } else {
+                            _ = try await NSWorkspace.shared.open(group.urls, withApplicationAt: app, configuration: configuration)
+                        }
+                    }
                 }
             }
             // Folders travel on their own, with no reveal line: a folder has no line to land on.
@@ -796,6 +804,12 @@ extension MarsDawnCommand {
 
         var layout: ExportLayout { layoutArgument.layout }
 
+        @Option(help: ArgumentHelp(
+            "Collapsible blocks (<details>, :::spoiler, foldable callouts): expand (the default) prints every one open; as-written prints only the ones written open (<details open>, :::spoiler {state=\"open\"}, > [!tip]+), the others as their summary alone. A summary prints as a bold line either way. With --format png, expand opens every one and as-written leaves them as the preview first shows them.",
+            valueName: "mode"
+        ))
+        var details: DetailsMode = .expand
+
         @Option(help: "Title of the Handbook layout's table of contents.")
         var tocTitle: String = "Contents"
 
@@ -889,6 +903,7 @@ extension MarsDawnCommand {
                     paper: paper,
                     softBreaksAsLineBreaks: breaks,
                     layout: layout,
+                    details: details,
                     tocTitle: tocTitle,
                     // The file's name without its extension, never its folders (S3 of mars-dawn#432).
                     displayName: input.deletingPathExtension().lastPathComponent,
@@ -1020,6 +1035,7 @@ extension MarsDawnCommand {
                     softBreaksAsLineBreaks: breaks,
                     lines: range,
                     calloutTitles: .preferred(),
+                    details: details,
                     inspect: inspect
                 )
             } catch DocumentExporter.ExportError.inputTooLarge(let limit) {

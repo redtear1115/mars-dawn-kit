@@ -45,6 +45,14 @@ at the top of page 1, and ends every page with
 A line holding only `<!--BREAK-->` starts a new page, in every layout. The JSON result
 doesn't say which layout was used.
 
+`--details expand|as-written` decides what happens to collapsible blocks (`<details>`, and
+`:::spoiler` and foldable callouts such as `> [!note]-`, which render as `<details>`). `expand`,
+the default, prints every one open. `as-written` prints only the ones written open
+(`<details open>`, `:::spoiler {state="open"}`, `> [!tip]+`) and prints the others as their
+summary alone. Either way a summary prints as a bold line with no triangle, in every layout,
+and front matter stays out. With `--format png`, `expand` opens every block and `as-written`
+leaves them as the preview first shows them. The JSON result doesn't report the mode.
+
 On success it exits 0 and prints one JSON line:
 
 - `ok`: always true
@@ -85,6 +93,23 @@ each `{path, width, height, lines}`, where `lines` is the source lines it shows,
 failed to render (the diagram shows its error in the image too), `oversized_block` a single block
 taller than 8000 pixels, whose image is as tall as it is. Without `--format`, `export` writes a PDF
 as before.
+
+## Collapsible sections
+
+When part of a document you write should start folded, use GitHub's `<details>`, with a blank
+line after `</summary>` and before `</details>` so the Markdown inside still renders:
+
+```markdown
+<details>
+<summary>Title</summary>
+
+Content
+
+</details>
+```
+
+MarsDawn also folds HackMD's `:::spoiler Title` and Obsidian's `> [!note]-`, but don't write
+those: GitHub shows `:::spoiler` as literal text, and only some tools fold `[!type]-`.
 
 ## Themes
 

@@ -124,16 +124,16 @@ struct DataDocumentBombTests {
         "e: &e {}\nl:\n" + String(repeating: "- {<<: *e}\n", count: count)
     }
 
-    /// CORE_SCHEMA has no merge: `<<` is a plain key, 20,000 times (aliases to one empty mapping).
+    /// Empty merges resolve without producing keys, 20,000 times (aliases to one empty mapping).
     /// The row cap is relaxed so the whole document is drawn. The draw is not timed tightly (a
     /// loaded hosted runner took 3.4 s and 4.2 s for it, kit #198); the parse is what this guards,
     /// and is timed by the next test.
-    @Test func twentyThousandEmptyMergesAreLiteralKeys() async throws {
+    @Test func twentyThousandEmptyMergesResolve() async throws {
         let text = Self.emptyMerges(20_000)
         #expect(text.utf8.count <= DataDocumentPreview.maximumYAMLBytes)
         let (outcome, page) = try await timed(text, .yaml, limits: ["maximumRenderedNodes": 100_000, "autoExpandBudgetMilliseconds": 60_000], bound: .seconds(30))
         #expect(outcome == .rendered)
-        #expect(try await DataPage.int("Array.from(document.querySelectorAll('#data .data-key')).filter((k) => k.textContent === '<<').length", in: page) == 20_000)
+        #expect(try await DataPage.int("Array.from(document.querySelectorAll('#data .data-key')).filter((k) => k.textContent === '<<').length", in: page) == 0)
     }
 
     /// Kit #198: the parse and construct of the same shape, timed in the page with the page's own

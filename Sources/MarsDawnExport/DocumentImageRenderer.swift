@@ -184,6 +184,9 @@ package enum DocumentImageRenderer {
     ///
     /// `registry` serves the page's theme CSS; nil is the built-in themes (a `--theme`). A
     /// `--theme-file` passes `ThemeRegistry(serving: [validated])`, as `theme preview` does.
+    /// `details` is the PDF's option (mars-dawn#300): `.expand` opens every `<details>`,
+    /// `.asWritten` leaves each as rendered. The image keeps the preview's own look, so a summary
+    /// keeps its triangle.
     /// `inspect` is for tests: it runs against the prepared, laid-out page before it is captured.
     @MainActor
     package static func render(
@@ -197,11 +200,14 @@ package enum DocumentImageRenderer {
         softBreaksAsLineBreaks: Bool = false,
         lines: ClosedRange<Int>? = nil,
         calloutTitles: CalloutTitles? = nil,
+        details: DetailsMode = .expand,
         maxHeight: Int = maxHeight,
         inspect: ((PreviewWKWebView) async throws -> Void)? = nil
     ) async throws -> Result {
         guard widthRange.contains(width) else { throw RenderError.widthOutOfRange(width) }
-        let make = { DocumentExporter(baseDirectory: baseDirectory, allowRemoteImages: allowRemoteImages, width: CGFloat(width)) }
+        let make = {
+            DocumentExporter(baseDirectory: baseDirectory, allowRemoteImages: allowRemoteImages, width: CGFloat(width), details: details)
+        }
         let exporter = registry.map { ThemeRegistry.$override.withValue($0, operation: make) } ?? make()
         let webView = exporter.webView
         webView.appearance = NSAppearance(named: appearance == .dark ? .darkAqua : .aqua)

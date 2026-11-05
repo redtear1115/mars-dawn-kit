@@ -74,6 +74,8 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
     private var pageLoad: CheckedContinuation<Void, Error>?
     private let allowRemoteImages: Bool
     let layout: ExportLayout
+    /// What `prepare` does with the page's `<details>` (mars-dawn#300).
+    let details: DetailsMode
     private var templateSignpost: OSSignpostIntervalState?
 
     /// - Parameters:
@@ -85,11 +87,16 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
     ///   - scopeRoot: The folder images may be read from, which must contain `baseDirectory`: a
     ///     folder the user granted, so `../` images above the document load as they do in the
     ///     app's preview. Nil, the default, is the document's own folder, as before.
-    init(baseDirectory: URL?, allowRemoteImages: Bool, width: CGFloat = 700, scopeRoot: URL? = nil, layout: ExportLayout = .document) {
+    ///   - details: Whether every `<details>` is opened (the default) or left as rendered.
+    init(
+        baseDirectory: URL?, allowRemoteImages: Bool, width: CGFloat = 700, scopeRoot: URL? = nil, layout: ExportLayout = .document,
+        details: DetailsMode = .expand
+    ) {
         assets.baseDirectory = baseDirectory
         assets.scopeRoot = scopeRoot
         self.allowRemoteImages = allowRemoteImages
         self.layout = layout
+        self.details = details
         let configuration = PreviewWebView.makeConfiguration(assets: assets)
         configuration.preferences.shouldPrintBackgrounds = true
         webView = PreviewWKWebView(frame: NSRect(x: 0, y: 0, width: width, height: 1000), configuration: configuration)
@@ -207,12 +214,14 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
             defer { Self.signposter.endInterval("push", pushSignpost) }
             _ = try await webView.evaluateJavaScript(updateScript)
         }
-        // A collapsed `<details>` prints nothing of its body, so a PDF would lose it. Open every
-        // one, before the wait so that diagrams and images inside get laid out. The script is
-        // constant: nothing from the document goes into it. An exclusive group (`name`) lets only
-        // one of its members stay open, so the name goes first. Front matter is left as it is
-        // (print CSS hides it).
-        _ = try await webView.evaluateJavaScript(Self.openAllDetailsScript)
+        // A collapsed `<details>` prints nothing of its body, so a PDF would lose it. `.expand`
+        // opens every one, before the wait so that diagrams and images inside get laid out.
+        // `.asWritten` leaves each as rendered and marks the page so print CSS doesn't open the
+        // closed ones (preview.css: a reader's ⌘P prints them open). The script is constant:
+        // nothing from the document goes into it. An exclusive group (`name`) lets only one of
+        // its members stay open, so the name goes first, in both modes. Front matter is left as
+        // it is (print CSS hides it).
+        _ = try await webView.evaluateJavaScript(Self.detailsScript(details))
         try await waitForContent(until: deadline)
         // JSON-encoded in JS so an unknown fenceLine/line can be genuinely absent from each
         // object, rather than `null`, matching what `DiagramError` expects to decode.
@@ -237,35 +246,154 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         _ = try? await webView.evaluateJavaScript(Self.pageBreaksScript(manual: layout == .manual))
     }
 
-    private static let openAllDetailsScript = """
-    (() => {
-      for (const details of document.querySelectorAll("details:not(.front-matter)")) {
-        details.removeAttribute("name");
-        details.setAttribute("open", "");
-      }
-      return 0;
-    })()
-    """
+    /// The class on `<html>` that keeps print CSS from opening closed `<details>` (`.asWritten`).
+    /// The document can't set it: its HTML goes inside `#content`.
+    static let detailsAsWrittenClass = "marsdawn-details-as-written"
+
+    static func detailsScript(_ mode: DetailsMode) -> String {
+        let expand = mode == .expand
+        return """
+        (() => {
+          document.documentElement.classList.toggle("\(detailsAsWrittenClass)", \(expand ? "false" : "true"));
+          for (const details of document.querySelectorAll("details:not(.front-matter)")) {
+            details.removeAttribute("name");
+            if (\(expand ? "true" : "false")) details.setAttribute("open", "");
+          }
+          return 0;
+        })()
+        """
+    }
 
     /// Wraps each heading with the block that follows it, so a page never ends on a heading.
-    /// Runs from the last heading up, so a heading followed by a subheading keeps both with
-    /// the text after them. Blocks taller than about 40% of a page are left alone: keeping
-    /// those together would leave large gaps.
-    private static let keepHeadingsWithNextScript = """
+    /// A heading followed by a subheading is decided after it, so the pair is kept with the text
+    /// after them. Blocks taller than about 40% of a page are left alone: keeping those together
+    /// would leave large gaps.
+    ///
+    /// Reads and writes go in rounds (mars-dawn#15): reading `offsetHeight` right after each wrap
+    /// laid the whole page out again for every heading, 8.5 s for 5,279 headings in a 10 MB file.
+    /// A round measures every heading whose next block is final (not a heading still to decide;
+    /// a decided one is either itself or its wrapper by then), then wraps the ones that fit, so
+    /// there is one layout per round and as many rounds as the longest run of headings. A wrap
+    /// moves nothing else on the page (its margins collapse through it), so every height is the
+    /// one a wrap-then-read loop would see, with one exception, kept for last: the page's first
+    /// block. That loop went from the last heading up, so it wrapped the first block last, and a
+    /// document's own CSS can select by it (`#content > h1:first-child ~ …`): wrapped early, such
+    /// a rule would stop matching before the later rounds measure. (With the built-in stylesheet
+    /// it changes no height: the wrap takes the heading out of `.markdown-body > :first-child`,
+    /// and the top margin that gives back only moves the blocks below.)
+    static let keepHeadingsWithNextScript = """
     (() => {
       const budget = 300;
-      const headings = [...document.querySelectorAll("#content > :is(h1, h2, h3, h4, h5, h6)")];
-      for (const heading of headings.reverse()) {
-        const next = heading.nextElementSibling;
-        if (!next || next.offsetHeight > budget) continue;
+      const content = document.getElementById("content");
+      if (!content) return 0;
+      const wrap = (heading, next) => {
         const keep = document.createElement("div");
         keep.className = "keep-with-next";
         heading.before(keep);
         keep.append(heading, next);
+      };
+      let pending = [...content.querySelectorAll(":scope > :is(h1, h2, h3, h4, h5, h6)")];
+      let firstWrap = null;
+      while (pending.length) {
+        const waiting = new Set(pending);
+        const ready = pending.filter((heading) => !waiting.has(heading.nextElementSibling));
+        pending = pending.filter((heading) => waiting.has(heading.nextElementSibling));
+        const measured = ready.map((heading) => {
+          const next = heading.nextElementSibling;
+          return [heading, next, next ? next.offsetHeight : 0];
+        });
+        for (const [heading, next, height] of measured) {
+          if (!next || height > budget) continue;
+          if (heading === content.firstElementChild) firstWrap = [heading, next];
+          else wrap(heading, next);
+        }
       }
+      if (firstWrap) wrap(...firstWrap);
       return 0;
     })()
     """
+
+    /// How many blocks go in one print group (mars-dawn#15); see `groupBlocksForPrint()`. Measured
+    /// on the benchmark's 5 MB file (3,057 pages): 57.2 s ungrouped, 28.3 s with 50, 28.5 s with
+    /// √blocks per group, 27.6 s with two levels of ∛blocks. Past one level of about 50, the
+    /// remaining print time is not the walk, so the simplest grouping stays.
+    static let printGroupSize = 50
+
+    /// Tests only: false prints the page with its blocks ungrouped, the grouping's control.
+    var groupsBlocksForPrint = true
+    private var groupedForPrint = false
+    /// How many groups the page printed with (0: ungrouped), for the tests.
+    private(set) var printGroupCount = 0
+
+    /// Puts `#content`'s top-level blocks into plain `div`s of `printGroupSize`, once, right before
+    /// the page first prints (mars-dawn#15). Before WebKit prints the first page it paints every
+    /// page, and painting a page walked every top-level block of `#content`: 42,238 of them in a
+    /// 10 MB file, so the time grew with pages × blocks (4–5 minutes). Grouped, a page walks the
+    /// groups and the blocks of the groups it crosses.
+    ///
+    /// Here rather than in `prepare`: the handout's table fitting and the PNG export work on the
+    /// prepared page's top-level blocks, and only printing needs the groups.
+    ///
+    /// The groups change nothing that prints. A `div` with no margin, padding or border lets its
+    /// first and last blocks' margins collapse through it as they did between the blocks, and
+    /// forced breaks (`export-page-break`, the handbook's `export-h1-break`) and `break-inside`
+    /// apply at any depth. Of the stylesheet's selectors that depend on a block's place under
+    /// `#content`, `.markdown-body > :first-child` (the first block has no top margin) is
+    /// extended to the first group's first block by the rule below, at the same specificity
+    /// (`:where`); the print rule for the last chain of last children still holds, since the
+    /// last group is a last child. The class carries a fresh token, so the document's own HTML
+    /// can't match it.
+    ///
+    /// A document that brings its own CSS is never grouped: its rules can depend on the blocks'
+    /// place (`#content > p`, `p + p`, `:nth-child`) or match any `div`, and the groups would
+    /// change what they select, so the PDF would differ from the preview. Rather than parse its
+    /// selectors (simple and safe beats clever), any `<style` in the rendered HTML, matched
+    /// without regard to case, turns grouping off; that also covers an SVG's `<style>` and a
+    /// style's `@import`. The renderer escapes all text (code, inline code, a Mermaid source),
+    /// so every `<style>` element on the page comes from that literal; the only false positive is
+    /// an attribute value, which just prints ungrouped. The HTML is checked rather than the page
+    /// because each rendered Mermaid SVG carries a `<style>` of its own, scoped to its own id.
+    /// The other ways CSS reaches a page are closed already: preview.js drops `<link>`
+    /// (`blockedElements`), and the handbook's cover and the handout's header are built from
+    /// escaped text. A `style` attribute applies to its element wherever the element is, so it
+    /// keeps the grouping.
+    func groupBlocksForPrint() async {
+        guard groupsBlocksForPrint, !groupedForPrint else { return }
+        groupedForPrint = true
+        guard let renderedHTML, !Self.bringsItsOwnCSS(renderedHTML) else { return }
+        let className = ManualLayout.className(ManualLayout.makeToken(), "group")
+        let groups = try? await webView.evaluateJavaScript(Self.groupBlocksScript(className: className, size: Self.printGroupSize))
+        printGroupCount = (groups as? Int) ?? 0
+    }
+
+    /// Whether the renderer's HTML has a `<style` anywhere, case ignored (Foundation folds more
+    /// than HTML's ASCII case, which can only add a false positive).
+    static func bringsItsOwnCSS(_ html: String) -> Bool {
+        html.range(of: "<style", options: [.caseInsensitive, .literal]) != nil
+    }
+
+    /// `className` is a token class (`ManualLayout.className`): letters, digits and a hyphen.
+    static func groupBlocksScript(className: String, size: Int) -> String {
+        """
+        (() => {
+          const content = document.getElementById("content");
+          if (!content || content.children.length <= \(size)) return 0;
+          const style = document.createElement("style");
+          style.textContent = ".markdown-body > :where(.\(className):first-child) > :first-child { margin-top: 0; }";
+          document.head.append(style);
+          const nodes = [...content.childNodes];
+          const groups = [];
+          for (let i = 0; i < nodes.length; i += \(size)) {
+            const group = document.createElement("div");
+            group.className = "\(className)";
+            group.append(...nodes.slice(i, i + \(size)));
+            groups.push(group);
+          }
+          content.replaceChildren(...groups);
+          return groups.length;
+        })()
+        """
+    }
 
     /// Forced page breaks, done here and not in the renderer, so the preview and Quick Look
     /// never see them. A `<!--BREAK-->` on its own line (the renderer's `div.html-block` that
@@ -389,6 +517,8 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
     ///     (#100).
     ///   - softBreaksAsLineBreaks: Likewise (#129).
     ///   - calloutTitles: Likewise (#135): the default titles of callouts in the printed page.
+    ///   - details: Whether every `<details>` prints open (`.expand`, the default) or only the
+    ///     ones open in the rendered page (`.asWritten`), mars-dawn#300. See `DetailsMode`.
     @discardableResult
     public static func run(
         markdown: String,
@@ -399,6 +529,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         footnoteBackLabel: String = MarkdownRenderer.Options().footnoteBackLabel,
         softBreaksAsLineBreaks: Bool = false,
         layout: ExportLayout = .document,
+        details: DetailsMode = .expand,
         tocTitle: String = "Contents",
         displayName: String? = nil,
         calloutTitles: CalloutTitles? = nil,
@@ -409,7 +540,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         try await runReportingDiagrams(
             markdown: markdown, theme: theme, baseDirectory: baseDirectory, allowRemoteImages: allowRemoteImages,
             scopeRoot: scopeRoot, footnoteBackLabel: footnoteBackLabel, softBreaksAsLineBreaks: softBreaksAsLineBreaks,
-            layout: layout, tocTitle: tocTitle, displayName: displayName, calloutTitles: calloutTitles, printInfo: printInfo, window: window, configure: configure
+            layout: layout, details: details, tocTitle: tocTitle, displayName: displayName, calloutTitles: calloutTitles, printInfo: printInfo, window: window, configure: configure
         ).completed
     }
 
@@ -430,6 +561,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         footnoteBackLabel: String = MarkdownRenderer.Options().footnoteBackLabel,
         softBreaksAsLineBreaks: Bool = false,
         layout: ExportLayout = .document,
+        details: DetailsMode = .expand,
         tocTitle: String = "Contents",
         displayName: String? = nil,
         calloutTitles: CalloutTitles? = nil,
@@ -440,7 +572,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         let result = try await runReportingDiagramDetails(
             markdown: markdown, theme: theme, baseDirectory: baseDirectory, allowRemoteImages: allowRemoteImages,
             scopeRoot: scopeRoot, footnoteBackLabel: footnoteBackLabel, softBreaksAsLineBreaks: softBreaksAsLineBreaks,
-            layout: layout, tocTitle: tocTitle, displayName: displayName, calloutTitles: calloutTitles, printInfo: printInfo, window: window, configure: configure
+            layout: layout, details: details, tocTitle: tocTitle, displayName: displayName, calloutTitles: calloutTitles, printInfo: printInfo, window: window, configure: configure
         )
         return (result.completed, result.diagramErrors)
     }
@@ -456,6 +588,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         footnoteBackLabel: String = MarkdownRenderer.Options().footnoteBackLabel,
         softBreaksAsLineBreaks: Bool = false,
         layout: ExportLayout = .document,
+        details: DetailsMode = .expand,
         tocTitle: String = "Contents",
         displayName: String? = nil,
         calloutTitles: CalloutTitles? = nil,
@@ -466,7 +599,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         try await runReportingDiagramDetails(
             markdown: markdown, theme: theme, baseDirectory: baseDirectory, allowRemoteImages: allowRemoteImages,
             scopeRoot: scopeRoot, footnoteBackLabel: footnoteBackLabel, softBreaksAsLineBreaks: softBreaksAsLineBreaks,
-            layout: layout, tocTitle: tocTitle, displayName: displayName, calloutTitles: calloutTitles, printInfo: printInfo, window: window, inspect: nil, configure: configure
+            layout: layout, details: details, tocTitle: tocTitle, displayName: displayName, calloutTitles: calloutTitles, printInfo: printInfo, window: window, inspect: nil, configure: configure
         )
     }
 
@@ -484,6 +617,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         footnoteBackLabel: String = MarkdownRenderer.Options().footnoteBackLabel,
         softBreaksAsLineBreaks: Bool = false,
         layout: ExportLayout = .document,
+        details: DetailsMode = .expand,
         tocTitle: String = "Contents",
         displayName: String? = nil,
         calloutTitles: CalloutTitles? = nil,
@@ -497,7 +631,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         let printableWidth = layout.printableWidth(paperWidth: printInfo.paperSize.width)
         let exporter = DocumentExporter(
             baseDirectory: baseDirectory, allowRemoteImages: allowRemoteImages, width: printableWidth,
-            scopeRoot: scopeRoot, layout: layout
+            scopeRoot: scopeRoot, layout: layout, details: details
         )
         active.insert(exporter)
         defer { active.remove(exporter) }
@@ -552,6 +686,8 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
 
     /// Runs one print operation to completion through `runModal(for:)`.
     func run(_ operation: NSPrintOperation, host: NSWindow) async -> Bool {
+        // Every layout's print goes through here, after its own changes to the page.
+        await groupBlocksForPrint()
         let paginateSignpost = Self.signposter.beginInterval("paginate", id: Self.signposter.makeSignpostID())
         defer { Self.signposter.endInterval("paginate", paginateSignpost) }
         return await withCheckedContinuation { continuation in
@@ -602,6 +738,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
     ///     (#100).
     ///   - softBreaksAsLineBreaks: Likewise (#129).
     ///   - calloutTitles: Likewise (#135): the default titles of callouts in the PDF.
+    ///   - details: Likewise: what happens to collapsible blocks (`DetailsMode`, mars-dawn#300).
     ///   - displayName: The handout layout's document name (S3 of mars-dawn#432), for its
     ///     footer and, without a front-matter title, its header: a file name without its
     ///     extension, never a path. Nil leaves the name out. Other layouts ignore it.
@@ -616,6 +753,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         footnoteBackLabel: String = MarkdownRenderer.Options().footnoteBackLabel,
         softBreaksAsLineBreaks: Bool = false,
         layout: ExportLayout = .document,
+        details: DetailsMode = .expand,
         tocTitle: String = "Contents",
         displayName: String? = nil,
         calloutTitles: CalloutTitles? = nil
@@ -624,7 +762,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
             markdown: markdown, to: url, theme: theme, baseDirectory: baseDirectory,
             allowRemoteImages: allowRemoteImages, paper: paper, scopeRoot: scopeRoot,
             footnoteBackLabel: footnoteBackLabel, softBreaksAsLineBreaks: softBreaksAsLineBreaks,
-            layout: layout, tocTitle: tocTitle, displayName: displayName, calloutTitles: calloutTitles, inspect: nil
+            layout: layout, details: details, tocTitle: tocTitle, displayName: displayName, calloutTitles: calloutTitles, inspect: nil
         )
     }
 
@@ -640,6 +778,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         footnoteBackLabel: String = MarkdownRenderer.Options().footnoteBackLabel,
         softBreaksAsLineBreaks: Bool = false,
         layout: ExportLayout = .document,
+        details: DetailsMode = .expand,
         tocTitle: String = "Contents",
         displayName: String? = nil,
         calloutTitles: CalloutTitles? = nil,
@@ -652,7 +791,7 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
         let result = try await runReportingDiagramDetails(
             markdown: markdown, theme: theme, baseDirectory: baseDirectory,
             allowRemoteImages: allowRemoteImages, scopeRoot: scopeRoot, footnoteBackLabel: footnoteBackLabel,
-            softBreaksAsLineBreaks: softBreaksAsLineBreaks, layout: layout, tocTitle: tocTitle, displayName: displayName,
+            softBreaksAsLineBreaks: softBreaksAsLineBreaks, layout: layout, details: details, tocTitle: tocTitle, displayName: displayName,
             calloutTitles: calloutTitles, printInfo: printInfo, window: nil, inspect: inspect, hooks: hooks
         ) { info, operation in
             info.jobDisposition = .save

@@ -279,7 +279,13 @@ private struct ReadableTextVisitor: MarkupWalker {
 
     mutating func visitBlockQuote(_ blockQuote: BlockQuote) {
         if let alert = Callouts.alert(in: blockQuote) {
-            walkBlocks(alert.blocks)
+            if let fold = alert.fold {
+                if let title = fold.title { walkTitle(title) }
+                // A collapsed callout shows only its title (#300).
+                if fold.open { walkBlocks(alert.blocks) }
+            } else {
+                walkBlocks(alert.blocks)
+            }
         } else {
             walkChildren(of: blockQuote)
         }
@@ -318,15 +324,25 @@ private struct ReadableTextVisitor: MarkupWalker {
                 }
                 switch opening {
                 case .callout(_, let title, _):
-                    if let title { output += title + " " }
-                case .spoiler(let title, _):
-                    output += title + " "
-                    hidden = 1
+                    if let title { walkTitle(title) }
+                case .spoiler(let title, let open, _):
+                    if let title { walkTitle(title) }
+                    if !open { hidden = 1 }
                 }
             case .close:
                 if hidden > 0 { hidden -= 1 }
             }
         }
+    }
+
+    /// A callout's or spoiler's title: its text, then its inline nodes; raw HTML in it is shown
+    /// as text (#300).
+    private mutating func walkTitle(_ title: Callouts.Title) {
+        output += title.lead
+        for node in title.nodes {
+            if let raw = node as? InlineHTML { output += raw.rawHTML } else { visit(node) }
+        }
+        output += " "
     }
 
     private mutating func walk(_ block: Callouts.Block, trim: Callouts.Trim?) {
