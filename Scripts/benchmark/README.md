@@ -92,11 +92,9 @@ as informative, not authoritative.
 
 The goal here is input for the app-side performance issue (roughly: how much of the
 wall time is parsing, versus layout/scripts/pagination), without instrumenting the
-shipping exporter and without patching the kit. `DocumentExporter` currently has no
-phase-level logging to read back (only two error-path `os_log` calls — see
-`Sources/MarsDawnExport/DocumentExporter.swift`), so there is no already-shipping signal
-to split the non-parse time further; a finer split needs signposts from another
-workstream (B1-app).
+shipping exporter and without patching the kit. This section was written before
+`DocumentExporter` had phase-level logging; the finer split now comes from "Signposts"
+below.
 
 What `run.py` does instead, per cell:
 
@@ -120,7 +118,7 @@ What `run.py` does instead, per cell:
 ## Signposts
 
 `DocumentExporter` (kit commit `81af5c6` onward) marks five intervals with
-`OSSignposter`, subsystem `dev.southern-light.marsdawn`, category `Performance`:
+`OSSignposter`, subsystem `dev.southern-light.marsdawn-kit`, category `Performance`:
 `template` (the offscreen page's navigation), `render` (the `MarkdownRenderer` call),
 `push` (the `evaluateJavaScript` call that updates the page), `waitForContent` (the
 readiness poll loop — its end event carries `polls=<n> outcome=ready|timeout|error`),
@@ -202,8 +200,8 @@ was caught in that specific snapshot.
 
 ## Failure row: the dense-Markdown fallback boundary
 
-K1 (not yet merged into kit `main` as of this harness) introduces a 500k-node fallback:
-past that boundary, roughly 2.4 MB of dense Markdown, the renderer shows escaped source
+The kit's node budget (`MarkdownParsing.defaultMaxNodes`) is a 500k-node fallback: past
+that boundary, roughly 2.4 MB of dense Markdown, the renderer shows escaped source
 text instead of rendering the document. An agent choosing MarsDawn for a large document
 needs to know that boundary exists.
 
@@ -214,10 +212,8 @@ function `MarsDawnExport` calls before laying a page out — on `dense_boundary.
 carries a fixed sentinel heading (`# MARSDAWN_BENCH_FALLBACK_SENTINEL`). The check then
 looks at the HTML that comes back:
 
-- If the sentinel appears as a real `<h1>` element, the fallback did not trigger. If
-  this kit commit has no fallback code at all (true as of this harness's introduction,
-  since K1 hasn't merged), `run.py` reports this as **"not present in this build"** —
-  a distinct, honest claim from "boundary not reached."
+- If the sentinel appears as a real `<h1>` element, the fallback did not trigger on this
+  input, and the harness reports **"not triggered."**
 - If the sentinel appears as literal, un-rendered text (`# MARSDAWN_BENCH_FALLBACK_SENTINEL`),
   the fallback triggered on this input, and the harness reports **"triggered."**
 - If neither form is found — an unexpected renderer change, a probe build failure, or a

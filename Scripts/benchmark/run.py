@@ -16,7 +16,9 @@ machine:
 
 import argparse
 import json
+import os
 import re
+import signal
 import statistics
 import subprocess
 import sys
@@ -235,6 +237,16 @@ def sample_webcontent_processes():
     return result
 
 
+def kill_export(pid):
+    """Ends the export `find_child_pid` found. It may already be gone, or never have been seen."""
+    if pid is None:
+        return
+    try:
+        os.kill(pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+
+
 def find_child_pid(parent_pid, name_hint):
     """The pid of a direct child of `parent_pid` whose comm contains `name_hint`.
 
@@ -411,16 +423,25 @@ def run_one_export(binary_path, input_path, output_pdf, capture_signposts=True):
         if ret is not None:
             break
         if time.perf_counter() - start > EXPORT_TIMEOUT_SECONDS:
+            # `proc` is /usr/bin/time. Killing only that leaves the export running and holding
+            # stdout, so the export goes first, and communicate() below has an end.
+            # With no name to match (a wrapper script may exec something else), the only child.
+            kill_export(marsdawn_pid or find_child_pid(proc.pid, ""))
             proc.kill()
             timed_out = True
             break
         time.sleep(WEBCONTENT_POLL_SECONDS)
 
+    stdout = ""
     try:
         stdout, _ = proc.communicate(timeout=30)
     except subprocess.TimeoutExpired:
+        kill_export(marsdawn_pid)
         proc.kill()
-        stdout, _ = proc.communicate()
+        try:
+            stdout, _ = proc.communicate(timeout=30)
+        except subprocess.TimeoutExpired:
+            pass  # something else still holds the pipe: report the failure rather than wait
     stderr_file.seek(0)
     stderr = stderr_file.read()
     stderr_file.close()
@@ -686,10 +707,9 @@ def check_fallback_boundary(probe_binary, dense_input, sentinel):
         }
     if rendered_marker in html:
         return {
-            "status": "not_present_in_build",
-            "detail": "The sentinel heading rendered normally as an <h1> element. As of this kit "
-            "commit, K1's dense-Markdown fallback is not merged into main, so this is expected: "
-            "'not present in this build', not 'boundary not reached'.",
+            "status": "not_triggered",
+            "detail": "The sentinel heading rendered normally as an <h1> element: this input stayed "
+            "under the node budget (MarkdownParsing.defaultMaxNodes), so the fallback didn't run.",
         }
     return {
         "status": "inconclusive",
