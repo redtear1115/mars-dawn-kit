@@ -35,7 +35,7 @@ by itself put a number anywhere public.
      spread is wide enough to look like noise.
   7. Aborts a cell on the first failed run rather than averaging a failure away.
   8. Checks the dense-Markdown fallback boundary (see below) and records it cleanly,
-     including when the fallback isn't in this build at all.
+     including when the fallback doesn't trigger on that input.
   9. Breaks each cell's total down into parse time, a process-start baseline, and a
      remainder covering layout, scripts and pagination together (see "Stage breakdown"
      below) — input for the app-side performance issue, not a shipped feature.
@@ -200,7 +200,7 @@ was caught in that specific snapshot.
 
 ## Failure row: the dense-Markdown fallback boundary
 
-The kit's node budget (`MarkdownParsing.defaultMaxNodes`) is a 500k-node fallback: past
+The kit's node budget (`ParseLimits.defaultMaxNodes`) is a 500k-node fallback: past
 that boundary, roughly 2.4 MB of dense Markdown, the renderer shows escaped source
 text instead of rendering the document. An agent choosing MarsDawn for a large document
 needs to know that boundary exists.

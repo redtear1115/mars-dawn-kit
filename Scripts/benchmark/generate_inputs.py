@@ -60,7 +60,7 @@ TARGET_BYTES = {
     "100kb": 100 * 1024,
     "1mb": 1 * 1024 * 1024,
     "10mb": 10 * 1024 * 1024,
-    # The kit's node budget (MarkdownParsing.defaultMaxNodes) falls back at 500k nodes, at
+    # The kit's node budget (ParseLimits.defaultMaxNodes) falls back at 500k nodes, at
     # roughly 2.4 MB of dense Markdown. This fixture sits right at that
     # boundary so run.py's failure-row check has something to probe.
     "dense_boundary": int(2.4 * 1024 * 1024),

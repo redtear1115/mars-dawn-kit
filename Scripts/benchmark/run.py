@@ -288,7 +288,7 @@ WAIT_FOR_CONTENT_MESSAGE_RE = re.compile(r"polls=(\d+)\s+outcome=(\w+)")
 def capture_export_signposts(pid, wall_start, wall_end):
     """Parse this run's export signposts from the unified log, by pid.
 
-    Queries dev.southern-light.marsdawn/Performance events for exactly this pid, within
+    Queries dev.southern-light.marsdawn-kit/Performance events for exactly this pid, within
     a padded window around the run. Returns per-interval start/end/duration, waitForContent's
     poll count and outcome, and the gap between waitForContent ending and paginate starting -
     time in the "keep headings with the next block" pass and anything else between them that
@@ -706,7 +706,7 @@ def check_fallback_boundary(probe_binary, dense_input, sentinel):
         return {
             "status": "not_triggered",
             "detail": "The sentinel heading rendered normally as an <h1> element: this input stayed "
-            "under the node budget (MarkdownParsing.defaultMaxNodes), so the fallback didn't run.",
+            "under the node budget (ParseLimits.defaultMaxNodes), so the fallback didn't run.",
         }
     return {
         "status": "inconclusive",
