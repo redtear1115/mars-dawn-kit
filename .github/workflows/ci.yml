@@ -201,11 +201,13 @@ jobs:
           echo "The tag and the binary agree."
 
   pdf-goldens:
-    # Tier 4 of the PDF corpus (redtear1115/mars-dawn#2): per-OS-build goldens. Its own job, so a
+    # Tier 4 of the PDF corpus (redtear1115/mars-dawn#2): per-macOS-major-version goldens. Its own job, so a
     # runner-image update shows up as a distinct, clearly labelled failure instead of failing
     # inside the `test` matrix, whose PDFCorpus run skips the goldens (they need
-    # MARSDAWN_PDF_GOLDENS). Goldens are recorded on macOS 26 only; see the "Record PDF goldens"
+    # MARSDAWN_PDF_GOLDENS). This job compares Goldens/macos-26/; see the "Record PDF goldens"
     # workflow and the README's "The PDF export golden corpus" for the drift policy.
+    # macOS 27 is recorded by hand on a Mac running it: GitHub has no macos-27 runner.
+    # MARSDAWN_PDF_GOLDENS=1 MARSDAWN_UPDATE_GOLDENS=1 swift test --no-parallel --filter PDFCorpus/golden
     runs-on: macos-26
     timeout-minutes: 30
     permissions:
