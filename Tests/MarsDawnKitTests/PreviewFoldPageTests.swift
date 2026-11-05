@@ -131,6 +131,43 @@ struct PreviewFoldPageTests {
         #expect(try await shown(webView) == Self.everything)
     }
 
+    /// After Collapse All, a reader opens one section: its text and subheadings come back and the
+    /// rest stays folded, so the arrow's state is what the page shows.
+    @Test func opensOneSectionAfterCollapseAll() async throws {
+        defer { Page.closeHosts() }
+        let webView = try await loaded(Self.outline)
+        _ = try await webView.evaluateJavaScript(PreviewWebView.collapseAllScript(level: 2))
+        try await clickHeading("Bravo", in: webView)
+        #expect(try await shown(webView) == ["P:Intro paragraph.", "H1:Alpha", "H2:Bravo", "P:bravo text", "H3:Charlie",
+                                             "P:charlie text", "H2:Delta", "H1:Echo"])
+        // Folding it again goes back; a folded h3 inside the opened h2 still hides its own text.
+        try await clickHeading("Charlie", in: webView)
+        #expect(try await shown(webView) == ["P:Intro paragraph.", "H1:Alpha", "H2:Bravo", "P:bravo text", "H3:Charlie",
+                                             "H2:Delta", "H1:Echo"])
+        try await clickHeading("Bravo", in: webView)
+        #expect(try await shown(webView) == ["P:Intro paragraph.", "H1:Alpha", "H2:Bravo", "H2:Delta", "H1:Echo"])
+    }
+
+    @Test func aFoldedHeadingHidesEverythingUnderIt() async throws {
+        defer { Page.closeHosts() }
+        let webView = try await loaded(Self.outline)
+        try await clickHeading("Alpha", in: webView)
+        #expect(try await shown(webView) == ["P:Intro paragraph.", "H1:Alpha", "H1:Echo", "P:echo text"])
+    }
+
+    @Test func theFootnotesStayWhenTheLastSectionIsFolded() async throws {
+        defer { Page.closeHosts() }
+        let markdown = "Intro[^1].\n\n# One\n\nx[^2].\n\n# Last\n\nbody\n\n[^1]: first note\n[^2]: second note\n"
+        let webView = try await loaded(markdown)
+        let footnotes = "document.querySelector('#content > section.footnotes')?.checkVisibility() ?? null"
+        #expect(try await webView.evaluateJavaScript(footnotes) as? Bool == true, "positive fixture: the page has them")
+        try await clickHeading("Last", in: webView)
+        #expect(try await webView.evaluateJavaScript(footnotes) as? Bool == true, "they aren't the last section's")
+        #expect(try await !shown(webView).contains("P:body"), "the section's own text is folded")
+        _ = try await webView.evaluateJavaScript(PreviewWebView.collapseAllScript(level: 1))
+        #expect(try await webView.evaluateJavaScript(footnotes) as? Bool == true, "Collapse All leaves them too")
+    }
+
     @Test func aDocumentWithoutH1OrH2CollapsesToItsTopHeadings() async throws {
         defer { Page.closeHosts() }
         let webView = try await loaded("### One\n\none text\n\n#### Sub\n\nsub text\n\n### Two\n\ntwo text\n")
@@ -211,19 +248,19 @@ struct PreviewFoldPageTests {
         #expect(collapsed["codeShown"] as? Bool == false)
         #expect(collapsed["buttonShown"] as? Bool == true)
         #expect(collapsed["expanded"] as? String == "false")
-        #expect(collapsed["label"] as? String == "Expand")
+        #expect(collapsed["label"] as? String == "Code, 40 lines", "collapsed, the name says what is folded")
         #expect((collapsed["row"] as? String ?? "").contains("Code, 40 lines"), "row: \(collapsed["row"] ?? "nil")")
         let before = collapsed["before"] as? Double ?? 0, after = collapsed["after"] as? Double ?? 0
         #expect(after < 60 && before > 400, "a single row: \(before) → \(after)")
 
         // The host's wording replaces the fallback, including the line count.
         let localized = try await Page.json(webView, """
-            MarsDawn.setLabels({ fold: { code: "程式碼 %d 行", expand: "展開" } });
+            MarsDawn.setLabels({ fold: { code: "程式碼 %d 行" } });
             const button = document.querySelector("#content > pre > .md-fold-block");
             return { summary: button.getAttribute("data-summary"), label: button.getAttribute("aria-label") };
             """)
         #expect(localized["summary"] as? String == "程式碼 40 行")
-        #expect(localized["label"] as? String == "展開")
+        #expect(localized["label"] as? String == "程式碼 40 行")
 
         // A collapsed block reused by an edit elsewhere stays collapsed, once.
         try await Page.push([40, 5, 20, 21].map(Self.codeBlock).joined(separator: "\nText, edited.\n\n"), to: webView)
@@ -296,7 +333,7 @@ struct PreviewFoldPageTests {
             const plain = c.textContent, inner = c.innerText;
             document.querySelector("#content > pre > .md-fold-block").click();
             [...c.querySelectorAll(":scope > h2 > .md-fold-toggle")][0].click();
-            const labels = ["Code, 40 lines", "Collapse", "Expand", "▸", "▾"];
+            const labels = ["Code, 40 lines", "Collapse", "▸", "▾"];
             const selection = getSelection();
             selection.selectAllChildren(c);
             const copied = selection.toString();
@@ -392,7 +429,7 @@ struct PreviewFoldPageTests {
     @Test func theUpdateCarriesTheKitsFoldLabels() {
         let script = PreviewWebView.updateScript(html: "<p>x</p>")
         #expect(script.contains("fold: { code: \(PreviewWebView.jsonStringLiteral(PreviewWebView.foldCodeLabelFormat)), image: "))
-        #expect(script.contains("expand: \(PreviewWebView.jsonStringLiteral(PreviewWebView.expandBlockLabel)) }"))
+        #expect(script.contains("collapse: \(PreviewWebView.jsonStringLiteral(PreviewWebView.collapseBlockLabel)) }"))
     }
 
     /// The proposed copy (pending approval) is what ships for zh-Hant; English is the key.
@@ -401,7 +438,7 @@ struct PreviewFoldPageTests {
             #expect(PreviewWebView.moduleLocalizedString(key, localization: "zh-Hant") == value, "\(key)")
             #expect(PreviewWebView.moduleLocalizedString(key, localization: "ja") == key, "ja falls back to English: \(key)")
         }
-        #expect(FoldLabelsProposedCopy.zhHant.count == 7)
+        #expect(FoldLabelsProposedCopy.zhHant.count == 6)
     }
 }
 #endif

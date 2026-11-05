@@ -317,15 +317,13 @@ public enum PreviewWebView {
     public nonisolated static var expandSectionLabel: String { kitString("Expand section") }
     /// Accessible name of a code block's, image's or diagram's control while it is shown.
     public nonisolated static var collapseBlockLabel: String { kitString("Collapse") }
-    /// Accessible name of that control while the block is folded.
-    public nonisolated static var expandBlockLabel: String { kitString("Expand") }
 
     /// The `fold` member of `setLabels`'s object.
     nonisolated static var foldLabelsObject: String {
         let labels: [(String, String)] = [
             ("code", foldCodeLabelFormat), ("image", foldImageLabel), ("diagram", foldDiagramLabel),
             ("collapseSection", collapseSectionLabel), ("expandSection", expandSectionLabel),
-            ("collapse", collapseBlockLabel), ("expand", expandBlockLabel),
+            ("collapse", collapseBlockLabel),
         ]
         return "{ " + labels.map { "\($0.0): \(jsonStringLiteral($0.1))" }.joined(separator: ", ") + " }"
     }

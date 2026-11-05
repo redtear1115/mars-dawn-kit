@@ -11,6 +11,5 @@ enum FoldLabelsProposedCopy {
         "Collapse section": "收合段落",
         "Expand section": "展開段落",
         "Collapse": "收合",
-        "Expand": "展開",
     ]
 }

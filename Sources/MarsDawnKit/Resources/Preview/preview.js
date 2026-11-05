@@ -839,10 +839,11 @@
   let foldLabels = {
     code: "Code, %d lines", image: "Image", diagram: "Diagram",
     collapseSection: "Collapse section", expandSection: "Expand section",
-    collapse: "Collapse", expand: "Expand",
+    collapse: "Collapse",
   };
   // Folded headings by identity (level, text, occurrence): "collapsed" hides the section;
-  // a number L (from `collapseAll(L)`) hides the section's text and its headings deeper than L.
+  // a number L (from `collapseAll(L)`) hides the section's own text and its headings deeper
+  // than L, not what is under a heading the reader has opened inside it.
   const headingFolds = new Map();
 
   function headingLevel(el) {
@@ -891,13 +892,17 @@
     for (const key of [...headingFolds.keys()]) if (!live.has(key)) headingFolds.delete(key);
     const stack = [];
     for (const el of content().children) {
+      // The footnotes belong to the whole document, so the last section doesn't own them.
+      if (el.matches("section.footnotes")) stack.length = 0;
       const level = headingLevel(el);
       let hidden;
       if (level) {
         while (stack.length && stack[stack.length - 1].level >= level) stack.pop();
-        hidden = stack.some((s) => s.state === "collapsed" || (typeof s.state === "number" && level > s.state));
+        const parent = stack[stack.length - 1];
+        hidden = !!parent && (parent.hidden || parent.state === "collapsed" ||
+          (typeof parent.state === "number" && level > parent.state));
         const state = headingFolds.get(keyOf.get(el));
-        stack.push({ level, state });
+        stack.push({ level, state, hidden });
         let button = ownControl(el, "md-fold-toggle");
         if (!button) {
           button = document.createElement("button");
@@ -907,7 +912,8 @@
         }
         labelHeadingToggle(button, state === undefined);
       } else {
-        hidden = stack.some((s) => s.state !== undefined);
+        const parent = stack[stack.length - 1];
+        hidden = !!parent && (parent.hidden || parent.state !== undefined);
       }
       setClass(el, "md-fold-hidden", hidden);
     }
@@ -925,9 +931,11 @@
 
   function labelBlockControl(button) {
     const collapsed = button.parentElement?.classList.contains("md-block-collapsed") ?? false;
+    const summary = summaryFor(button.dataset.kind, Number(button.dataset.count || 0));
     setAttr(button, "aria-expanded", String(!collapsed));
-    setAttr(button, "aria-label", collapsed ? foldLabels.expand : foldLabels.collapse);
-    setAttr(button, "data-summary", summaryFor(button.dataset.kind, Number(button.dataset.count || 0)));
+    // Collapsed, the name says what is folded here; `aria-expanded` says it can be opened.
+    setAttr(button, "aria-label", collapsed ? summary : foldLabels.collapse);
+    setAttr(button, "data-summary", summary);
   }
 
   function addBlockControl(el, kind, count) {
