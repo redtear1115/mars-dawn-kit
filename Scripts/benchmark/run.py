@@ -20,6 +20,7 @@ import re
 import statistics
 import subprocess
 import sys
+import tempfile
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -255,7 +256,7 @@ def find_child_pid(parent_pid, name_hint):
 
 # subsystem/category the exporter's signposts are logged under (see
 # Sources/MarsDawnExport/DocumentExporter.swift's doc comment).
-SIGNPOST_SUBSYSTEM = "dev.southern-light.marsdawn"
+SIGNPOST_SUBSYSTEM = "dev.southern-light.marsdawn-kit"  # the kit's exporter logs here, not under the app's subsystem
 SIGNPOST_CATEGORY = "Performance"
 SIGNPOST_INTERVALS = ["template", "render", "push", "waitForContent", "paginate"]
 
@@ -391,7 +392,10 @@ def run_one_export(binary_path, input_path, output_pdf, capture_signposts=True):
     wall_start = datetime.now()
     start = time.perf_counter()
     try:
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        # A file, not a pipe: nothing reads stderr until the export exits, so a pipe blocks the
+        # export for good once it writes more than the pipe buffers (about 64 KB).
+        stderr_file = tempfile.TemporaryFile(mode="w+")
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=stderr_file, text=True)
     except OSError as exc:
         elapsed = time.perf_counter() - start
         return _export_failure(elapsed, f"couldn't start process: {exc}")
@@ -413,10 +417,13 @@ def run_one_export(binary_path, input_path, output_pdf, capture_signposts=True):
         time.sleep(WEBCONTENT_POLL_SECONDS)
 
     try:
-        stdout, stderr = proc.communicate(timeout=30)
+        stdout, _ = proc.communicate(timeout=30)
     except subprocess.TimeoutExpired:
         proc.kill()
-        stdout, stderr = proc.communicate()
+        stdout, _ = proc.communicate()
+    stderr_file.seek(0)
+    stderr = stderr_file.read()
+    stderr_file.close()
     elapsed = time.perf_counter() - start
     wall_end = datetime.now()
 
