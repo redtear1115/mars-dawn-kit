@@ -273,12 +273,21 @@
   // one at a time, each preceded by a fresh task, no matter how many changed in one update.
   // Never rejects (each render's own errors already end up in the page, not thrown), matching
   // what callers here relied on `Promise.allSettled` for before.
+  let mermaidBatches = 0;
   function renderMermaidSequentially(pairs) {
     if (!pairs.length) return Promise.resolve();
+    // Diagrams hold their space blank until they settle, not only until the bundle arrives: an
+    // undrawn diagram would otherwise flash its source between the two.
+    const root = document.documentElement;
+    mermaidBatches += 1;
+    root.classList.add("mermaid-loading");
     return pairs.reduce(
       (chain, [block, stale]) => chain.then(() => yieldToFreshTask()).then(() => renderMermaid(block, stale)).catch(() => {}),
       loadMermaid()
-    );
+    ).then(() => {
+      mermaidBatches -= 1;
+      if (!mermaidBatches) root.classList.remove("mermaid-loading");
+    });
   }
 
   // The bundle is most of what a page costs (kit #265): about 80 ms and 38 MB per window, so only
@@ -291,9 +300,6 @@
   function loadMermaid() {
     if (mermaidLoad) return mermaidLoad;
     mermaidState = "loading";
-    const root = document.documentElement;
-    // Diagrams hold their space blank rather than flash their source until the bundle arrives.
-    root.classList.add("mermaid-loading");
     mermaidLoad = new Promise((resolve) => {
       const script = document.createElement("script");
       script.src = "vendor/mermaid.min.js";
@@ -308,7 +314,6 @@
       };
       document.head.appendChild(script);
     }).then(() => {
-      root.classList.remove("mermaid-loading");
       // Inside this promise a throw would reject it and skip the first diagram, which would never
       // settle. Unconfigured, every diagram still reaches renderMermaid and ends one way or another.
       try {
