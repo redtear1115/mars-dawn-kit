@@ -355,6 +355,28 @@ struct PreviewFoldPageTests {
         #expect(state["noLines"] as? Int == 0)
     }
 
+    /// The page-shortening scroll a fold causes isn't the user's; a scroll of the user's still
+    /// ends the sync, fold or no fold.
+    @Test func aFoldDoesNotBringBackASyncTheUserScrolledAway() async throws {
+        defer { Page.closeHosts() }
+        guard let webView = try await Page.visiblePreview() else { return }
+        let fillers = (1...60).map { "Filler \($0)." }.joined(separator: "\n\n")
+        let markdown = "# Top\n\n" + fillers + "\n\n# Bottom\n\n" + fillers.replacingOccurrences(of: "Filler", with: "Later") + "\n"
+        try await Page.push(markdown, to: webView)
+        let result = try await Page.json(webView, """
+            const line = Number([...document.querySelectorAll("#content > p")]
+                .find((p) => p.textContent.startsWith("Later 10.")).dataset.line);
+            MarsDawn.scrollToLine(line, false);
+            await new Promise((r) => setTimeout(r, 200));
+            window.scrollTo(0, 3000);
+            await new Promise((r) => setTimeout(r, 100));
+            document.querySelector("#content > h1 > .md-fold-toggle").click();
+            await new Promise((r) => setTimeout(r, 100));
+            return { y: window.scrollY, bottom: document.documentElement.scrollHeight - innerHeight };
+            """)
+        #expect(abs((result["y"] as? Double ?? -1) - (result["bottom"] as? Double ?? -9)) <= 2, "\(result)")
+    }
+
     @Test func scrollSyncSkipsFoldedBlocksAndResyncsWhenAFoldChanges() async throws {
         defer { Page.closeHosts() }
         guard let webView = try await Page.visiblePreview() else { return }
@@ -374,7 +396,9 @@ struct PreviewFoldPageTests {
         let open = try await Page.json(webView, check)
         #expect(abs((open["y"] as? Double ?? -1) - (open["want"] as? Double ?? -9)) <= 2)
         // Fold the section above: the synced line must follow its text after one frame, without
-        // another scrollToLine from the host.
+        // another scrollToLine from the host. The wait outlasts the scroll listener's window after
+        // `scrollToLine`, as any real click does: inside it, this passes without the fix (kit #257).
+        try await Task.sleep(for: .milliseconds(200))
         let resynced = try await Page.json(webView, """
             const before = window.scrollY;
             document.querySelector("#content > h1 > .md-fold-toggle").click();

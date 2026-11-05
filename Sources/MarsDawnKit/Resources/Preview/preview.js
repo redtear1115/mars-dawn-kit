@@ -507,16 +507,27 @@
   // frame, however many events arrive: a document can open thousands of `<details>` at once,
   // and nothing here may cost more than a constant per event.
   // Viewer folding (mars-dawn#300) moves blocks the same way and shares this frame.
+  //
+  // Closing one can leave the page shorter than the scroll position, and the browser's clamp to
+  // the new bottom arrives as a `scroll` event that isn't the user's (kit #257). Before this
+  // frame the scroll listener sees `toggleFrame`; after it, the clamp may still be on its way,
+  // or the sync may already sit at the bottom and not move, so the frame opens the same window a
+  // `scrollToLine` does.
   let toggleFrame = 0;
   function scheduleResync() {
     anchors = null;
     if (toggleFrame) return;
     toggleFrame = requestAnimationFrame(() => {
       toggleFrame = 0;
+      if (lastSyncedLine) suppressScrollUntil = performance.now() + 120;
       reapplySync();
     });
   }
   document.addEventListener("toggle", scheduleResync, true);
+  // `toggle` is queued, so a frame can run between a click and its event. The click comes first.
+  document.addEventListener("click", (event) => {
+    if (event.target instanceof Element && event.target.closest("summary")) scheduleResync();
+  }, true);
 
   function getAnchors() {
     if (anchors) return anchors;
@@ -583,6 +594,7 @@
 
   window.addEventListener("scroll", () => {
     if (performance.now() < suppressScrollUntil) return;
+    if (toggleFrame && lastSyncedLine) return;  // a toggle's clamp: its frame re-syncs (see scheduleResync)
     lastSyncedLine = null;  // the user took over; don't snap back on the next update
     if (scrollFrame) return;
     scrollFrame = requestAnimationFrame(() => {
