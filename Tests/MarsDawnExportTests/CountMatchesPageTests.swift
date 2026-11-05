@@ -225,12 +225,16 @@ struct CountMatchesPageTests {
         #expect(TextStatistics(markdownBody: markdown).words == closed, "counted vs shown, closed")
     }
 
-    /// <select>: measured, whatever the page shows of it.
+    /// <select>: pin both the Swift count and WebKit’s version-dependent innerText.
     @Test func aSelectCountsWhatThePageShows() async throws {
         let markdown = "<div><select><option>alpha</option><option>beta</option></select> chosen words</div>\n"
         let page = try await pageWords(markdown)
-        #expect(page > 0)
-        #expect(TextStatistics(markdownBody: markdown).words == page, "counted vs shown")
+        let counted = TextStatistics(markdownBody: markdown).words
+        #expect(counted == 2)
+        // macOS 27 innerText includes every option; the Swift counter does not read innerText.
+        // Pin both sides so a later macOS change goes red on purpose too.
+        let osMajorVersion = ProcessInfo.processInfo.operatingSystemVersion.majorVersion
+        #expect(page == (osMajorVersion >= 27 ? 4 : counted), "counted vs shown: \(counted) vs \(page)")
     }
 
     /// <textarea>: counted, on purpose, although `innerText` leaves form controls out: the reader

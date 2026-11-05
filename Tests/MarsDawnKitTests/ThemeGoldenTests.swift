@@ -39,7 +39,11 @@ struct ThemeGoldenTests {
                 mismatches.append("\(entry.theme)/\(entry.mode)/\(entry.selector): missing from the capture")
                 continue
             }
-            for (property, expected) in entry.properties where actual[property] != expected {
+            for (property, value) in entry.properties {
+                let expected = ThemeGoldenHarness.expectedValue(
+                    value, selector: entry.selector, property: property, mode: entry.mode
+                )
+                if actual[property].map(ThemeGoldenHarness.normalize) == expected { continue }
                 mismatches.append("\(entry.theme)/\(entry.mode)/\(entry.selector) \(property): got \(actual[property] ?? "<nil>"), want \(expected)")
             }
         }
