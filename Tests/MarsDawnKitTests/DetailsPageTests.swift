@@ -86,6 +86,45 @@ struct DetailsPageTests {
         return webView
     }
 
+    @Test func taskListsKeepOrderedMarkersWithoutCheckboxOverlap() async throws {
+        defer { Self.closeHosts() }
+        let webView = try await loaded("1. [ ] ordered task\n2. [x] ordered done\n")
+        let ordered = try await Self.json(webView, """
+            const ol = document.querySelector("#content ol");
+            const inputs = [...ol.querySelectorAll(":scope > li > input")];
+            return {
+                style: getComputedStyle(ol).listStyleType,
+                lefts: inputs.map(input => ({
+                    input: input.getBoundingClientRect().left,
+                    item: input.parentElement.getBoundingClientRect().left,
+                })),
+            };
+            """)
+        #expect(ordered["style"] as? String == "decimal")
+        let lefts = try #require(ordered["lefts"] as? [[String: Double]])
+        #expect(lefts.count == 2)
+        for left in lefts {
+            let input = try #require(left["input"])
+            let item = try #require(left["item"])
+            #expect(input >= item)
+        }
+
+        for markdown in ["- [ ] a\n- [x] b\n", "1. parent\n   - [ ] a\n   - [x] b\n"] {
+            try await Self.push(markdown, to: webView)
+            let unordered = try await Self.json(webView, """
+                const ul = document.querySelector("#content ul");
+                const input = ul.querySelector("li > input");
+                return {
+                    style: getComputedStyle(ul).listStyleType,
+                    marginLeft: parseFloat(getComputedStyle(input).marginLeft),
+                };
+                """)
+            #expect(unordered["style"] as? String == "none")
+            let marginLeft = try #require(unordered["marginLeft"] as? Double)
+            #expect(marginLeft < 0)
+        }
+    }
+
     // MARK: A1, A2, A3
 
     @Test func theGitHubFormIsOneElementWithItsMarkdownInside() async throws {
