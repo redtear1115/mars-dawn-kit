@@ -61,9 +61,11 @@
     const dark = darkQuery.matches;
     const signature = `${theme}/${dark ? "dark" : "light"}`;
     if (signature === mermaidSignature) return false;
-    // If the bundle failed to load, diagrams fall back to their source (see renderMermaid);
-    // the rest of the page still has to render.
-    if (typeof mermaid === "undefined") return false;
+    // Not loaded: no diagram has asked for it yet (loadMermaid configures it when it arrives), or
+    // the bundle failed, and diagrams fall back to their source (see renderMermaid). Either way
+    // the rest of the page still has to render. Not `typeof mermaid`: until the bundle sets that
+    // global, an element in the document with `id="mermaid"` answers to the same name.
+    if (mermaidState !== "ready") return false;
     mermaidSignature = signature;
 
     const style = getComputedStyle(document.documentElement);
@@ -272,10 +274,44 @@
   // Never rejects (each render's own errors already end up in the page, not thrown), matching
   // what callers here relied on `Promise.allSettled` for before.
   function renderMermaidSequentially(pairs) {
+    if (!pairs.length) return Promise.resolve();
     return pairs.reduce(
       (chain, [block, stale]) => chain.then(() => yieldToFreshTask()).then(() => renderMermaid(block, stale)).catch(() => {}),
-      Promise.resolve()
+      loadMermaid()
     );
+  }
+
+  // The bundle is most of what a page costs (kit #265): about 80 ms and 38 MB per window, so only
+  // a document with a diagram pays for it, the first time it needs one. A `<script defer>` would
+  // not help: the navigation still waits for it. Never rejects, and loads once: after a failure
+  // `mermaid.render` throws inside renderMermaid's `try`, and the diagram keeps its source and
+  // shows the error, as when the page itself failed to load the bundle.
+  let mermaidState = "unloaded";  // then "loading", then "ready" or "failed"
+  let mermaidLoad = null;
+  function loadMermaid() {
+    if (mermaidLoad) return mermaidLoad;
+    mermaidState = "loading";
+    const root = document.documentElement;
+    // Diagrams hold their space blank rather than flash their source until the bundle arrives.
+    root.classList.add("mermaid-loading");
+    mermaidLoad = new Promise((resolve) => {
+      const script = document.createElement("script");
+      script.src = "vendor/mermaid.min.js";
+      // A bundle that loaded but set nothing usable is a failure too.
+      script.onload = () => {
+        mermaidState = typeof window.mermaid?.render === "function" ? "ready" : "failed";
+        resolve();
+      };
+      script.onerror = () => {
+        mermaidState = "failed";
+        resolve();
+      };
+      document.head.appendChild(script);
+    }).then(() => {
+      root.classList.remove("mermaid-loading");
+      configureMermaid();
+    });
+    return mermaidLoad;
   }
 
   // Sequence diagram `rect rgb(...)` bands (redtear1115/mars-dawn-kit#119). The label halo
@@ -926,10 +962,6 @@
   darkQuery.addEventListener("change", () => {
     document.documentElement.dataset.theme = pickTheme(themePair);
     refreshTheme();
-  });
-
-  document.addEventListener("DOMContentLoaded", () => {
-    configureMermaid();
   });
 
   // Resolves once the diagrams from the latest update have rendered (or failed).

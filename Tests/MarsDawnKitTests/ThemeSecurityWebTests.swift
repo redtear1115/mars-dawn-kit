@@ -119,7 +119,7 @@ final class ThemeInjectingSchemeHandler: NSObject, WKURLSchemeHandler {
 @MainActor
 enum ThemePage {
     /// Records every `themeVariables` object preview.js hands to `mermaid.initialize`, from the
-    /// very first call (preview.js configures Mermaid on `DOMContentLoaded`). Injected at document
+    /// very first call (preview.js configures Mermaid when the bundle arrives). Injected at document
     /// start, it catches `mermaid.min.js`'s own `globalThis["mermaid"] = …` with a setter and wraps
     /// `initialize` before preview.js can call it.
     static let initializeRecorder = """
