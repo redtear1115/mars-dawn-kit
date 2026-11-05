@@ -125,6 +125,64 @@ struct DetailsPageTests {
         }
     }
 
+    @Test func looseTaskListParagraphsStayBesideCheckboxes() async throws {
+        defer { Self.closeHosts() }
+        let webView = try await Self.loadedPreview()
+        for markdown in ["- [ ] a\n\n- [x] b\n", "1. [ ] a\n\n2. [x] b\n"] {
+            try await Self.push(markdown, to: webView)
+            let state = try await Self.json(webView, """
+                return {
+                    items: [...document.querySelectorAll("#content .task-list-item")].map(item => {
+                        const input = item.querySelector(":scope > input").getBoundingClientRect();
+                        const p = item.querySelector(":scope > p").getBoundingClientRect();
+                        return {
+                            inputRight: input.right, inputTop: input.top, inputBottom: input.bottom,
+                            paragraphLeft: p.left, paragraphTop: p.top, paragraphBottom: p.bottom,
+                        };
+                    }),
+                };
+                """)
+            let items = try #require(state["items"] as? [[String: Double]])
+            #expect(items.count == 2)
+            for item in items {
+                let inputRight = try #require(item["inputRight"])
+                let inputTop = try #require(item["inputTop"])
+                let inputBottom = try #require(item["inputBottom"])
+                let paragraphLeft = try #require(item["paragraphLeft"])
+                let paragraphTop = try #require(item["paragraphTop"])
+                let paragraphBottom = try #require(item["paragraphBottom"])
+                #expect(paragraphLeft >= inputRight)
+                #expect(paragraphTop < inputBottom)
+                #expect(paragraphBottom > inputTop)
+            }
+        }
+
+        try await Self.push("- [ ] a\n\n  second\n\n- [x] b\n", to: webView)
+        let paragraphs = try await Self.json(webView, """
+            const item = document.querySelector("#content .task-list-item");
+            const [first, second] = item.querySelectorAll(":scope > p");
+            return {
+                firstBottom: first.getBoundingClientRect().bottom,
+                secondTop: second.getBoundingClientRect().top,
+                secondDisplay: getComputedStyle(second).display,
+            };
+            """)
+        let firstBottom = try #require(paragraphs["firstBottom"] as? Double)
+        let secondTop = try #require(paragraphs["secondTop"] as? Double)
+        #expect(secondTop - firstBottom >= 8, "a paragraph's gap, not a line break")
+        #expect(paragraphs["secondDisplay"] as? String == "block")
+
+        // A plain item after a loose task item keeps the gap the task item's `p` used to give.
+        try await Self.push("1. [ ] a\n\n2. plain\n", to: webView)
+        let items = try await Self.json(webView, """
+            const [first, second] = document.querySelectorAll("#content li");
+            return { firstBottom: first.getBoundingClientRect().bottom, secondTop: second.getBoundingClientRect().top };
+            """)
+        let itemBottom = try #require(items["firstBottom"] as? Double)
+        let itemTop = try #require(items["secondTop"] as? Double)
+        #expect(itemTop - itemBottom >= 8)
+    }
+
     // MARK: A1, A2, A3
 
     @Test func theGitHubFormIsOneElementWithItsMarkdownInside() async throws {
