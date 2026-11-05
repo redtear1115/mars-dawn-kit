@@ -225,7 +225,6 @@ img { max-width: 100%; }
   top: 0;
   z-index: 10;
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   justify-content: center;
   gap: 12px;
@@ -235,6 +234,8 @@ img { max-width: 100%; }
   color: var(--muted);
   font-size: 0.85em;
 }
+/* Only with the second button: wrapping one button pushes it under its message in a narrow pane. */
+.remote-images-bar:has(.remote-images-download) { flex-wrap: wrap; }
 .remote-images-bar[hidden] { display: none; }
 .remote-images-bar button {
   font: inherit;

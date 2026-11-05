@@ -108,6 +108,28 @@ struct InsecureImageTests {
         #expect(try await barIsShown(in: webView) == true)
     }
 
+    /// In a narrow pane one button stays beside its message, which wraps instead, as it did before
+    /// the bar had a second button: the bar is sticky, so a taller one covers more of the document.
+    @Test(arguments: [false, true])
+    func onlyABarWithTwoButtonsWraps(withDownload: Bool) async throws {
+        let webView = try await loadedPreview(allowRemoteImages: false)
+        webView.setFrameSize(NSSize(width: 420, height: 600))
+        _ = try await webView.evaluateJavaScript(PreviewWebView.remoteImagesScript(
+            blocked: true, message: String(repeating: "Web images are off. ", count: 4), buttonLabel: "Load Images",
+            placeholderLabel: Self.remoteLabel, downloadButtonLabel: withDownload ? "Download Images" : nil))
+        try await show("![remote](https://example.invalid/a.png)", in: webView)
+        let measured = try await webView.callAsyncJavaScript("""
+            const bar = document.getElementById("remote-images-bar");
+            const message = bar.querySelector("span").getBoundingClientRect();
+            const button = bar.querySelector("button").getBoundingClientRect();
+            return [getComputedStyle(bar).flexWrap, button.top < message.bottom && message.top < button.bottom];
+            """, contentWorld: .page) as? [Any]
+        #expect(measured?.first as? String == (withDownload ? "wrap" : "nowrap"))
+        if !withDownload {
+            #expect(measured?.last as? Bool == true, "the button is on its message's line")
+        }
+    }
+
     @Test(arguments: [false, true])
     func remoteImageButtonsPostOnlyTheirOwnMessage(withDownload: Bool) async throws {
         let load = RecordingMessageHandler()
