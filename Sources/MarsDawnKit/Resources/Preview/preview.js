@@ -309,7 +309,13 @@
       document.head.appendChild(script);
     }).then(() => {
       root.classList.remove("mermaid-loading");
-      configureMermaid();
+      // Inside this promise a throw would reject it and skip the first diagram, which would never
+      // settle. Unconfigured, every diagram still reaches renderMermaid and ends one way or another.
+      try {
+        configureMermaid();
+      } catch {
+        mermaidState = "failed";
+      }
     });
     return mermaidLoad;
   }

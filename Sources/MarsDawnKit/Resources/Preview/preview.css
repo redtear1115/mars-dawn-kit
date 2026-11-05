@@ -265,7 +265,7 @@ img { max-width: 100%; }
 .mermaid-block { position: relative; text-align: center; }
 .mermaid-block .mermaid-source { text-align: left; }
 .mermaid-block.rendered .mermaid-source { display: none; }
-.mermaid-loading .mermaid-block:not(.rendered) .mermaid-source { visibility: hidden; }
+.mermaid-loading .mermaid-block:not(.rendered):not(.skipped) .mermaid-source { visibility: hidden; }
 .mermaid-output svg { max-width: 100%; height: auto; }
 .mermaid-block.stale .mermaid-output { opacity: 0.55; transition: opacity 0.15s; }
 .mermaid-error {

@@ -365,6 +365,98 @@ struct PreviewMermaidErrorTests {
         }
     }
 
+    /// A diagram past the 100-diagram cap says its source is shown, so it is, even while the bundle
+    /// is on its way for the ones under the cap.
+    @Test func aDiagramPastTheCapShowsItsSourceWhileTheBundleLoads() async throws {
+        let webView = try await loadedPreview()
+        try await holdBundle(in: webView)
+        let diagrams = (0...100).map { "```mermaid\ngraph TD\n  A\($0) --> B\($0)\n```\n" }.joined(separator: "\n")
+        _ = try await webView.evaluateJavaScript(
+            PreviewWebView.updateScript(html: MarkdownRenderer.render(diagrams), lineCount: 500)
+        )
+        let visibility = { (index: Int) in
+            ##"getComputedStyle(document.querySelectorAll("#content .mermaid-source")[\##(index)]).visibility"##
+        }
+        #expect(try await value("document.documentElement.classList.contains('mermaid-loading')", in: webView) as? Bool == true)
+        #expect(try await value(visibility(0), in: webView) as? String == "hidden", "positive control")
+        #expect(try await value(visibility(100), in: webView) as? String == "visible")
+        try await releaseBundle(in: webView)
+    }
+
+    /// A theme change while the bundle is on its way is the one the first diagram is drawn in.
+    @Test func aThemeChosenWhileTheBundleLoadsIsTheOneUsed() async throws {
+        let webView = try await loadedPreview()
+        try await holdBundle(in: webView)
+        _ = try await webView.evaluateJavaScript(
+            PreviewWebView.updateScript(html: MarkdownRenderer.render(document(valid, valid)), lineCount: 40)
+        )
+        _ = try await value("(() => { MarsDawn.setTheme('vivid'); return 0; })()", in: webView)
+        try await releaseBundle(in: webView)
+        #expect(try await blockState(0, in: webView)["svg"] as? Int == 1)
+        let configured = try await value("mermaid.mermaidAPI.getConfig().themeVariables.primaryColor", in: webView) as? String
+        let palette = try await value(
+            #"getComputedStyle(document.documentElement).getPropertyValue("--mm-node").trim()"#, in: webView
+        ) as? String
+        #expect(try await value("document.documentElement.dataset.theme", in: webView) as? String == "vivid")
+        #expect(palette?.isEmpty == false, "positive control: the theme has this colour")
+        #expect(configured?.lowercased() == palette?.lowercased())
+    }
+
+    /// An update that replaces the diagrams while the bundle loads: the bundle loads once, and the
+    /// page ends on the new diagram.
+    @Test func anUpdateWhileTheBundleLoadsIsTheOneDrawn() async throws {
+        let webView = try await loadedPreview()
+        try await holdBundle(in: webView)
+        let second = valid.replacingOccurrences(of: "VALIDNODE04", with: "SECOND06")
+        for source in [valid, second] {
+            _ = try await webView.evaluateJavaScript(
+                PreviewWebView.updateScript(html: MarkdownRenderer.render("```mermaid\n\(source)```\n"), lineCount: 8)
+            )
+        }
+        try await releaseBundle(in: webView)
+        #expect(try await blockCount(in: webView) == 1)
+        let state = try await blockState(0, in: webView)
+        #expect(state["svg"] as? Int == 1)
+        #expect((state["source"] as? String)?.contains("SECOND06") == true)
+        #expect(try await value(#"document.querySelectorAll('script[src$="mermaid.min.js"]').length"#, in: webView) as? Int == 1)
+        #expect(try await value("document.documentElement.classList.contains('mermaid-loading')", in: webView) as? Bool == false)
+    }
+
+    /// `mermaid.initialize` throwing must not cost the first diagram its ending.
+    @Test func aFailingInitializeStillSettlesEveryDiagram() async throws {
+        let webView = try await loadedPreview()
+        _ = try await value("""
+        (() => {
+          document.head.appendChild = (node) => {
+            window.mermaid = { render: () => { throw new Error("no"); }, initialize: () => { throw new Error("no"); } };
+            setTimeout(() => node.onload(new Event("load")));
+            return node;
+          };
+          return 0;
+        })()
+        """, in: webView)
+        try await render(document(valid, valid), in: webView)
+        for index in 0...1 {
+            #expect(try await blockState(index, in: webView)["error"] as? Bool == true, "block \(index)")
+        }
+    }
+
+    /// Stops the bundle's script element from reaching the page until `releaseBundle`.
+    private func holdBundle(in webView: WKWebView) async throws {
+        _ = try await value("""
+        (() => {
+          const append = document.head.appendChild.bind(document.head);
+          document.head.appendChild = (node) => { window.__hold = () => append(node); return node; };
+          return 0;
+        })()
+        """, in: webView)
+    }
+
+    private func releaseBundle(in webView: WKWebView) async throws {
+        _ = try await value("(() => { window.__hold(); return 0; })()", in: webView)
+        _ = try? await webView.callAsyncJavaScript("return await MarsDawn.idle();", contentWorld: .page)
+    }
+
     /// The script arrives and runs but defines nothing usable: as good as not loading.
     @Test func aBundleThatSetsNothingIsAFailure() async throws {
         let webView = try await loadedPreview()
