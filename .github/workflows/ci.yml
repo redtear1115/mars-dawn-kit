@@ -31,7 +31,12 @@ jobs:
     # measurements, which run in both the debug and release passes; 50 covers both.
     # 70, not 50: the JSON/YAML tree page (#128) added WebKit suites that run in both passes, and
     # macos-15 hit 50 twice in the release pass with every test passing (run 39231688388).
-    timeout-minutes: 70
+    # 90, not 70: macos-15 succeeded in 52 to 68 minutes across the last 12 successful runs.
+    # Run 42047469590 (kit#263) reached 70 in its last PDF corpus step with every step until then
+    # passing. That step had run 3.2 minutes and normally takes 2 to 3 minutes, so the job was slow,
+    # not hung. Splitting the PDF corpus into its own job would not help: both corpus steps
+    # together take about 6 minutes of macos-15's time, and a new job has to build again.
+    timeout-minutes: 90
     permissions:
       contents: read
     env:
