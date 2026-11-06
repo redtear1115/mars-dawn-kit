@@ -837,6 +837,77 @@
     blocks.forEach((el, i) => { el._mdKey = blockKey(pristine[i]); });
   }
 
+  // Change marks (mars-dawn#358): which blocks differ from a baseline the app holds. The app sends
+  // marks for the text on screen, so the page compares nothing. It keeps the last set, because an
+  // `update()` reuses blocks and moves their lines, and marks are only ever a class and an attribute
+  // on elements already there: nothing is inserted, no `data-line` changes, and a mark that isn't
+  // a whole number of lines or a known kind is dropped.
+  const changeKinds = new Set(["added", "changed", "removed"]);
+  const changeClasses = ["md-change", "md-change-added", "md-change-changed", "md-change-removed"];
+  let changeMarks = [];
+
+  function setChangeMarks({ marks } = {}) {
+    changeMarks = (Array.isArray(marks) ? marks : []).filter((mark) =>
+      Number.isInteger(mark?.firstLine) && mark.firstLine > 0 &&
+      Number.isInteger(mark.lineCount) && mark.lineCount > 0 &&
+      changeKinds.has(mark.kind));
+    applyChangeMarks();
+  }
+
+  // The index in sorted `lines` of the first value not below `line`.
+  function firstLineIndex(lines, line) {
+    let low = 0;
+    let high = lines.length;
+    while (low < high) {
+      const middle = (low + high) >> 1;
+      if (lines[middle] < line) low = middle + 1;
+      else high = middle;
+    }
+    return low;
+  }
+
+  function applyChangeMarks() {
+    const root = content();
+    for (const el of root.querySelectorAll(".md-change")) {
+      el.classList.remove(...changeClasses);
+      el.removeAttribute("data-change-lines");
+      if (!el.classList.length) el.removeAttribute("class");
+    }
+    if (!changeMarks.length) return;
+
+    const byLine = new Map();
+    for (const el of root.querySelectorAll("[data-line]")) {
+      const line = Number(el.getAttribute("data-line"));
+      if (!byLine.has(line)) byLine.set(line, []);
+      byLine.get(line).push(el);
+    }
+    const lines = [...byLine.keys()].sort((a, b) => a - b);
+
+    const marked = new Map();
+    for (const mark of changeMarks) {
+      let index = firstLineIndex(lines, mark.firstLine);
+      // A line inside a block has no element of its own: the mark goes on the block it's in.
+      if (lines[index] !== mark.firstLine && index > 0) index -= 1;
+      const last = mark.firstLine + mark.lineCount - 1;
+      for (; index < lines.length && lines[index] <= last; index++) {
+        for (const el of byLine.get(lines[index])) {
+          if (!marked.has(el)) marked.set(el, []);
+          marked.get(el).push(mark);
+        }
+      }
+    }
+    // Only the innermost: a changed list item, never the whole list.
+    for (const el of [...marked.keys()]) {
+      for (let parent = el.parentElement; parent && parent !== root; parent = parent.parentElement) {
+        marked.delete(parent);
+      }
+    }
+    for (const [el, marks] of marked) {
+      el.classList.add("md-change", ...marks.map((mark) => `md-change-${mark.kind}`));
+      el.setAttribute("data-change-lines", [...new Set(marks.map((mark) => mark.firstLine))].join(" "));
+    }
+  }
+
   function update(html, lines) {
     if (lines) lineCount = lines;
     invalidateAnchors();
@@ -906,6 +977,7 @@
     // Synchronous, and only over elements the pool didn't reuse: math whose source hasn't
     // changed keeps the KaTeX output it already has.
     renderMath();
+    applyChangeMarks();
     reapplySync();
     pendingWork = renderMermaidSequentially(capMermaid(pending));
     if (pending.length) {
@@ -996,5 +1068,5 @@
     }
   }
 
-  window.MarsDawn = { update, setLabels, setTheme, setThemes, scrollToLine, setAssetState, setRemoteImageState, restoreScroll, idle };
+  window.MarsDawn = { update, setChangeMarks, setLabels, setTheme, setThemes, scrollToLine, setAssetState, setRemoteImageState, restoreScroll, idle };
 })();

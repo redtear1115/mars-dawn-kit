@@ -187,6 +187,12 @@ details.front-matter td { color: var(--fg); }
   overflow-wrap: anywhere;
 }
 @media print { .front-matter { display: none !important; } }
+
+/* Change marks (mars-dawn#358). Colours are placeholders until mars-dawn#605. A shadow, not a
+   border: a mark must not change a block's height, or scroll sync would move. */
+.md-change-added { box-shadow: -3px 0 0 var(--hl-string); }
+.md-change-changed { box-shadow: -3px 0 0 var(--accent); }
+.md-change-removed { box-shadow: -3px 0 0 var(--hl-keyword); }
 pre code {
   display: block;
   background: transparent;
@@ -361,6 +367,7 @@ img { max-width: 100%; }
    The page tint would stop where the content ends, so the paper stays white;
    code, tables and quotes keep their surface tones. Margins come from NSPrintInfo. */
 @media print {
+  .md-change { box-shadow: none !important; }
   html, body { background: transparent; }
   body {
     -webkit-print-color-adjust: exact;
