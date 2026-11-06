@@ -18,9 +18,16 @@ struct InsecureImageTests {
     static let insecureLabel = "Not loaded: unencrypted connection (http)"
     static let remoteLabel = "Web image not loaded"
 
-    private func loadedPreview(allowRemoteImages: Bool) async throws -> PreviewWKWebView {
+    private func loadedPreview(
+        allowRemoteImages: Bool,
+        handlers: [String: any WKScriptMessageHandler] = [:]
+    ) async throws -> PreviewWKWebView {
+        let configuration = PreviewWebView.makeConfiguration()
+        for (name, handler) in handlers {
+            configuration.userContentController.add(handler, name: name)
+        }
         let webView = PreviewWKWebView(frame: NSRect(x: 0, y: 0, width: 600, height: 600),
-                                       configuration: PreviewWebView.makeConfiguration())
+                                       configuration: configuration)
         webView.applyContentRuleList(try await PreviewContentRules.ruleList(allowRemoteImages: allowRemoteImages))
         #expect(webView.load(URLRequest(url: PreviewSchemeHandler.pageURL(theme: .dawn, allowRemoteImages: allowRemoteImages))) != nil)
         let deadline = ContinuousClock.now + .seconds(20)
@@ -99,6 +106,109 @@ struct InsecureImageTests {
         #expect(try await count("#content .image-placeholder.insecure", in: webView) == 1)
         #expect(try await count("#content .image-placeholder.remote", in: webView) == 1)
         #expect(try await barIsShown(in: webView) == true)
+    }
+
+    /// In a narrow pane one button stays beside its message, which wraps instead, as it did before
+    /// the bar had a second button: the bar is sticky, so a taller one covers more of the document.
+    @Test(arguments: [false, true])
+    func onlyABarWithTwoButtonsWraps(withDownload: Bool) async throws {
+        let webView = try await loadedPreview(allowRemoteImages: false)
+        webView.setFrameSize(NSSize(width: 420, height: 600))
+        _ = try await webView.evaluateJavaScript(PreviewWebView.remoteImagesScript(
+            blocked: true, message: String(repeating: "Web images are off. ", count: 4), buttonLabel: "Load Images",
+            placeholderLabel: Self.remoteLabel, downloadButtonLabel: withDownload ? "Download Images" : nil))
+        try await show("![remote](https://example.invalid/a.png)", in: webView)
+        let measured = try await webView.callAsyncJavaScript("""
+            const bar = document.getElementById("remote-images-bar");
+            const message = bar.querySelector("span").getBoundingClientRect();
+            const button = bar.querySelector("button").getBoundingClientRect();
+            return [getComputedStyle(bar).flexWrap, button.top < message.bottom && message.top < button.bottom];
+            """, contentWorld: .page) as? [Any]
+        #expect(measured?.first as? String == (withDownload ? "wrap" : "nowrap"))
+        if !withDownload {
+            #expect(measured?.last as? Bool == true, "the button is on its message's line")
+        }
+    }
+
+    @Test(arguments: [false, true])
+    func remoteImageButtonsPostOnlyTheirOwnMessage(withDownload: Bool) async throws {
+        let load = RecordingMessageHandler()
+        let download = RecordingMessageHandler()
+        let webView = try await loadedPreview(allowRemoteImages: false, handlers: [
+            PreviewWebView.loadRemoteImagesHandlerName: load,
+            PreviewWebView.downloadRemoteImagesHandlerName: download,
+        ])
+        _ = try await webView.evaluateJavaScript(PreviewWebView.remoteImagesScript(
+            blocked: true, message: "Web images are off", buttonLabel: "Load Images",
+            placeholderLabel: Self.remoteLabel,
+            downloadButtonLabel: withDownload ? "Download Images" : nil))
+        try await show("![remote](https://example.invalid/a.png)", in: webView)
+        #expect(try await barIsShown(in: webView))
+        #expect(try await count("#remote-images-bar button", in: webView) == (withDownload ? 2 : 1))
+        #expect(try await text("#remote-images-bar button", in: webView) == "Load Images")
+        #expect(try await count("#remote-images-bar .remote-images-download", in: webView) == (withDownload ? 1 : 0))
+
+        _ = try await webView.evaluateJavaScript("document.querySelector('#remote-images-bar button').click();")
+        let loadDeadline = ContinuousClock.now + .seconds(2)
+        while load.bodies.isEmpty, ContinuousClock.now < loadDeadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(load.bodies.count == 1)
+        #expect((load.bodies.first as? [String: Any])?["scrollY"] is NSNumber)
+        #expect(download.bodies.isEmpty)
+
+        if withDownload {
+            #expect(try await text("#remote-images-bar .remote-images-download", in: webView) == "Download Images")
+            let scrollBefore = try await webView.evaluateJavaScript("window.scrollY") as? Double
+            _ = try await webView.evaluateJavaScript("document.querySelector('.remote-images-download').click();")
+            let downloadDeadline = ContinuousClock.now + .seconds(2)
+            while download.bodies.isEmpty, ContinuousClock.now < downloadDeadline {
+                try await Task.sleep(for: .milliseconds(20))
+            }
+            #expect(download.bodies.count == 1)
+            #expect((download.bodies.first as? [String: Any])?.isEmpty == true)
+            #expect(load.bodies.count == 1)
+            #expect(try await barIsShown(in: webView))
+            #expect(try await webView.evaluateJavaScript("window.scrollY") as? Double == scrollBefore)
+            #expect(try await count("#remote-images-bar button", in: webView) == 2)
+        }
+    }
+
+    @Test func downloadLabelIsTextAndCanBeRemovedAndTheBarCanBeHidden() async throws {
+        let webView = try await loadedPreview(allowRemoteImages: false)
+        try await show("![remote](https://example.invalid/a.png)", in: webView)
+        let label = "<em>Download</em>"
+        _ = try await webView.evaluateJavaScript(PreviewWebView.remoteImagesScript(
+            blocked: true, message: "Web images are off", buttonLabel: "Load Images",
+            placeholderLabel: Self.remoteLabel, downloadButtonLabel: label))
+        #expect(try await text("#remote-images-bar .remote-images-download", in: webView) == label)
+        #expect(try await count("#remote-images-bar em", in: webView) == 0)
+        // Neither handler is installed: clicks must still complete without a page error.
+        let clickResult = try await webView.callAsyncJavaScript("""
+        let error = "";
+        window.addEventListener("error", (event) => { error = event.message; }, {once: true});
+        document.querySelectorAll('#remote-images-bar button').forEach((button) => button.click());
+        return error;
+        """, contentWorld: .page) as? String
+        #expect(clickResult == "")
+        #expect(try await barIsShown(in: webView))
+
+        _ = try await webView.evaluateJavaScript(PreviewWebView.remoteImagesScript(
+            blocked: true, message: "Web images are off", buttonLabel: "Load Images",
+            placeholderLabel: Self.remoteLabel))
+        #expect(try await barIsShown(in: webView))
+        #expect(try await count("#remote-images-bar button", in: webView) == 1)
+        #expect(try await count("#remote-images-bar .remote-images-download", in: webView) == 0)
+
+        _ = try await webView.evaluateJavaScript(PreviewWebView.remoteImagesScript(
+            blocked: true, message: "Web images are off", buttonLabel: "Load Images",
+            placeholderLabel: Self.remoteLabel, downloadButtonLabel: label))
+        #expect(try await count("#remote-images-bar button", in: webView) == 2)
+        _ = try await webView.evaluateJavaScript(PreviewWebView.remoteImagesScript(
+            blocked: false, message: "Web images are off", buttonLabel: "Load Images",
+            placeholderLabel: Self.remoteLabel, downloadButtonLabel: label))
+        #expect(try await barIsShown(in: webView) == false)
+
     }
 
     /// The tooltip carries what the label leaves out, so the label can stay a sentence.

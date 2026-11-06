@@ -179,6 +179,21 @@ struct RemoteImagePolicyTests {
         #expect(script.contains(#""blocked":true"#))
     }
 
+    @Test(arguments: [nil, "", "Download <images> \"now\""] as [String?])
+    func remoteImagesScriptIncludesOnlyANonemptyDownloadLabel(label: String?) throws {
+        let script = PreviewWebView.remoteImagesScript(
+            blocked: true, message: "Off", buttonLabel: "Load", placeholderLabel: "Remote",
+            downloadButtonLabel: label)
+        let prefix = "window.MarsDawn && MarsDawn.setRemoteImageState("
+        let json = String(script.dropFirst(prefix.count).dropLast(2))
+        let state = try #require(JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])
+        if let label, !label.isEmpty {
+            #expect(state["downloadButtonLabel"] as? String == label)
+        } else {
+            #expect(state["downloadButtonLabel"] == nil)
+        }
+    }
+
     /// The preview factory carries #129's option, so export and the preview agree on it.
     @Test func thePreviewFactoryCarriesTheSoftBreakOption() {
         #expect(!MarkdownRenderer.Options.preview(baseDirectory: nil).softBreaksAsLineBreaks)
