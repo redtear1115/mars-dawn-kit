@@ -271,6 +271,19 @@
   // one at a time, each preceded by a fresh task, no matter how many changed in one update.
   // Never rejects (each render's own errors already end up in the page, not thrown), matching
   // what callers here relied on `Promise.allSettled` for before.
+  // Measurement only (mars-dawn#570): the first diagram takes 40 to 50 ms of main thread before it
+  // yields, and can get in ahead of the first frame. So the first update's diagrams start after
+  // two frames. A hidden page has no frames, so export, Quick Look and a window not yet shown go
+  // on at the limit, and `idle()` still waits for them.
+  let isFirstUpdate = true;
+  const firstPaintLimit = 150;
+  function afterFirstPaint() {
+    return new Promise((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(resolve));
+      setTimeout(resolve, firstPaintLimit);
+    });
+  }
+
   function renderMermaidSequentially(pairs) {
     return pairs.reduce(
       (chain, [block, stale]) => chain.then(() => yieldToFreshTask()).then(() => renderMermaid(block, stale)).catch(() => {}),
@@ -880,7 +893,11 @@
     // changed keeps the KaTeX output it already has.
     renderMath();
     reapplySync();
-    pendingWork = renderMermaidSequentially(capMermaid(pending));
+    const capped = capMermaid(pending);
+    pendingWork = isFirstUpdate && pending.length
+      ? afterFirstPaint().then(() => renderMermaidSequentially(capped))
+      : renderMermaidSequentially(capped);
+    isFirstUpdate = false;
     if (pending.length) {
       pendingWork.then(() => {
         invalidateAnchors();
