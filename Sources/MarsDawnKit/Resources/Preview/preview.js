@@ -1193,7 +1193,9 @@
     // changed keeps the KaTeX output it already has.
     renderMath();
     reapplySync();
-    pendingWork = renderMermaidSequentially(capMermaid(pending));
+    // On top of what's still going: a reused diagram isn't in `pending`, but the update that brought
+    // it may not have drawn it yet.
+    pendingWork = Promise.all([pendingWork, renderMermaidSequentially(capMermaid(pending))]);
     if (pending.length) {
       pendingWork.then(() => {
         invalidateAnchors();
@@ -1247,7 +1249,7 @@
     configureMermaid();
   });
 
-  // Resolves once the diagrams from the latest update have rendered (or failed).
+  // Resolves once the diagrams from every update so far have rendered (or failed).
   let pendingWork = Promise.resolve();
   async function idle() {
     await pendingWork;
