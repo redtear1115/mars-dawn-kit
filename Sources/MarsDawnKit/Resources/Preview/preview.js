@@ -283,7 +283,7 @@
     root.classList.add("mermaid-loading");
     return pairs.reduce(
       (chain, [block, stale]) => chain.then(() => yieldToFreshTask()).then(() => renderMermaid(block, stale)).catch(() => {}),
-      loadMermaid()
+      mermaidLoad ? loadMermaid() : afterFirstPaint().then(loadMermaid)
     ).then(() => {
       mermaidBatches -= 1;
       if (!mermaidBatches) root.classList.remove("mermaid-loading");
@@ -297,6 +297,16 @@
   // shows the error, as when the page itself failed to load the bundle.
   let mermaidState = "unloaded";  // then "loading", then "ready" or "failed"
   let mermaidLoad = null;
+  // Parsing the bundle can get in ahead of the first frame, so a new window would stay empty that
+  // much longer (mars-dawn#570). It starts after two frames. A hidden page has no frames, so it
+  // goes on at the limit.
+  function afterFirstPaint() {
+    return new Promise((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(resolve));
+      setTimeout(resolve, 150);
+    });
+  }
+
   function loadMermaid() {
     if (mermaidLoad) return mermaidLoad;
     mermaidState = "loading";

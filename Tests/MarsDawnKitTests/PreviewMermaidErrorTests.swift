@@ -278,6 +278,19 @@ struct PreviewMermaidErrorTests {
         #expect(try await value(#"document.querySelectorAll('script[src$="mermaid.min.js"]').length"#, in: webView) as? Int == 1)
     }
 
+    /// Parsing the bundle mustn't get in ahead of the first frame (mars-dawn#570). A page offscreen
+    /// has no frames, so this also shows it goes on at the limit: the diagram is still drawn.
+    @Test func theBundleWaitsForTheFirstFrames() async throws {
+        let webView = try await loadedPreview()
+        let update = PreviewWebView.updateScript(html: MarkdownRenderer.render(document(valid, valid)), lineCount: 40)
+        let check = #"!!document.querySelector('script[src$="mermaid.min.js"]')"#
+        let result = try await webView.evaluateJavaScript("\(update); \(check)")
+        #expect(result as? Bool == false, "not in the same task as the update")
+        _ = try? await webView.callAsyncJavaScript("return await MarsDawn.idle();", contentWorld: .page)
+        #expect(try await blockState(0, in: webView)["svg"] as? Int == 1)
+        #expect((try await value(bundleIsPresent, in: webView) as? [Any])?.first as? Bool == true)
+    }
+
     /// The first diagram can arrive long after the page did, from an edit.
     @Test func aDiagramAddedByAnEditIsDrawn() async throws {
         let webView = try await loadedPreview()
@@ -304,8 +317,7 @@ struct PreviewMermaidErrorTests {
         let source = ##"getComputedStyle(document.querySelector("#content .mermaid-source")).visibility"##
         #expect(try await value(source, in: webView) as? String == "hidden")
 
-        _ = try await value("(() => { window.__hold(); return 0; })()", in: webView)
-        _ = try? await webView.callAsyncJavaScript("return await MarsDawn.idle();", contentWorld: .page)
+        try await releaseBundle(in: webView)
         #expect(try await blockState(0, in: webView)["svg"] as? Int == 1)
         #expect(try await value("document.documentElement.classList.contains('mermaid-loading')", in: webView) as? Bool == false)
     }
@@ -477,6 +489,11 @@ struct PreviewMermaidErrorTests {
     }
 
     private func releaseBundle(in webView: WKWebView) async throws {
+        // The script comes after the first frames, so it may not have been held yet.
+        let deadline = ContinuousClock.now + .seconds(5)
+        while try await value("typeof window.__hold", in: webView) as? String != "function", ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
         _ = try await value("(() => { window.__hold(); return 0; })()", in: webView)
         _ = try? await webView.callAsyncJavaScript("return await MarsDawn.idle();", contentWorld: .page)
     }
