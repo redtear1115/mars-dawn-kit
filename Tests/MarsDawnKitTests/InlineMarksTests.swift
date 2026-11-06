@@ -439,3 +439,116 @@ struct InlineMarksTests {
         #expect(EscapeMap.standIns("&amp;") == nil)
     }
 }
+
+/// #185: one escaped `=` or `^` made a document pay for a second full parse, whether or not any
+/// delimiter in it could pair. It only has to when two could.
+struct EscapeMapSecondParseTests {
+    private func parsedTwice(_ source: String) -> Bool {
+        MarkdownParsing.withDocument(source) { outcome in
+            guard case .document(let document) = outcome else {
+                Issue.record("not parsed")
+                return false
+            }
+            return EscapeMap(source: source, document: document, limits: .default).parsedTwice
+        }
+    }
+
+    /// Whether the second parse would have found no marks in `source`, or nil if the skip had
+    /// nothing to skip or didn't take it.
+    private func skippedParseFindsNoMarks(_ source: String) -> Bool? {
+        MarkdownParsing.withDocument(source) { outcome -> Bool? in
+            guard case .document(let document) = outcome,
+                  !EscapeMap(source: source, document: document, limits: .default).parsedTwice
+            else { return nil }
+            let read = EscapeMap(source: source, document: document, limits: .default, alwaysRead: true)
+            guard read.parsedTwice else { return nil }  // no escape: never parsed twice
+            var stack: [any Markup] = [document]
+            while let node = stack.popLast() {
+                let children = Array(node.children)
+                if InlineMarks.pieces(of: children, escapes: read) != nil { return false }
+                stack.append(contentsOf: children)
+            }
+            return true
+        }
+    }
+
+    @Test(arguments: [
+        "a \\= b",
+        "x &#61; y",
+        "a \\^ b",
+        "- a\n- b \\=\n- c\n",
+        "x^2 and \\=",  // one `^`: nothing to pair with
+        "a = b \\= c",
+        "\\== alone",
+    ])
+    func nothingThatCanPairNeedsNoSecondParse(source: String) {
+        #expect(!parsedTwice(source), "\(source)")
+    }
+
+    @Test(arguments: [
+        "==a== \\=",
+        "^a^ \\=",
+        "\\==a== x",
+        "=== === \\=",
+        "=====\\=",
+        "a ^ b \\^",
+        "==a **b** c== \\=",
+        "> ==a== \\=",
+        "- ==a== \\^",
+    ])
+    func twoDelimitersInOneContainerStillDo(source: String) {
+        #expect(parsedTwice(source), "\(source)")
+    }
+
+    @Test func noEscapeNeverDid() {
+        #expect(!parsedTwice("==a== ^b^"))
+    }
+
+    /// Delimiters count per container: one in each of two paragraphs can't pair.
+    @Test func delimitersInDifferentContainersDontAddUp() {
+        #expect(!parsedTwice("==a \\=\n\nb==\n"))
+        #expect(!parsedTwice("^a *b^* \\=\n"), "the second is inside the emphasis")
+    }
+
+    /// The skip's whole claim, on documents built to sit on its edge: whenever it skips, reading
+    /// the escapes would have found no mark either.
+    @Test func wheneverItSkipsTheSecondParseWouldHaveFoundNothing() {
+        let tokens = [
+            "=", "==", "===", "^", "\\=", "\\^", "&#61;", "&Hat;", "&bne;", "[^", "a", " ", "*", "**", "\n", "\n\n",
+            "  \n", "`", "- ", "> ", "[", "](u)", "<a b=\\=>", "|",
+        ]
+        var seed: UInt64 = 185
+        var skipped = 0
+        var read = 0
+        for _ in 0..<4000 {
+            var source = ""
+            seed = seed &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
+            for step in 0..<(3 + Int(seed >> 60)) {
+                let picked = (seed >> UInt64(step * 5 % 55)) & 0xFFFF
+                source += tokens[Int(picked) % tokens.count]
+            }
+            switch skippedParseFindsNoMarks(source) {
+            case true?: skipped += 1
+            case false?: Issue.record("marks lost in \(source.debugDescription)")
+            case nil: read += 1
+            }
+        }
+        // Neither side may be empty, or this proves nothing.
+        #expect(skipped > 200, "skipped \(skipped) of 4000")
+        #expect(read > 200, "read \(read) of 4000")
+    }
+
+    /// What the skip must never change: each of these has escapes and renders by them.
+    @Test(arguments: [
+        ("\\==a==", "==a=="),
+        ("==a\\==", "==a=="),
+        ("\\^a^", "^a^"),
+        ("a \\= b", "a = b"),
+        ("x^2 \\=", "x^2 ="),
+    ])
+    func escapesStillRender(source: String, expected: String) {
+        let html = MarkdownRenderer.render(source, options: .init())
+        #expect(html.contains(expected), "\(html)")
+        #expect(!html.contains("<mark>") && !html.contains("<sup>"), "\(html)")
+    }
+}
