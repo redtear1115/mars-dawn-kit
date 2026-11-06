@@ -1,0 +1,8 @@
+OS build: Version 27.2 (Build 26B123) | WebKit: 22625.2.8.11.9 | Paper: a4
+Page count: 1
+Lines: minX minY maxX maxY | text, whole points from the page's bottom left, sorted by text; compared within 1 pt
+
+--- Page 1 ---
+45 723 402 751 | Body Heading FMBODYHEAD06
+45 650 265 664 | Last paragraph marker FMENDMARK99.
+45 682 271 696 | Paragraph with marker FMBODYMARK07.

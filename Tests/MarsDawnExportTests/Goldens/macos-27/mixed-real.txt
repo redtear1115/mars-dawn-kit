@@ -1,0 +1,28 @@
+OS build: Version 27.2 (Build 26B123) | WebKit: 22625.2.8.11.9 | Paper: a4
+Page count: 2
+Lines: minX minY maxX maxY | text, whole points from the page's bottom left, sorted by text; compared within 1 pt
+
+--- Page 1 ---
+59 410 314 424 | A quoted note QUOTE01 from the maintainers.
+66 442 250 456 | Add DOCX support OPENTASK02
+200 558 284 572 | Done CELLB04
+341 239 408 252 | FLOWEND02
+182 239 260 252 | FLOWSTART01
+72 589 163 603 | Feature KeyA01
+45 629 224 650 | Features TBLHEAD01
+57 294 212 306 | Image not available: missing.png
+56 558 179 572 | Live preview CELLA03
+45 723 395 751 | MarsDawn README HDMAIN01
+66 465 239 479 | Ship the exporter DONETASK01
+201 589 283 603 | Status ValA02
+45 499 211 520 | Tasks TASKHEAD01
+58 372 190 384 | let codeMARKER01 = 42
+45 682 512 696 | 繁體中文介紹段落 CJKINTRO01:這是一段測試文字,用來檢查匯出功能是否正常運作。
+
+--- Page 2 ---
+45 541 299 555 | Last paragraph in the document ENDMARK99.
+181 749 254 764 | SEQFROM01
+181 635 254 650 | SEQFROM01
+256 691 329 706 | SEQMSG03SEQMSG03
+349 749 405 764 | SEQTO02
+349 635 405 650 | SEQTO02
