@@ -18,7 +18,7 @@ swift test
 ```
 
 On a machine with only a few cores, add `--no-parallel`. CI runs `swift test --no-parallel` and
-`swift test -c release --no-parallel` (`.github/workflows/ci.yml`), because on its 3-CPU runners the
+`swift test -c release --no-parallel` (`.github/workflows/ci.yml`), because on its hosted 3-CPU runners the
 WebKit suites time out waiting for their pages when every suite runs at once, and the timing-budget
 tests miss their budgets.
 

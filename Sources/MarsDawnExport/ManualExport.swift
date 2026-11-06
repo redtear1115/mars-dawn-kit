@@ -22,6 +22,8 @@ struct ManualHooks {
     var handoutReport: ((HandoutReport) -> Void)?
     /// Tests only: false skips the handout's table fitting (A1-R2), for its control.
     var handoutFitsTables = true
+    /// Tests only: how long the export waits for content, in place of `DocumentExporter.contentTimeout`.
+    var contentTimeout: Duration?
 }
 
 /// What one manual run did, for the tests.
@@ -74,7 +76,7 @@ extension DocumentExporter {
         guard let rows = built as? [[String: Any]] else { throw ExportError.printFailed }
         let headings = rows.map { ManualLayout.Heading(level: ($0["level"] as? Int) ?? 2, text: ($0["text"] as? String) ?? "") }
         // The cover's logo, like any image, has to be in before the page prints.
-        try await waitForContent(until: ContinuousClock.now + Self.contentTimeout)
+        try await waitForContent(until: ContinuousClock.now + contentTimeLimit)
         _ = try await webView.callAsyncJavaScript(
             ManualLayout.addMarkersScript, arguments: ["token": token], in: nil, contentWorld: ManualLayout.world
         )
