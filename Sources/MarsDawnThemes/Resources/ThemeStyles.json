@@ -74,7 +74,7 @@
     "shared": [
       { "id": "body-text", "element": "body text", "fg": "text", "bg": "background", "kind": "text", "baseline": true,
         "css": ["html|background", "body|background", "body|color", ".math-block|color", ".math-inline|color", ".callout|color"] },
-      { "id": "muted-text", "element": "muted text", "fg": "muted", "bg": "background", "kind": "text", "css": ["h6|color"] },
+      { "id": "muted-text", "element": "muted text", "fg": "muted", "bg": "background", "kind": "text", "css": ["h6|color", ".md-fold-toggle, .md-fold-block|color"] },
       { "id": "headings", "element": "headings", "fg": "heading", "bg": "background", "kind": "text", "css": ["h1, h2, h3, h4, h5, h6|color"] },
       { "id": "links", "element": "links", "fg": "link", "bg": "background", "kind": "text", "css": ["a|color"] },
       { "id": "inline-code", "element": "inline code", "fg": "text", "bg": "chip", "kind": "text", "css": ["code|background"] },
