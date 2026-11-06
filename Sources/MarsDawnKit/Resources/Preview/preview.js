@@ -870,15 +870,48 @@
     return low;
   }
 
+  // How many elements get their mark before the page is made to take them. See below.
+  const changeMarkBatch = 1024;
+
   function applyChangeMarks() {
     const root = content();
+    const wanted = changeMarks.length ? placeChangeMarks(root) : new Map();
+    const fresh = [];
     for (const el of root.querySelectorAll(".md-change")) {
-      el.classList.remove(...changeClasses);
-      el.removeAttribute("data-change-lines");
-      if (!el.classList.length) el.removeAttribute("class");
+      if (!wanted.has(el)) clearChangeMark(el);
     }
-    if (!changeMarks.length) return;
+    for (const [el, mark] of wanted) {
+      if (el.classList.contains("md-change")) showChangeMark(el, mark);
+      else fresh.push([el, mark]);
+    }
+    // A marked element is positioned, so WebKit gives it a layer, and to place a layer it searches
+    // the siblings after the element for the next one. Thousands marked at once, in page order,
+    // find none and search to the end: 8 s for 40,000 paragraphs. Last ones first, a batch at a
+    // time, it stops at the batch before: 0.4 s. A rewritten document marks every block.
+    for (let end = fresh.length; end > 0; end -= changeMarkBatch) {
+      const start = Math.max(end - changeMarkBatch, 0);
+      for (let at = start; at < end; at++) showChangeMark(...fresh[at]);
+      if (start > 0) getComputedStyle(fresh[start][0]).position;
+    }
+  }
 
+  function clearChangeMark(el) {
+    el.classList.remove(...changeClasses);
+    el.removeAttribute("data-change-lines");
+    if (!el.classList.length) el.removeAttribute("class");
+  }
+
+  // Only what differs is written, so a mark that stays costs the page nothing.
+  function showChangeMark(el, { changes, held }) {
+    const on = new Set(["md-change", ...changes.map((change) => `md-change-${change.kind}`)]);
+    if (held.includes(currentChangeLine)) on.add("md-change-current");
+    for (const name of changeClasses) el.classList.toggle(name, on.has(name));
+    const lines = held.join(" ");
+    if (el.getAttribute("data-change-lines") !== lines) el.setAttribute("data-change-lines", lines);
+  }
+
+  // Element -> its marks and lines, in page order.
+  function placeChangeMarks(root) {
     const byLine = new Map();
     const order = new Map();  // page order, for what's kept and what isn't
     for (const el of root.querySelectorAll("[data-line]")) {
@@ -889,7 +922,7 @@
       byLine.get(line).push(el);
     }
     const lines = [...byLine.keys()].sort((a, b) => a - b);
-    if (!lines.length) return;
+    if (!lines.length) return new Map();
 
     // Element -> the marks on it. `data-line` only says where a block starts, so a block runs up
     // to the next one.
@@ -932,7 +965,8 @@
     // starts on its first item's line, and that line is no business of the second item.
     const inside = new Map();
     const kept = [...marked.keys()].filter((el) => !outer.has(el));
-    for (const el of kept.sort((a, b) => (order.get(a) ?? order.size) - (order.get(b) ?? order.size))) {
+    kept.sort((a, b) => (order.get(a) ?? order.size) - (order.get(b) ?? order.size));
+    for (const el of kept) {
       for (const parent of markedAncestors(el)) {
         if (!inside.has(parent)) inside.set(parent, { first: el, lines: new Set() });
         for (const line of firstLines.get(el)) inside.get(parent).lines.add(line);
@@ -950,12 +984,10 @@
     }
     for (const el of outer) marked.delete(el);
 
-    for (const [el, changes] of marked) {
-      const held = [...firstLines.get(el)].sort((a, b) => a - b);
-      el.classList.add("md-change", ...changes.map((change) => `md-change-${change.kind}`));
-      if (held.includes(currentChangeLine)) el.classList.add("md-change-current");
-      el.setAttribute("data-change-lines", held.join(" "));
-    }
+    return new Map(kept.map((el) => [el, {
+      changes: marked.get(el),
+      held: [...firstLines.get(el)].sort((a, b) => a - b),
+    }]));
   }
 
   // What shows a change in `el`: `el`, unless a collapsed `<details>` hides it. Then it's the

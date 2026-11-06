@@ -361,6 +361,35 @@ struct ChangeMarksPageTests {
         #expect(PreviewWebView.changeMarksScript([], currentLine: 7).contains(#"{"currentLine":7,"marks":[]}"#))
     }
 
+    /// Thousands marked at once, last first, a batch at a time: in page order WebKit's layer
+    /// search makes this quadratic (8 s for 40,000 paragraphs). What's left is the same page.
+    @Test func aWholeDocumentMarksFromTheEndAndKeepsItsLayout() async throws {
+        defer { Page.closeHosts() }
+        let webView = try await Page.loadedPreview()
+        let count = 3_000
+        try await Page.push(String(repeating: "Para.\n\n", count: count), to: webView)
+        let result = try await webView.callAsyncJavaScript("""
+            const blocks = [...document.querySelectorAll("#content p")];
+            const height = document.body.scrollHeight;
+            const changed = [];
+            const seen = new MutationObserver((records) => changed.push(...records));
+            seen.observe(document.getElementById("content"), { attributes: true, subtree: true });
+            const taken = () => { const list = [...changed, ...seen.takeRecords()]; changed.length = 0; return list; };
+            MarsDawn.setChangeMarks({ marks: [{ firstLine: 1, lineCount: lines, kind: "changed" }] });
+            const first = taken();
+            const shown = document.querySelectorAll("#content .md-change");
+            MarsDawn.setChangeMarks({ marks: [{ firstLine: 1, lineCount: lines, kind: "changed" }] });
+            const again = taken();
+            const at = (el) => first.findIndex((record) => record.target === el);
+            return { startsAtTheEnd: at(blocks.at(-1)) < at(blocks[0]), marked: shown.length,
+                     sameHeight: document.body.scrollHeight === height, rewrites: again.length };
+            """, arguments: ["lines": count * 2], contentWorld: .page) as? [String: Any]
+        #expect(result?["marked"] as? Int == count, "\(result ?? [:])")
+        #expect(result?["startsAtTheEnd"] as? Bool == true, "\(result ?? [:])")
+        #expect(result?["sameHeight"] as? Bool == true, "\(result ?? [:])")
+        #expect(result?["rewrites"] as? Int == 0, "a mark that stays costs the page nothing: \(result ?? [:])")
+    }
+
     /// Not an assertion until #358's tag: the 16 ms budget is for the release's measurement.
     @Test func measureAboutOneMegabyteAndFiveHundredMarks() async throws {
         defer { Page.closeHosts() }
