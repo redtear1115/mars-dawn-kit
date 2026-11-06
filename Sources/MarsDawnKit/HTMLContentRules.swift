@@ -69,10 +69,7 @@ public enum HTMLContentRules {
         let identifier = identifier(for: policy)
         let rules = encodedRules(for: policy)
         let task = Task { @MainActor () throws -> WKContentRuleList in
-            guard let list = try await WKContentRuleListStore.default()
-                .compileContentRuleList(forIdentifier: identifier, encodedContentRuleList: rules)
-            else { throw PreviewContentRules.CompileError.noList }
-            return list
+            try await ContentRuleCompile.list(identifier: identifier, rules: rules)
         }
         compiled[policy] = task
         do {
