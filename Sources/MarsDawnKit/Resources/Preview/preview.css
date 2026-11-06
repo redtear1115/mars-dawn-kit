@@ -188,11 +188,66 @@ details.front-matter td { color: var(--fg); }
 }
 @media print { .front-matter { display: none !important; } }
 
-/* Change marks (mars-dawn#358). Colours are placeholders until mars-dawn#605. A shadow, not a
-   border: a mark must not change a block's height, or scroll sync would move. */
-.md-change-added { box-shadow: -3px 0 0 var(--hl-string); }
-.md-change-changed { box-shadow: -3px 0 0 var(--accent); }
-.md-change-removed { box-shadow: -3px 0 0 var(--hl-keyword); }
+/* Change marks (mars-dawn#358, styles from #605). Only out-of-flow pseudo-elements, so a mark never
+   moves a block and scroll sync stays put. */
+:root {
+  --md-change-added: #008932;
+  --md-change-changed: #1E6EF4;
+  --md-change-removed: #E9152D;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --md-change-added: #4AD968;
+    --md-change-changed: #5CB8FF;
+    --md-change-removed: #FF6165;
+  }
+}
+.md-change { position: relative; --md-change-color: var(--md-change-changed); --md-change-w: 3px; }
+.md-change-added { --md-change-color: var(--md-change-added); }
+.md-change-removed { --md-change-color: var(--md-change-removed); }
+.md-change-current { --md-change-w: 5px; background-color: color-mix(in srgb, var(--md-change-color) 10%, transparent); }
+
+/* h2's ::before and h1's ::after belong to themes (ThemeStyles.json), so h2 uses ::after. */
+.md-change:not(h2)::before, h2.md-change::after {
+  content: "" / "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -14px;
+  width: var(--md-change-w);
+  background: var(--md-change-color);
+  border-radius: 1.5px;
+  pointer-events: none;
+}
+/* changed: dashed, so it isn't told from added by colour alone. */
+.md-change-changed:not(h2)::before, h2.md-change-changed::after {
+  background: repeating-linear-gradient(to bottom, var(--md-change-color) 0 5px, transparent 5px 8px);
+  border-radius: 0;
+}
+/* removed: a triangle at the top edge, pointing at the place the text left. */
+.md-change-removed:not(h2)::before, h2.md-change-removed::after {
+  top: -6px;
+  bottom: auto;
+  width: 9px;
+  height: 12px;
+  border-radius: 0;
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
+}
+/* List items: outside the bullet. */
+li.md-change::before { left: calc(-2em + 2px); }
+/* Own overflow clips anything outside the box: inside its left edge. */
+pre.md-change::before, .math-block.md-change::before { left: 0; }
+pre.md-change-removed::before, .math-block.md-change-removed::before { top: 0; }
+/* Rows: on the first cell. A row's own pseudo-element would be clipped by the table's overflow. */
+tr.md-change { position: static; }
+tr.md-change::before { content: none; }
+tr.md-change > :first-child { position: relative; }
+tr.md-change > :first-child::before {
+  content: "" / ""; position: absolute; top: 0; bottom: 0; left: 0; width: var(--md-change-w);
+  background: var(--md-change-color); pointer-events: none;
+}
+tr.md-change-changed > :first-child::before { background: repeating-linear-gradient(to bottom, var(--md-change-color) 0 5px, transparent 5px 8px); }
+tr.md-change-removed > :first-child::before { bottom: auto; width: 9px; height: 12px; clip-path: polygon(0 0, 100% 50%, 0 100%); }
 pre code {
   display: block;
   background: transparent;
@@ -367,7 +422,8 @@ img { max-width: 100%; }
    The page tint would stop where the content ends, so the paper stays white;
    code, tables and quotes keep their surface tones. Margins come from NSPrintInfo. */
 @media print {
-  .md-change { box-shadow: none !important; }
+  .md-change { background-color: transparent !important; }
+  .md-change::before, .md-change::after, tr.md-change > :first-child::before { display: none !important; }
   html, body { background: transparent; }
   body {
     -webkit-print-color-adjust: exact;

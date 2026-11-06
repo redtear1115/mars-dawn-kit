@@ -843,10 +843,12 @@
   // on elements already there: nothing is inserted, no `data-line` changes, and a mark that isn't
   // a whole number of lines or a known kind is dropped.
   const changeKinds = new Set(["added", "changed", "removed"]);
-  const changeClasses = ["md-change", "md-change-added", "md-change-changed", "md-change-removed"];
+  const changeClasses = ["md-change", "md-change-added", "md-change-changed", "md-change-removed", "md-change-current"];
   let changeMarks = [];
+  let currentChangeLine = null;
 
-  function setChangeMarks({ marks } = {}) {
+  function setChangeMarks({ marks, currentLine } = {}) {
+    currentChangeLine = Number.isInteger(currentLine) && currentLine > 0 ? currentLine : null;
     changeMarks = (Array.isArray(marks) ? marks : []).filter((mark) =>
       Number.isInteger(mark?.firstLine) && mark.firstLine > 0 &&
       Number.isInteger(mark.lineCount) && mark.lineCount > 0 &&
@@ -904,6 +906,7 @@
     }
     for (const [el, marks] of marked) {
       el.classList.add("md-change", ...marks.map((mark) => `md-change-${mark.kind}`));
+      if (marks.some((mark) => mark.firstLine === currentChangeLine)) el.classList.add("md-change-current");
       el.setAttribute("data-change-lines", [...new Set(marks.map((mark) => mark.firstLine))].join(" "));
     }
   }

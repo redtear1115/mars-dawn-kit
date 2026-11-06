@@ -303,10 +303,14 @@ public enum PreviewWebView {
 
     /// JavaScript that replaces the page's change marks. An empty list clears them. Marks must be
     /// for the text on screen: the page keeps them through `update()`, and compares nothing.
-    public nonisolated static func changeMarksScript(_ marks: [ChangeMark]) -> String {
-        let payload: [String: Any] = ["marks": marks.map {
-            ["firstLine": $0.firstLine, "lineCount": $0.lineCount, "kind": $0.kind.rawValue] as [String: Any]
-        }]
+    /// `currentLine` is the `firstLine` of the mark the reader is on, if any.
+    public nonisolated static func changeMarksScript(_ marks: [ChangeMark], currentLine: Int? = nil) -> String {
+        let payload: [String: Any] = [
+            "marks": marks.map {
+                ["firstLine": $0.firstLine, "lineCount": $0.lineCount, "kind": $0.kind.rawValue] as [String: Any]
+            },
+            "currentLine": currentLine.map { $0 as Any } ?? NSNull(),
+        ]
         let data = try! JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
         return "window.MarsDawn && MarsDawn.setChangeMarks(\(String(decoding: data, as: UTF8.self)));"
     }
