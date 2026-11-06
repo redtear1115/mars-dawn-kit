@@ -512,6 +512,7 @@
     if (toggleFrame) return;
     toggleFrame = requestAnimationFrame(() => {
       toggleFrame = 0;
+      applyChangeMarks();  // what shows a mark changed with the group
       reapplySync();
     });
   }, true);
@@ -837,6 +838,172 @@
     blocks.forEach((el, i) => { el._mdKey = blockKey(pristine[i]); });
   }
 
+  // Change marks (mars-dawn#358): which blocks differ from a baseline the app holds. The app sends
+  // marks for the text on screen, so the page compares nothing. It keeps the last set, because an
+  // `update()` reuses blocks and moves their lines, and marks are only ever a class and an attribute
+  // on elements already there: nothing is inserted, no `data-line` changes, and a mark that isn't
+  // a whole number of lines or a known kind is dropped.
+  const changeKinds = new Set(["added", "changed", "removed"]);
+  const changeClasses = ["md-change", "md-change-added", "md-change-changed", "md-change-removed", "md-change-current"];
+  let changeMarks = [];
+  let currentChangeLine = null;
+
+  function setChangeMarks(options) {
+    const { marks, currentLine } = options ?? {};
+    currentChangeLine = Number.isInteger(currentLine) && currentLine > 0 ? currentLine : null;
+    changeMarks = (Array.isArray(marks) ? marks : []).filter((mark) =>
+      Number.isInteger(mark?.firstLine) && mark.firstLine > 0 &&
+      Number.isInteger(mark.lineCount) && mark.lineCount > 0 &&
+      changeKinds.has(mark.kind));
+    applyChangeMarks();
+  }
+
+  // The index in sorted `lines` of the first value not below `line`.
+  function firstLineIndex(lines, line) {
+    let low = 0;
+    let high = lines.length;
+    while (low < high) {
+      const middle = (low + high) >> 1;
+      if (lines[middle] < line) low = middle + 1;
+      else high = middle;
+    }
+    return low;
+  }
+
+  // How many elements get their mark before the page is made to take them. See below.
+  const changeMarkBatch = 1024;
+
+  function applyChangeMarks() {
+    const root = content();
+    const wanted = changeMarks.length ? placeChangeMarks(root) : new Map();
+    const fresh = [];
+    for (const el of root.querySelectorAll(".md-change")) {
+      if (!wanted.has(el)) clearChangeMark(el);
+    }
+    for (const [el, mark] of wanted) {
+      if (el.classList.contains("md-change")) showChangeMark(el, mark);
+      else fresh.push([el, mark]);
+    }
+    // A marked element is positioned, so WebKit gives it a layer, and to place a layer it searches
+    // the siblings after the element for the next one. Thousands marked at once, in page order,
+    // find none and search to the end: 8 s for 40,000 paragraphs. Last ones first, a batch at a
+    // time, it stops at the batch before: 0.4 s. A rewritten document marks every block.
+    for (let end = fresh.length; end > 0; end -= changeMarkBatch) {
+      const start = Math.max(end - changeMarkBatch, 0);
+      for (let at = start; at < end; at++) showChangeMark(...fresh[at]);
+      if (start > 0) getComputedStyle(fresh[start][0]).position;
+    }
+  }
+
+  function clearChangeMark(el) {
+    el.classList.remove(...changeClasses);
+    el.removeAttribute("data-change-lines");
+    if (!el.classList.length) el.removeAttribute("class");
+  }
+
+  // Only what differs is written, so a mark that stays costs the page nothing.
+  function showChangeMark(el, { changes, held }) {
+    const on = new Set(["md-change", ...changes.map((change) => `md-change-${change.kind}`)]);
+    if (held.includes(currentChangeLine)) on.add("md-change-current");
+    for (const name of changeClasses) el.classList.toggle(name, on.has(name));
+    const lines = held.join(" ");
+    if (el.getAttribute("data-change-lines") !== lines) el.setAttribute("data-change-lines", lines);
+  }
+
+  // Element -> its marks and lines, in page order.
+  function placeChangeMarks(root) {
+    const byLine = new Map();
+    const order = new Map();  // page order, for what's kept and what isn't
+    for (const el of root.querySelectorAll("[data-line]")) {
+      order.set(el, order.size);
+      const line = Number(el.getAttribute("data-line"));
+      if (!Number.isInteger(line)) continue;  // an author's own attribute, in raw HTML
+      if (!byLine.has(line)) byLine.set(line, []);
+      byLine.get(line).push(el);
+    }
+    const lines = [...byLine.keys()].sort((a, b) => a - b);
+    if (!lines.length) return new Map();
+
+    // Element -> the marks on it. `data-line` only says where a block starts, so a block runs up
+    // to the next one.
+    const marked = new Map();
+    const mark = (el, change) => {
+      const target = shownChangeTarget(el);
+      if (!marked.has(target)) marked.set(target, []);
+      marked.get(target).push(change);
+    };
+    for (const change of changeMarks) {
+      const index = firstLineIndex(lines, change.firstLine);
+      if (change.kind === "removed") {
+        // A deletion has no lines of its own: the block after it, or the last one at the end.
+        const line = lines[Math.min(index, lines.length - 1)];
+        for (const el of byLine.get(line)) mark(el, change);
+        continue;
+      }
+      // A line with no element of its own is in the block before it. Before the first block,
+      // the first block is the nearest thing there is.
+      const start = lines[index] === change.firstLine ? index : Math.max(index - 1, 0);
+      const last = change.firstLine + change.lineCount - 1;
+      for (let at = start; at < lines.length && (at === start || lines[at] <= last); at++) {
+        for (const el of byLine.get(lines[at])) mark(el, change);
+      }
+    }
+
+    // Only the innermost: a changed list item, never the whole list.
+    const firstLines = new Map([...marked].map(([el, changes]) => [el, new Set(changes.map((c) => c.firstLine))]));
+    const markedAncestors = (el) => {
+      const found = [];
+      for (let parent = el.parentElement; parent && parent !== root; parent = parent.parentElement) {
+        if (marked.has(parent)) found.push(parent);
+      }
+      return found;
+    };
+    const outer = new Set([...marked.keys()].flatMap(markedAncestors));
+
+    // A mark only an outer element held moves to the first thing kept inside it, so every mark can
+    // still be found on the page. A line something inside already holds stays where it is: a list
+    // starts on its first item's line, and that line is no business of the second item.
+    const inside = new Map();
+    const kept = [...marked.keys()].filter((el) => !outer.has(el));
+    kept.sort((a, b) => (order.get(a) ?? order.size) - (order.get(b) ?? order.size));
+    for (const el of kept) {
+      for (const parent of markedAncestors(el)) {
+        if (!inside.has(parent)) inside.set(parent, { first: el, lines: new Set() });
+        for (const line of firstLines.get(el)) inside.get(parent).lines.add(line);
+      }
+    }
+    // Innermost first, so a line two nested outer elements share moves once.
+    for (const el of [...outer].sort((a, b) => (order.get(b) ?? -1) - (order.get(a) ?? -1))) {
+      const { first, lines: held } = inside.get(el);
+      const moved = marked.get(el).filter((change) => !held.has(change.firstLine));
+      marked.get(first).push(...moved);  // the line and its kind: a deletion keeps its triangle
+      for (const { firstLine } of moved) {
+        firstLines.get(first).add(firstLine);
+        for (const parent of markedAncestors(first)) inside.get(parent).lines.add(firstLine);
+      }
+    }
+    for (const el of outer) marked.delete(el);
+
+    return new Map(kept.map((el) => [el, {
+      changes: marked.get(el),
+      held: [...firstLines.get(el)].sort((a, b) => a - b),
+    }]));
+  }
+
+  // What shows a change in `el`: `el`, unless a collapsed `<details>` hides it. Then it's the
+  // outermost one, or the block around it if it has no line of its own (raw HTML). Never opened.
+  function shownChangeTarget(el) {
+    let closed = el.closest("details:not([open])");
+    if (!closed) return el;
+    for (let next = closed.parentElement?.closest("details:not([open])"); next; ) {
+      closed = next;
+      next = closed.parentElement?.closest("details:not([open])");
+    }
+    if (closed.hasAttribute("data-line")) return closed;
+    const block = closed.parentElement?.closest("[data-line]");
+    return block && content().contains(block) ? block : closed;
+  }
+
   function update(html, lines) {
     if (lines) lineCount = lines;
     invalidateAnchors();
@@ -906,6 +1073,7 @@
     // Synchronous, and only over elements the pool didn't reuse: math whose source hasn't
     // changed keeps the KaTeX output it already has.
     renderMath();
+    applyChangeMarks();
     reapplySync();
     pendingWork = renderMermaidSequentially(capMermaid(pending));
     if (pending.length) {
@@ -996,5 +1164,5 @@
     }
   }
 
-  window.MarsDawn = { update, setLabels, setTheme, setThemes, scrollToLine, setAssetState, setRemoteImageState, restoreScroll, idle };
+  window.MarsDawn = { update, setChangeMarks, setLabels, setTheme, setThemes, scrollToLine, setAssetState, setRemoteImageState, restoreScroll, idle };
 })();

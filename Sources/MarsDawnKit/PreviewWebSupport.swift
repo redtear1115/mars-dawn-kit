@@ -285,6 +285,36 @@ public enum PreviewWebView {
         String(localized: "Not rendered: too many diagrams in this document. Source shown.", bundle: .module)
     }
 
+    /// One run of source lines that differs from the app's baseline (mars-dawn#358). `firstLine` is
+    /// 1-based, in the text on screen; a deletion at the end of a document uses the last line.
+    public struct ChangeMark: Equatable, Sendable {
+        public enum Kind: String, Sendable { case added, changed, removed }
+
+        public let firstLine: Int
+        public let lineCount: Int
+        public let kind: Kind
+
+        public init(firstLine: Int, lineCount: Int, kind: Kind) {
+            self.firstLine = firstLine
+            self.lineCount = lineCount
+            self.kind = kind
+        }
+    }
+
+    /// JavaScript that replaces the page's change marks. An empty list clears them. Marks must be
+    /// for the text on screen: the page keeps them through `update()`, and compares nothing.
+    /// `currentLine` is the `firstLine` of the mark the reader is on, if any.
+    public nonisolated static func changeMarksScript(_ marks: [ChangeMark], currentLine: Int? = nil) -> String {
+        let payload: [String: Any] = [
+            "marks": marks.map {
+                ["firstLine": $0.firstLine, "lineCount": $0.lineCount, "kind": $0.kind.rawValue] as [String: Any]
+            },
+            "currentLine": currentLine.map { $0 as Any } ?? NSNull(),
+        ]
+        let data = try! JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
+        return "window.MarsDawn?.setChangeMarks?.(\(String(decoding: data, as: UTF8.self)));"
+    }
+
     /// JavaScript that scrolls the preview to a (fractional, 1-based) source line.
     public nonisolated static func scrollScript(line: Double, atEnd: Bool) -> String {
         let safeLine = line.isFinite ? max(1, line) : 1
