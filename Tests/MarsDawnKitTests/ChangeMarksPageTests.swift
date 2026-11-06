@@ -205,6 +205,34 @@ struct ChangeMarksPageTests {
         #expect(found.first?.contains("md-change-current") == true, "the current mark follows its line: \(found)")
     }
 
+    /// A list, table or quote starts on its first child's line, so marking that child marks the
+    /// outer element too. Its line is the first child's, and no neighbour's.
+    @Test(arguments: [
+        ("- one\n- two\n- three\n", [1, 2], ["LI 1 current", "LI 2"]),
+        ("| a |\n|---|\n| b |\n| c |\n", [1, 4], ["TR 1 current", "TR 4"]),
+        ("> one\n>\n> two\n", [1, 3], ["P 1 current", "P 3"]),
+        ("1. one\n2. two\n", [1, 2], ["LI 1 current", "LI 2"]),
+    ]) func anOuterElementsLineStaysOffItsNeighbours(text: String, lines: [Int], expected: [String]) async throws {
+        defer { Page.closeHosts() }
+        let found = try await marks(text, lines.map { .init(firstLine: $0, lineCount: 1, kind: .changed) }, current: 1)
+        #expect(found.map(Self.shortForm) == expected, "\(found)")
+    }
+
+    /// A parent with text of its own has no kept element holding its line: the first child takes
+    /// it, once, even though the list and the item both start there.
+    @Test func aLineNothingInsideHoldsGoesToTheFirstOnly() async throws {
+        defer { Page.closeHosts() }
+        let found = try await marks("- a\n  - b\n  - c\n", [1, 2, 3].map { .init(firstLine: $0, lineCount: 1, kind: .changed) }, current: 1)
+        #expect(found.map(Self.shortForm) == ["LI 1 2 current", "LI 3"], "\(found)")
+    }
+
+    /// `TAG lines`, with ` current` on the element the reader is on.
+    private static func shortForm(_ line: String) -> String {
+        let words = line.split(separator: " ")
+        let lines = words.prefix { !$0.hasPrefix("md-change") }.joined(separator: " ")
+        return line.contains("md-change-current") ? "\(lines) current" : lines
+    }
+
     @Test func anAuthorsOwnLineAttributeIsIgnored() async throws {
         defer { Page.closeHosts() }
         let found = try await marks("<div data-line=\"nope\">Raw.</div>\n\nTarget.\n", [

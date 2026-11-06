@@ -879,7 +879,9 @@
     if (!changeMarks.length) return;
 
     const byLine = new Map();
+    const order = new Map();  // page order, for what's kept and what isn't
     for (const el of root.querySelectorAll("[data-line]")) {
+      order.set(el, order.size);
       const line = Number(el.getAttribute("data-line"));
       if (!Number.isInteger(line)) continue;  // an author's own attribute, in raw HTML
       if (!byLine.has(line)) byLine.set(line, []);
@@ -913,15 +915,35 @@
       }
     }
 
-    // Only the innermost: a changed list item, never the whole list. What an outer element held
-    // moves to what's kept inside it, so every mark can still be found on the page.
+    // Only the innermost: a changed list item, never the whole list.
     const firstLines = new Map([...marked].map(([el, changes]) => [el, new Set(changes.map((c) => c.firstLine))]));
-    const outer = new Set();
-    for (const el of marked.keys()) {
+    const markedAncestors = (el) => {
+      const found = [];
       for (let parent = el.parentElement; parent && parent !== root; parent = parent.parentElement) {
-        if (!marked.has(parent)) continue;
-        outer.add(parent);
-        for (const change of marked.get(parent)) firstLines.get(el).add(change.firstLine);
+        if (marked.has(parent)) found.push(parent);
+      }
+      return found;
+    };
+    const outer = new Set([...marked.keys()].flatMap(markedAncestors));
+
+    // A line only an outer element held moves to the first thing kept inside it, so every mark can
+    // still be found on the page. A line something inside already holds stays where it is: a list
+    // starts on its first item's line, and that line is no business of the second item.
+    const inside = new Map();
+    const kept = [...marked.keys()].filter((el) => !outer.has(el));
+    for (const el of kept.sort((a, b) => (order.get(a) ?? order.size) - (order.get(b) ?? order.size))) {
+      for (const parent of markedAncestors(el)) {
+        if (!inside.has(parent)) inside.set(parent, { first: el, lines: new Set() });
+        for (const line of firstLines.get(el)) inside.get(parent).lines.add(line);
+      }
+    }
+    // Innermost first, so a line two nested outer elements share moves once.
+    for (const el of [...outer].sort((a, b) => (order.get(b) ?? -1) - (order.get(a) ?? -1))) {
+      const { first, lines: held } = inside.get(el);
+      for (const line of firstLines.get(el)) {
+        if (held.has(line)) continue;
+        firstLines.get(first).add(line);
+        for (const parent of markedAncestors(first)) inside.get(parent).lines.add(line);
       }
     }
     for (const el of outer) marked.delete(el);
