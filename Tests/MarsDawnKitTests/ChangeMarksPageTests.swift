@@ -193,6 +193,39 @@ struct ChangeMarksPageTests {
         #expect(state?["lines"] as? String == "4", "and still says which line")
     }
 
+    /// The mark follows what shows the change, both ways, with no new marks from the app.
+    @Test func aMarkFollowsADetailsOpenedOrClosed() async throws {
+        defer { Page.closeHosts() }
+        let webView = try await Page.loadedPreview()
+        try await Page.push("<details open>\n<summary>S</summary>\n\ninner para\n\n</details>\n\nafter\n", to: webView)
+        try await set([.init(firstLine: 4, lineCount: 1, kind: .changed)], in: webView)
+        #expect(try await marked(webView) == ["P 4 md-change md-change-changed"])
+        #expect(try await tag(webView, afterSetting: false) != "P", "a closed group shows the mark on what's around it")
+        #expect(try await tag(webView, afterSetting: true) == "P", "and an open one on the paragraph")
+    }
+
+    /// Sets the only `<details>`, waits for the frame that follows, and names the marked element.
+    private func tag(_ webView: PreviewWKWebView, afterSetting open: Bool) async throws -> String? {
+        try await webView.callAsyncJavaScript("""
+            const before = document.querySelector("#content .md-change");
+            document.querySelector("details").open = open;
+            for (let i = 0; i < 200 && document.querySelector("#content .md-change") === before; i++) {
+              await new Promise((done) => setTimeout(done, 10));
+            }
+            return document.querySelector("#content .md-change")?.tagName ?? null;
+            """, arguments: ["open": open], contentWorld: .page) as? String
+    }
+
+    /// A line that moves to the inner element takes its kind along, so a deletion keeps its triangle.
+    @Test func aMovedLineKeepsItsKind() async throws {
+        defer { Page.closeHosts() }
+        let found = try await marks("- a\n  - b\n", [
+            .init(firstLine: 1, lineCount: 1, kind: .removed),
+            .init(firstLine: 2, lineCount: 1, kind: .added),
+        ])
+        #expect(found == ["LI 1 2 md-change md-change-added md-change-removed"], "\(found)")
+    }
+
     /// The outer element's mark isn't drawn, but the line stays findable on the inner one.
     @Test func anInnerElementKeepsTheOuterOnesLine() async throws {
         defer { Page.closeHosts() }

@@ -512,6 +512,7 @@
     if (toggleFrame) return;
     toggleFrame = requestAnimationFrame(() => {
       toggleFrame = 0;
+      applyChangeMarks();  // what shows a mark changed with the group
       reapplySync();
     });
   }, true);
@@ -926,7 +927,7 @@
     };
     const outer = new Set([...marked.keys()].flatMap(markedAncestors));
 
-    // A line only an outer element held moves to the first thing kept inside it, so every mark can
+    // A mark only an outer element held moves to the first thing kept inside it, so every mark can
     // still be found on the page. A line something inside already holds stays where it is: a list
     // starts on its first item's line, and that line is no business of the second item.
     const inside = new Map();
@@ -940,10 +941,11 @@
     // Innermost first, so a line two nested outer elements share moves once.
     for (const el of [...outer].sort((a, b) => (order.get(b) ?? -1) - (order.get(a) ?? -1))) {
       const { first, lines: held } = inside.get(el);
-      for (const line of firstLines.get(el)) {
-        if (held.has(line)) continue;
-        firstLines.get(first).add(line);
-        for (const parent of markedAncestors(first)) inside.get(parent).lines.add(line);
+      const moved = marked.get(el).filter((change) => !held.has(change.firstLine));
+      marked.get(first).push(...moved);  // the line and its kind: a deletion keeps its triangle
+      for (const { firstLine } of moved) {
+        firstLines.get(first).add(firstLine);
+        for (const parent of markedAncestors(first)) inside.get(parent).lines.add(firstLine);
       }
     }
     for (const el of outer) marked.delete(el);
