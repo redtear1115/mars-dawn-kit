@@ -81,8 +81,9 @@ ul, ol { padding-left: 2em; }
 li + li { margin-top: 0.25em; }
 li > ul, li > ol { margin-bottom: 0; }
 li::marker { color: var(--accent); }
-.contains-task-list { list-style: none; padding-left: 1.4em; }
+ul.contains-task-list { list-style: none; padding-left: 1.4em; }
 .task-list-item input { margin: 0 0.4em 0 -1.4em; vertical-align: middle; accent-color: var(--accent); }
+ol.contains-task-list > .task-list-item > input { margin-left: 0; }
 
 blockquote {
   margin-left: 0;

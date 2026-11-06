@@ -903,8 +903,9 @@ private struct HTMLVisitor: MarkupVisitor {
     mutating func visitOrderedList(_ list: OrderedList) -> String {
         tightListStack.append(!isLoose(list))
         defer { tightListStack.removeLast() }
+        let taskClass = list.listItems.contains { $0.checkbox != nil } ? " class=\"contains-task-list\"" : ""
         let start = list.startIndex == 1 ? "" : " start=\"\(list.startIndex)\""
-        return "<ol\(start)\(lineAttribute(list))>\n\(visitChildren(list))</ol>\n"
+        return "<ol\(taskClass)\(start)\(lineAttribute(list))>\n\(visitChildren(list))</ol>\n"
     }
 
     mutating func visitListItem(_ listItem: ListItem) -> String {
