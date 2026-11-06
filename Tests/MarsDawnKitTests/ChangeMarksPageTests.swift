@@ -59,8 +59,8 @@ struct ChangeMarksPageTests {
     @Test func aLineInsideABlockMarksTheBlock() async throws {
         defer { Page.closeHosts() }
         let webView = try await page()
-        try await set([.init(firstLine: 4, lineCount: 1, kind: .removed)], in: webView)
-        #expect(try await marked(webView) == ["P 4 md-change md-change-removed"])
+        try await set([.init(firstLine: 4, lineCount: 1, kind: .changed)], in: webView)
+        #expect(try await marked(webView) == ["P 4 md-change md-change-changed"])
     }
 
     @Test func aRunMarksEveryBlockInItAndOneElementCanHoldTwoMarks() async throws {
@@ -133,6 +133,84 @@ struct ChangeMarksPageTests {
         try await set([], in: webView)
         let after = try await webView.callAsyncJavaScript(state, contentWorld: .page) as? [String: Any]
         #expect(after?["html"] as? String == before?["html"] as? String, "clearing leaves the page as it was")
+    }
+
+    // MARK: Where a mark lands (#358's table)
+
+    private func marks(_ text: String, _ marks: [PreviewWebView.ChangeMark], current: Int? = nil) async throws -> [String] {
+        let webView = try await Page.loadedPreview()
+        try await Page.push(text, to: webView)
+        try await set(marks, current: current, in: webView)
+        return try await marked(webView)
+    }
+
+    @Test func aChangeBeforeTheFirstBlockMarksTheFirstBlock() async throws {
+        defer { Page.closeHosts() }
+        #expect(try await marks("\n\n# T\n\npara\n", [.init(firstLine: 1, lineCount: 1, kind: .changed)])
+            == ["H1 1 md-change md-change-changed"])
+        #expect(try await marks("[x]: http://a.example\n\n# T\n", [.init(firstLine: 1, lineCount: 1, kind: .added)])
+            == ["H1 1 md-change md-change-added"], "a link definition has no block")
+    }
+
+    @Test func aChangeOnALineWithNoBlockMarksTheBlockBefore() async throws {
+        defer { Page.closeHosts() }
+        #expect(try await marks("One.\n\nTwo.\n", [.init(firstLine: 2, lineCount: 1, kind: .changed)])
+            == ["P 2 md-change md-change-changed"])
+    }
+
+    @Test func aDeletionMarksTheBlockAfterItOrTheLastOne() async throws {
+        defer { Page.closeHosts() }
+        let text = "One.\n\nTwo.\n"
+        let after = try await marks(text, [.init(firstLine: 2, lineCount: 1, kind: .removed)])
+        #expect(after == ["P 2 md-change md-change-removed"])
+        let webView = try await Page.loadedPreview()
+        try await Page.push(text, to: webView)
+        try await set([.init(firstLine: 2, lineCount: 1, kind: .removed)], in: webView)
+        let tops = try await webView.callAsyncJavaScript(
+            #"return document.querySelector(".md-change").textContent"#, contentWorld: .page) as? String
+        #expect(tops == "Two.", "the block after the deletion, not the one before it")
+        let end = try await marks("One.\n\nTwo.\n", [.init(firstLine: 9, lineCount: 1, kind: .removed)])
+        #expect(end == ["P 9 md-change md-change-removed"], "at the end of the document, the last block")
+    }
+
+    /// Not opened, and not marked out of sight.
+    @Test func aChangeInACollapsedDetailsMarksWhatsAroundIt() async throws {
+        defer { Page.closeHosts() }
+        let text = "<details>\n<summary>S</summary>\n\ninner para\n\n</details>\n\nafter\n"
+        let webView = try await Page.loadedPreview()
+        try await Page.push(text, to: webView)
+        try await set([.init(firstLine: 4, lineCount: 1, kind: .changed)], in: webView)
+        let state = try await webView.callAsyncJavaScript("""
+            const el = document.querySelector("#content .md-change");
+            return { hidden: !!el?.closest("details:not([open])") && el.tagName !== "DETAILS",
+                     contains: !!el?.querySelector("details, summary") || el?.tagName === "DETAILS",
+                     open: !!document.querySelector("details[open]"),
+                     lines: el?.getAttribute("data-change-lines") };
+            """, contentWorld: .page) as? [String: Any]
+        #expect(state?["contains"] as? Bool == true, "the mark is on what shows the details: \(state ?? [:])")
+        #expect(state?["hidden"] as? Bool == false)
+        #expect(state?["open"] as? Bool == false, "marking doesn't open it")
+        #expect(state?["lines"] as? String == "4", "and still says which line")
+    }
+
+    /// The outer element's mark isn't drawn, but the line stays findable on the inner one.
+    @Test func anInnerElementKeepsTheOuterOnesLine() async throws {
+        defer { Page.closeHosts() }
+        let found = try await marks("- a\n  - b\n", [
+            .init(firstLine: 1, lineCount: 1, kind: .changed),
+            .init(firstLine: 2, lineCount: 1, kind: .added),
+        ], current: 1)
+        #expect(found.count == 1)
+        #expect(found.first?.hasPrefix("LI 1 2 md-change") == true, "\(found)")
+        #expect(found.first?.contains("md-change-current") == true, "the current mark follows its line: \(found)")
+    }
+
+    @Test func anAuthorsOwnLineAttributeIsIgnored() async throws {
+        defer { Page.closeHosts() }
+        let found = try await marks("<div data-line=\"nope\">Raw.</div>\n\nTarget.\n", [
+            .init(firstLine: 3, lineCount: 1, kind: .changed),
+        ])
+        #expect(found == ["P 3 md-change md-change-changed"], "\(found)")
     }
 
     /// The mark the reader is on: every element holding that `firstLine`, kept through `update()`.
@@ -218,7 +296,7 @@ struct ChangeMarksPageTests {
 
     @Test func theScriptCarriesOnlyWhatItWasGiven() {
         let script = PreviewWebView.changeMarksScript([.init(firstLine: 12, lineCount: 2, kind: .removed)])
-        #expect(script == #"window.MarsDawn && MarsDawn.setChangeMarks({"currentLine":null,"marks":[{"firstLine":12,"kind":"removed","lineCount":2}]});"#)
+        #expect(script == #"window.MarsDawn?.setChangeMarks?.({"currentLine":null,"marks":[{"firstLine":12,"kind":"removed","lineCount":2}]});"#)
         #expect(PreviewWebView.changeMarksScript([], currentLine: 7).contains(#"{"currentLine":7,"marks":[]}"#))
     }
 
@@ -242,7 +320,17 @@ struct ChangeMarksPageTests {
             const blocks = document.querySelectorAll("#content .md-change").length;
             const again = performance.now();
             MarsDawn.setChangeMarks({ marks: list });
-            return { set, reapply: performance.now() - again, blocks };
+            const reapply = performance.now() - again;
+            const html = document.querySelector("#content").innerHTML;
+            const run = () => { const at = performance.now(); MarsDawn.update(html, 0); return performance.now() - at; };
+            const rounds = [];
+            for (let round = 0; round < 5; round++) {
+              MarsDawn.setChangeMarks({ marks: [] });
+              const plain = run();
+              MarsDawn.setChangeMarks({ marks: list });
+              rounds.push([plain, run()].map(Math.round).join("/"));
+            }
+            return { set, reapply, blocks, updatePlainThenMarked: rounds.join(" ") };
             """, arguments: ["payload": try jsonMarks(marks)], contentWorld: .page) as? [String: Any]
         print("ChangeMarksBudget", result ?? [:])
         #expect((result?["blocks"] as? Int ?? 0) > 400, "positive fixture: the marks landed")

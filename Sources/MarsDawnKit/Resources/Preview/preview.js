@@ -847,7 +847,8 @@
   let changeMarks = [];
   let currentChangeLine = null;
 
-  function setChangeMarks({ marks, currentLine } = {}) {
+  function setChangeMarks(options) {
+    const { marks, currentLine } = options ?? {};
     currentChangeLine = Number.isInteger(currentLine) && currentLine > 0 ? currentLine : null;
     changeMarks = (Array.isArray(marks) ? marks : []).filter((mark) =>
       Number.isInteger(mark?.firstLine) && mark.firstLine > 0 &&
@@ -880,35 +881,71 @@
     const byLine = new Map();
     for (const el of root.querySelectorAll("[data-line]")) {
       const line = Number(el.getAttribute("data-line"));
+      if (!Number.isInteger(line)) continue;  // an author's own attribute, in raw HTML
       if (!byLine.has(line)) byLine.set(line, []);
       byLine.get(line).push(el);
     }
     const lines = [...byLine.keys()].sort((a, b) => a - b);
+    if (!lines.length) return;
 
+    // Element -> the marks on it. `data-line` only says where a block starts, so a block runs up
+    // to the next one.
     const marked = new Map();
-    for (const mark of changeMarks) {
-      let index = firstLineIndex(lines, mark.firstLine);
-      // A line inside a block has no element of its own: the mark goes on the block it's in.
-      if (lines[index] !== mark.firstLine && index > 0) index -= 1;
-      const last = mark.firstLine + mark.lineCount - 1;
-      for (; index < lines.length && lines[index] <= last; index++) {
-        for (const el of byLine.get(lines[index])) {
-          if (!marked.has(el)) marked.set(el, []);
-          marked.get(el).push(mark);
-        }
+    const mark = (el, change) => {
+      const target = shownChangeTarget(el);
+      if (!marked.has(target)) marked.set(target, []);
+      marked.get(target).push(change);
+    };
+    for (const change of changeMarks) {
+      const index = firstLineIndex(lines, change.firstLine);
+      if (change.kind === "removed") {
+        // A deletion has no lines of its own: the block after it, or the last one at the end.
+        const line = lines[Math.min(index, lines.length - 1)];
+        for (const el of byLine.get(line)) mark(el, change);
+        continue;
+      }
+      // A line with no element of its own is in the block before it. Before the first block,
+      // the first block is the nearest thing there is.
+      const start = lines[index] === change.firstLine ? index : Math.max(index - 1, 0);
+      const last = change.firstLine + change.lineCount - 1;
+      for (let at = start; at < lines.length && (at === start || lines[at] <= last); at++) {
+        for (const el of byLine.get(lines[at])) mark(el, change);
       }
     }
-    // Only the innermost: a changed list item, never the whole list.
-    for (const el of [...marked.keys()]) {
+
+    // Only the innermost: a changed list item, never the whole list. What an outer element held
+    // moves to what's kept inside it, so every mark can still be found on the page.
+    const firstLines = new Map([...marked].map(([el, changes]) => [el, new Set(changes.map((c) => c.firstLine))]));
+    const outer = new Set();
+    for (const el of marked.keys()) {
       for (let parent = el.parentElement; parent && parent !== root; parent = parent.parentElement) {
-        marked.delete(parent);
+        if (!marked.has(parent)) continue;
+        outer.add(parent);
+        for (const change of marked.get(parent)) firstLines.get(el).add(change.firstLine);
       }
     }
-    for (const [el, marks] of marked) {
-      el.classList.add("md-change", ...marks.map((mark) => `md-change-${mark.kind}`));
-      if (marks.some((mark) => mark.firstLine === currentChangeLine)) el.classList.add("md-change-current");
-      el.setAttribute("data-change-lines", [...new Set(marks.map((mark) => mark.firstLine))].join(" "));
+    for (const el of outer) marked.delete(el);
+
+    for (const [el, changes] of marked) {
+      const held = [...firstLines.get(el)].sort((a, b) => a - b);
+      el.classList.add("md-change", ...changes.map((change) => `md-change-${change.kind}`));
+      if (held.includes(currentChangeLine)) el.classList.add("md-change-current");
+      el.setAttribute("data-change-lines", held.join(" "));
     }
+  }
+
+  // What shows a change in `el`: `el`, unless a collapsed `<details>` hides it. Then it's the
+  // outermost one, or the block around it if it has no line of its own (raw HTML). Never opened.
+  function shownChangeTarget(el) {
+    let closed = el.closest("details:not([open])");
+    if (!closed) return el;
+    for (let next = closed.parentElement?.closest("details:not([open])"); next; ) {
+      closed = next;
+      next = closed.parentElement?.closest("details:not([open])");
+    }
+    if (closed.hasAttribute("data-line")) return closed;
+    const block = closed.parentElement?.closest("[data-line]");
+    return block && content().contains(block) ? block : closed;
   }
 
   function update(html, lines) {

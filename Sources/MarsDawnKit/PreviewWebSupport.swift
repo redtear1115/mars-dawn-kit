@@ -312,7 +312,7 @@ public enum PreviewWebView {
             "currentLine": currentLine.map { $0 as Any } ?? NSNull(),
         ]
         let data = try! JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
-        return "window.MarsDawn && MarsDawn.setChangeMarks(\(String(decoding: data, as: UTF8.self)));"
+        return "window.MarsDawn?.setChangeMarks?.(\(String(decoding: data, as: UTF8.self)));"
     }
 
     /// JavaScript that scrolls the preview to a (fractional, 1-based) source line.
