@@ -358,6 +358,68 @@ img { max-width: 100%; }
    selector-list checks that this splice must keep passing. */
 /* MARSDAWN-GENERATED-THEME-RULES */
 
+/* Viewer folding (mars-dawn#300). The page only: the file is never changed, and print shows
+   everything (the rules that hide are screen-only, and print hides the controls below).
+   Controls are empty buttons: the visible text is generated content, so no label reaches
+   copy, find or the text the app reads. While a block is expanded its control is absolutely
+   positioned, so it changes no layout; it shows on hover or keyboard focus. */
+@media screen {
+  .md-fold-hidden { display: none !important; }
+  .md-block-collapsed > :not(.md-fold-block) { display: none !important; }
+  .markdown-body > :is(h1, h2, h3, h4, h5, h6), pre:has(> .md-fold-block),
+  p:has(> .md-fold-block) { position: relative; }
+}
+.md-fold-toggle, .md-fold-block {
+  -webkit-appearance: none;
+  appearance: none;
+  -webkit-user-select: none;
+  user-select: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+  opacity: 0;
+}
+.md-fold-toggle {
+  position: absolute;
+  left: -1.1em;
+  top: 0;
+  width: 1em;
+  height: 1.25em;
+  line-height: 1.25em;
+  text-align: center;
+}
+.md-fold-toggle::before { content: "▾"; font-size: 0.6em; }
+.md-fold-toggle[aria-expanded="false"]::before { content: "▸"; }
+.md-fold-block {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 1;
+  padding: 0 6px;
+  font-family: var(--font-body);
+  font-size: 12px;
+  line-height: 20px;
+}
+.md-fold-block::before { content: "▾"; }
+.md-block-collapsed > .md-fold-block {
+  position: static;
+  display: block;
+  width: 100%;
+  padding: 0;
+  text-align: left;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.md-block-collapsed > .md-fold-block::before { content: "▸ " attr(data-summary); }
+:hover > .md-fold-toggle, :hover > .md-fold-block, .md-fold-toggle:focus-visible, .md-fold-block:focus-visible,
+.md-fold-toggle[aria-expanded="false"], .md-block-collapsed > .md-fold-block { opacity: 1; }
+@media (prefers-reduced-motion: no-preference) {
+  .md-fold-toggle, .md-fold-block { transition: opacity 0.15s ease; }
+}
 /* ---- Print and PDF export: light palette on white paper, paginated ----
    The page tint would stop where the content ends, so the paper stays white;
    code, tables and quotes keep their surface tones. Margins come from NSPrintInfo. */
@@ -416,6 +478,8 @@ img { max-width: 100%; }
   a:hover { text-decoration: none; }
   .image-placeholder button { display: none; }
   .remote-images-bar { display: none !important; }
+  /* Viewer folding (mars-dawn#300): print is the file, so no control shows. */
+  .md-fold-toggle, .md-fold-block { display: none !important; }
   .mermaid-block.stale .mermaid-output { opacity: 1; }
 
   /* Collapsible blocks (redtear1115/mars-dawn#300). Paper can't be clicked, so a summary
