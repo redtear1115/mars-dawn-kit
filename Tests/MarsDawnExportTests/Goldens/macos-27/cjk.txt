@@ -1,0 +1,29 @@
+OS build: Version 27.2 (Build 26B123) | WebKit: 22625.2.8.11.9 | Paper: a4
+Page count: 1
+Lines: minX minY maxX maxY | text, whole points from the page's bottom left, sorted by text; compared within 1 pt
+
+--- Page 1 ---
+58 328 332 340 | // 中文注釋CODECJK11 comment inline with code
+167 372 245 386 | English cell 10
+69 241 174 255 | English item fifteen
+45 115 270 129 | Last paragraph marker CJKENDMARK99.
+45 495 528 509 | MixedABC123測試全形與Latin混排MIXCJK05,句號。逗號,冒號:分號;問號?驚嘆號!
+58 303 365 318 | func greet() -> String { return "こんにちは世界13" }
+58 315 226 330 | let 変数名 = "日本語コメント12"
+45 557 101 576 | ざいます。
+56 372 131 386 | 中文儲存格09
+167 402 246 416 | 值CELLTBL08
+45 610 116 624 | 号?惊叹号!
+45 662 128 675 | 問號?驚嘆號!
+45 577 549 596 | 日本語のパラグラフJPN03です。全角句読点のテスト、これは「括弧」とマルです。ありがとうご
+45 722 416 751 | 標題HDCJK01:你好世界 Heading
+56 402 146 416 | 欄位CELLTBL07
+45 186 545 200 | 永和九年岁在癸丑暮春之初会于会稽山阴之兰亭修禊事也群贤毕至少长咸集此地有崇山峻封装换
+69 218 265 232 | 混合Mixed項目CJK16 with Latin text
+45 630 546 645 | 简体中文段落标记ZHS02,这是一段测试文字,包含全角标点:“引号”、逗号,句号。分号;问
+45 682 546 696 | 繁體中文段落標記ZHT01,這是一段測試文字,包含全形標點:「引號」、逗號,句號。分號;
+45 166 545 179 | 行标记岭茂林修竹又有清流激湍映带左右引以为流觞曲水列坐其次虽无丝竹管弦之盛一觞一咏亦
+45 442 219 463 | 表格CJKTBL06 Table
+45 147 116 160 | 足以畅叙幽情
+69 263 152 278 | 項目LISTCJK14
+45 527 503 542 | 한국어 단락입니다 KOR04. 전각 문장 부호 테스트, 이것은 “따옴표”와 마침표입니다. 감사합니다.
