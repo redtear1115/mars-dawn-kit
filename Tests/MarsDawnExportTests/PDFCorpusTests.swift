@@ -123,7 +123,7 @@ struct PDFCorpus {
         return CorpusFixture(name: "long", markdown: markdown, baseDirectory: nil, expectation: expectation, workDirectory: nil)
     }
 
-    // MARK: Tier 4: goldens (per OS build)
+    // MARK: Tier 4: goldens (per macOS major version)
 
     nonisolated static var goldenFixtureNames: [String] { folderFixtureNames + ["long"] }
 
@@ -133,7 +133,7 @@ struct PDFCorpus {
     @Test(
         .enabled(
             if: ProcessInfo.processInfo.environment["MARSDAWN_PDF_GOLDENS"] == "1",
-            "the goldens are per OS build: set MARSDAWN_PDF_GOLDENS=1 to compare (the pdf-goldens CI job does)"
+            "the goldens are per macOS major version: set MARSDAWN_PDF_GOLDENS=1 to compare (the pdf-goldens CI job does)"
         ),
         arguments: PDFCorpus.goldenFixtureNames
     )
@@ -152,7 +152,8 @@ struct PDFCorpus {
         let document = try #require(PDFDocument(data: outcome.data))
         let current = GoldenStore.pageLines(of: document)
         let currentHeader = GoldenHeader.current(paper: "a4")
-        let url = GoldenStore.url(for: fixture.name)
+        let major = ProcessInfo.processInfo.operatingSystemVersion.majorVersion
+        let url = GoldenStore.url(for: fixture.name, major: major)
 
         if ProcessInfo.processInfo.environment["MARSDAWN_UPDATE_GOLDENS"] == "1" {
             let content = GoldenStore.render(header: currentHeader, pages: current)
@@ -162,7 +163,7 @@ struct PDFCorpus {
         }
 
         guard FileManager.default.fileExists(atPath: url.path) else {
-            Issue.record("\(fixture.name): no golden recorded; run with MARSDAWN_UPDATE_GOLDENS=1 to record one")
+            Issue.record("\(fixture.name): no golden for macOS \(major) at \(url.path); record on macOS \(major) with MARSDAWN_PDF_GOLDENS=1 MARSDAWN_UPDATE_GOLDENS=1 swift test --no-parallel --filter PDFCorpus/golden")
             return
         }
         let recorded = try String(contentsOf: url, encoding: .utf8)
@@ -172,17 +173,9 @@ struct PDFCorpus {
             Issue.record("\(fixture.name): golden file has no readable header")
             return
         }
-        guard recordedHeader.osBuild == currentHeader.osBuild else {
-            Issue.record(Comment(rawValue:
-                "goldens were recorded on build \(recordedHeader.osBuild), this runner is "
-                    + "build \(currentHeader.osBuild): re-record with the Record PDF goldens workflow"
-            ))
-            return
-        }
-
         let diffs = GoldenStore.differences(recorded: GoldenStore.pages(from: recorded), current: current)
         guard !diffs.isEmpty else { return }
-        Issue.record("\(fixture.name): golden mismatch: \(diffs.prefix(12).joined(separator: "; "))\(diffs.count > 12 ? "; and \(diffs.count - 12) more" : "")")
+        Issue.record("\(fixture.name): golden mismatch (recorded on build \(recordedHeader.osBuild), this runner is build \(currentHeader.osBuild)): \(diffs.prefix(12).joined(separator: "; "))\(diffs.count > 12 ? "; and \(diffs.count - 12) more" : "")")
     }
 
     // MARK: Shared assertion pipeline (tiers 1, 2, 3, 5)
@@ -583,11 +576,12 @@ struct GoldenLine: Equatable {
 enum GoldenStore {
     static let coordinateTolerance = 1
 
-    static func url(for name: String) -> URL {
-        URL(fileURLWithPath: #filePath)
-            .deletingLastPathComponent()  // MarsDawnExportTests
-            .appendingPathComponent("Goldens")
-            .appendingPathComponent("\(name).txt")
+    static func url(
+        for name: String,
+        major: Int = ProcessInfo.processInfo.operatingSystemVersion.majorVersion,
+        root: URL = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Goldens")
+    ) -> URL {
+        root.appendingPathComponent("macos-\(major)").appendingPathComponent("\(name).txt")
     }
 
     /// NFKC composition only; whitespace inside a line is kept, so the file stays readable and
