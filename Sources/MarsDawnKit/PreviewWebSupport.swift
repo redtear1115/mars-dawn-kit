@@ -491,10 +491,7 @@ public enum PreviewContentRules {
         let identifier = identifier(allowRemoteImages: allowRemoteImages)
         let rules = encodedRules(allowRemoteImages: allowRemoteImages)
         let task = Task { @MainActor () throws -> WKContentRuleList in
-            guard let list = try await WKContentRuleListStore.default()
-                .compileContentRuleList(forIdentifier: identifier, encodedContentRuleList: rules)
-            else { throw CompileError.noList }
-            return list
+            try await ContentRuleCompile.list(identifier: identifier, rules: rules)
         }
         compiled[allowRemoteImages] = task
         do {
