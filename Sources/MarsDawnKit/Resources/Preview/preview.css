@@ -420,6 +420,50 @@ img { max-width: 100%; }
 @media (prefers-reduced-motion: no-preference) {
   .md-fold-toggle, .md-fold-block { transition: opacity 0.15s ease; }
 }
+/* Touch has no hover: keep folding discoverable and meet the HIG's 44 pt targets. What counts is
+   where a tap lands, not a box's size: nothing here may reach past the page's left edge or be
+   clipped by a scrolling `pre`. */
+@media screen and (pointer: coarse) {
+  /* Room in the margin for a heading arrow's 44 px target (an h1's arrow ends 0.1em before the
+     text, so 47 px of margin is needed). */
+  .markdown-body { padding-left: 50px; }
+  .md-fold-toggle, .md-fold-block {
+    opacity: 0.6;
+    -webkit-tap-highlight-color: transparent;
+  }
+  /* A heading's arrow grows into the margin, not over the heading's text, so a link at the start
+     of a heading still takes the tap. */
+  .md-fold-toggle::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    right: 0;
+    width: 44px;
+    height: 44px;
+    transform: translateY(-50%);
+  }
+  /* A block's control is itself the target: a pseudo-element around it would be clipped by a
+     `pre`, which scrolls. It sits in the block's top right corner, inside the block. */
+  .md-fold-block {
+    top: 0;
+    right: 0;
+    min-width: 44px;
+    height: 44px;
+    line-height: 44px;
+    padding: 0 6px;
+  }
+  .md-block-collapsed > .md-fold-block {
+    min-height: 44px;
+    height: auto;
+    line-height: 44px;
+  }
+  details > summary {
+    box-sizing: border-box;
+    min-height: 44px;
+    padding-block: max(0px, calc((44px - 1lh) / 2));
+    -webkit-tap-highlight-color: transparent;
+  }
+}
 /* ---- Print and PDF export: light palette on white paper, paginated ----
    The page tint would stop where the content ends, so the paper stays white;
    code, tables and quotes keep their surface tones. Margins come from NSPrintInfo. */
