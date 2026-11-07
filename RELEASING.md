@@ -35,8 +35,9 @@ The tag is the bare version, with no `v`, because the formula's `url` interpolat
 compares it against `version`.
 
 ```sh
-git tag 0.3.0
-git push origin 0.3.0
+VERSION=0.7.7   # the version in Sources/marsdawn/Version.swift
+git tag "$VERSION"
+git push origin "$VERSION"
 ```
 
 Tags are immutable. A mistake gets a new patch tag, never a moved one.
@@ -53,7 +54,7 @@ Download exactly the archive the formula will download — GitHub generates it f
 re-downloading it later must give the same bytes.
 
 ```sh
-VERSION=0.3.0
+VERSION=0.7.7   # the tag from step 2
 curl -fL -o "marsdawn-$VERSION.tar.gz" \
   "https://github.com/redtear1115/mars-dawn-kit/archive/refs/tags/$VERSION.tar.gz"
 shasum -a 256 "marsdawn-$VERSION.tar.gz"
