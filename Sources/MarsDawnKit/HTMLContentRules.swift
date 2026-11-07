@@ -21,20 +21,22 @@ public enum HTMLContentPolicy: String, Sendable, CaseIterable {
 /// page's policy before loading the page.
 ///
 /// - Blocked: every web and WebSocket request.
-/// - Running: the same blocks, then lifted for https images, style sheets, fonts, media and
-///   fetches only. **Script is never lifted** (A4-3, D-1c): a running document runs the code it
-///   arrived with, not code it downloads. Documents, SVG documents, WebSockets, pings, popups,
-///   preconnects and everything else stay blocked, and so does plaintext http of any type.
+/// - Running: the same blocks, then lifted for https scripts, images, style sheets, fonts, media
+///   and fetches. Script joined the lift in v4 (mars-dawn#658, rewriting D-1c): a document the
+///   reader runs may load code over https, so the program is no longer only the bytes in the file,
+///   and the bar says so. Documents, SVG documents, WebSockets, pings, popups, preconnects and
+///   everything else stay blocked, and so does plaintext http of any type, script included.
 @MainActor
 public enum HTMLContentRules {
     /// Bump when the rules change, so a list compiled from older rules is never reused.
-    nonisolated static let version = 3
+    nonisolated static let version = 4
     nonisolated static let identifierPrefix = "dev.southern-light.marsdawn.html-rules"
     /// Resource types that load while a document is running. `raw` and `fetch` are both accepted
     /// by WebKit's dialect and both are listed, because which one a `fetch()` is classified under
     /// isn't documented, and a document the copy says may send data over the network has to be
-    /// able to. `script` is deliberately absent.
-    nonisolated static let runningResourceTypes = ["image", "style-sheet", "font", "media", "fetch"]
+    /// able to. `script` is here since v4 (mars-dawn#658); `raw`, `websocket`, `ping`, `popup` and
+    /// `document` never are.
+    nonisolated static let runningResourceTypes = ["script", "image", "style-sheet", "font", "media", "fetch"]
 
     /// The store identifier of the list for a policy.
     public nonisolated static func identifier(for policy: HTMLContentPolicy) -> String {
@@ -48,8 +50,8 @@ public enum HTMLContentRules {
             ["trigger": ["url-filter": filter], "action": ["type": "block"]]
         }
         if policy == .running {
-            // Rules apply in order: lift the block for these types over https only — never for
-            // script, and never for ws or wss. The page CSP allows no http either, and this list
+            // Rules apply in order: lift the block for these types over https only, never for
+            // plaintext http and never for ws or wss. The page CSP allows no http either, and this list
             // is the layer below it.
             rules += [["trigger": ["url-filter": "^https:", "resource-type": runningResourceTypes],
                        "action": ["type": "ignore-previous-rules"]]]
