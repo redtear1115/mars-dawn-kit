@@ -9,6 +9,9 @@
     "failed": 0
   },
   "markers": [
+    "MarsDawn (https://example.com/x)",
+    "Internal",
+    "Email",
     "HOH1",
     "HOAP01",
     "HOTBL",
