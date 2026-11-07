@@ -408,6 +408,17 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
           if (!content) return 0;
           const style = document.createElement("style");
           style.textContent = "@media print { .export-page-break, .export-manual .export-h1-break { break-before: page; page-break-before: always; } }";
+          // Generated cover, contents and handout header are siblings of #content.
+          // Keep URL suffixes in the document body and in print media only.
+          style.textContent += `@media print {
+            .export-manual #content a[href^="http"]::after,
+            .export-handout #content a[href^="http"]::after {
+              content: " (" attr(href) ")";
+              overflow-wrap: anywhere;
+              word-break: break-word;
+              font-weight: normal;
+            }
+          }`;
           document.head.append(style);
           const isMarker = (el) => {
             if (!el.matches || !el.matches("div.html-block")) return false;

@@ -71,3 +71,5 @@ HOAP10 A reader who skips ahead will find that each section repeats the vocabula
 HOAP11 A reader who skips ahead will find that each section repeats the vocabulary of the one before it, on purpose. Measurements were taken at the start and at the end of the period, and the difference between them is reported below.
 
 HOEND99
+
+[MarsDawn](https://example.com/x), [Internal](#briefing-hoh1), and [Email](mailto:reader@example.com).
