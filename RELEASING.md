@@ -35,7 +35,8 @@ The tag is the bare version, with no `v`, because the formula's `url` interpolat
 compares it against `version`.
 
 ```sh
-VERSION=0.7.7   # the version in Sources/marsdawn/Version.swift
+VERSION=$(sed -n 's/.*static let version = "\(.*\)".*/\1/p' Sources/marsdawn/Version.swift)
+echo "$VERSION"   # check it before tagging
 git tag "$VERSION"
 git push origin "$VERSION"
 ```
@@ -54,7 +55,7 @@ Download exactly the archive the formula will download — GitHub generates it f
 re-downloading it later must give the same bytes.
 
 ```sh
-VERSION=0.7.7   # the tag from step 2
+VERSION=<the tag from step 2>
 curl -fL -o "marsdawn-$VERSION.tar.gz" \
   "https://github.com/redtear1115/mars-dawn-kit/archive/refs/tags/$VERSION.tar.gz"
 shasum -a 256 "marsdawn-$VERSION.tar.gz"
