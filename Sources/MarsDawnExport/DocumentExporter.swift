@@ -410,9 +410,15 @@ public final class DocumentExporter: NSObject, WKNavigationDelegate {
           style.textContent = "@media print { .export-page-break, .export-manual .export-h1-break { break-before: page; page-break-before: always; } }";
           // Generated cover, contents and handout header are siblings of #content.
           // Keep URL suffixes in the document body and in print media only.
+          // A link whose text already is its address (an autolink, or the same address without
+          // the scheme or a trailing slash) prints nothing more: the address would show twice.
+          const bare = (value) => value.trim().replace(/^https?:\\/\\//i, "").replace(/\\/+$/, "").toLowerCase();
+          for (const a of content.querySelectorAll('a[href^="http"]')) {
+            if (bare(a.textContent) === bare(a.getAttribute("href"))) a.setAttribute("data-export-url-shown", "");
+          }
           style.textContent += `@media print {
-            .export-manual #content a[href^="http"]::after,
-            .export-handout #content a[href^="http"]::after {
+            .export-manual #content a[href^="http"]:not([data-export-url-shown])::after,
+            .export-handout #content a[href^="http"]:not([data-export-url-shown])::after {
               content: " (" attr(href) ")";
               overflow-wrap: anywhere;
               word-break: break-word;
