@@ -124,8 +124,9 @@ struct SourceBytes: Sendable {
 /// prefixes it stripped not counted), so the document is parsed a second time with every
 /// escaped or entity `=` and `^` swapped for a private-use stand-in. Neither character is
 /// CommonMark syntax, so the second tree has the first one's shape, and each text's escapes are
-/// read from the text at the same path in it. Only a document that has such an escape is
-/// parsed twice.
+/// read from the text at the same path in it. Only a document that has such an escape and could
+/// pair two delimiters is parsed twice: escapes only decide which of a pair's delimiters count, so
+/// with no possible pair there is nothing to read (#185).
 struct EscapeMap: Sendable {
     /// Punctuation, as `=` and `^` are, so emphasis flanking next to a stand-in reads as it does
     /// next to the character it replaces (a private-use character is not punctuation, and `a*\=b*`
@@ -139,6 +140,8 @@ struct EscapeMap: Sendable {
     /// The escape flags of each text that has a `=`, `^` or stand-in, by path; nil if the second
     /// parse was refused, and then no text with a delimiter is read.
     private let flagsByPath: [[Int]: [Bool]]?
+    /// Whether this map came from a second parse.
+    var parsedTwice: Bool { hasEscapes }
 
     static let none = EscapeMap(hasEscapes: false, flagsByPath: [:])
 
@@ -148,15 +151,16 @@ struct EscapeMap: Sendable {
     }
 
     /// For `document`, parsed from `source`. Parses again on the current worker when `source`
-    /// holds an escape; call it from inside a `MarkdownParsing.withDocument` body.
+    /// holds an escape and `document` a possible pair (`alwaysRead` skips that second check, for
+    /// tests); call it from inside a `MarkdownParsing.withDocument` body.
     ///
     /// The second tree is only trusted when it is the first one node for node: same types, same
     /// child counts, same text once the stand-ins read as `=` and `^` again. Swapping a character
     /// can change how cmark reads its surroundings (`<a b=\=>` is not a tag but `<a b=⹀>` is;
     /// `[a&#61;b]` and `[a\=b]` become one label), and then no text's escapes can be read from
     /// it: every text with a delimiter gets no marks rather than another text's escapes.
-    init(source: String, document: Document, limits: ParseLimits) {
-        guard let standIns = Self.standIns(source) else {
+    init(source: String, document: Document, limits: ParseLimits, alwaysRead: Bool = false) {
+        guard let standIns = Self.standIns(source), alwaysRead || InlineMarks.mayPair(in: document) else {
             self = .none
             return
         }
@@ -327,6 +331,41 @@ enum InlineMarks {
             }
         }
         return false
+    }
+
+    /// Whether any inline container of `document` has two delimiters that might pair, counted as if
+    /// nothing were escaped. An escape only takes delimiters away, so where this says no, `pieces`
+    /// finds no pair whichever of them are escaped, and it returns the same nil either way.
+    static func mayPair(in document: Document) -> Bool {
+        var stack: [any Markup] = [document]
+        while let node = stack.popLast() {
+            var delimiters = 0
+            for child in node.children {
+                if let text = child as? Text {
+                    delimiters += delimiterBound(text.string)
+                } else {
+                    stack.append(child)
+                }
+            }
+            if delimiters >= 2 { return true }
+        }
+        return false
+    }
+
+    /// The most delimiters `text` could hold: each `^`, and each two `=` in a run of them.
+    private static func delimiterBound(_ text: String) -> Int {
+        var count = 0
+        var equals = 0
+        for byte in text.utf8 {
+            if byte == UInt8(ascii: "=") {
+                equals += 1
+                continue
+            }
+            count += equals / 2
+            equals = 0
+            if byte == UInt8(ascii: "^") { count += 1 }
+        }
+        return count + equals / 2
     }
 
     private enum Atom {

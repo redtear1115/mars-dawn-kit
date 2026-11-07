@@ -1,0 +1,55 @@
+OS build: Version 27.2 (Build 26B123) | WebKit: 22625.2.8.11.9 | Paper: a4
+Page count: 3
+Lines: minX minY maxX maxY | text, whole points from the page's bottom left, sorted by text; compared within 1 pt
+
+--- Page 1 ---
+45 723 414 751 | Blank Page Repro BLANKHEAD01
+45 682 128 696 | Paragraph 001.
+45 650 130 664 | Paragraph 002.
+45 619 130 633 | Paragraph 003.
+45 587 130 601 | Paragraph 004.
+45 555 130 569 | Paragraph 005.
+45 523 130 537 | Paragraph 006.
+45 491 128 505 | Paragraph 007.
+45 459 130 473 | Paragraph 008.
+45 428 130 442 | Paragraph 009.
+45 396 128 410 | Paragraph 010.
+45 364 126 378 | Paragraph 011.
+45 332 128 346 | Paragraph 012.
+45 300 128 315 | Paragraph 013.
+45 268 128 283 | Paragraph 014.
+45 237 128 251 | Paragraph 015.
+45 205 128 219 | Paragraph 016.
+45 173 126 187 | Paragraph 017.
+45 141 128 155 | Paragraph 018.
+45 110 128 124 | Paragraph 019.
+45 78 130 92 | Paragraph 020.
+
+--- Page 2 ---
+45 773 128 787 | Paragraph 021.
+45 741 130 755 | Paragraph 022.
+45 709 130 724 | Paragraph 023.
+45 677 130 692 | Paragraph 024.
+45 646 129 660 | Paragraph 025.
+45 614 130 628 | Paragraph 026.
+45 582 128 596 | Paragraph 027.
+45 550 130 564 | Paragraph 028.
+45 519 130 533 | Paragraph 029.
+45 487 130 501 | Paragraph 030.
+45 455 128 469 | Paragraph 031.
+45 423 130 437 | Paragraph 032.
+45 391 130 405 | Paragraph 033.
+45 359 130 373 | Paragraph 034.
+45 328 130 342 | Paragraph 035.
+45 296 130 310 | Paragraph 036.
+45 264 128 278 | Paragraph 037.
+45 232 130 246 | Paragraph 038.
+45 200 130 215 | Paragraph 039.
+45 168 130 183 | Paragraph 040.
+45 137 128 151 | Paragraph 041.
+45 105 130 119 | Paragraph 042.
+45 73 130 87 | Paragraph 043.
+
+--- Page 3 ---
+45 773 130 787 | Paragraph 044.
+45 741 130 755 | Paragraph 045.
