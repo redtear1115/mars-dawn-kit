@@ -67,17 +67,19 @@ public final class HTMLDocumentSchemeHandler: NSObject, WKURLSchemeHandler {
 
     /// The policy for a document the reader chose to run (A4-3).
     ///
-    /// `script-src 'unsafe-inline'` and nothing else: the document runs the code it arrived with.
-    /// No `https:`, so a `<script src="https://…">` is refused (D-1c) — refusing remote code is
-    /// what keeps "the program is the bytes in the file" true, and it is the property the bar's
-    /// "its own code" claims. No `'unsafe-eval'`, for the same reason: data fetched at run time
-    /// must not become code. No `marsdawn-html:` either, because `ServedFileType` never serves
+    /// `script-src 'unsafe-inline' https:`: the document runs the code it arrived with and code it
+    /// loads over https (mars-dawn#658, rewriting D-1c). That code isn't in the file and can change
+    /// at any time, which the bar says before the reader runs the document; it gets nothing inline
+    /// script didn't already have: the same opaque origin, the same `connect-src`. Still no
+    /// `http:`, so plaintext script is refused, here and in the rule list. No `'unsafe-eval'`:
+    /// data fetched at run time must not become code, and a library that compiles templates in
+    /// the page doesn't run. No `marsdawn-html:` either, because `ServedFileType` never serves
     /// `js`, so the token would grant a source that can't be satisfied — and a dead token that
     /// reads as live is how a later change to the served types would silently turn this into
     /// "execute arbitrary .js from the reader's folder", a permission nobody reviewed.
     ///
     /// `connect-src https:` is what the copy means by "can send data over the network".
-    nonisolated static let runningCSP = "default-src 'none'; img-src marsdawn-html: data: https:; style-src marsdawn-html: 'unsafe-inline' https:; font-src marsdawn-html: data: https:; media-src marsdawn-html: https:; script-src 'unsafe-inline'; object-src 'none'; frame-src 'none'; child-src 'none'; worker-src 'none'; connect-src https:; manifest-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'"
+    nonisolated static let runningCSP = "default-src 'none'; img-src marsdawn-html: data: https:; style-src marsdawn-html: 'unsafe-inline' https:; font-src marsdawn-html: data: https:; media-src marsdawn-html: https:; script-src 'unsafe-inline' https:; object-src 'none'; frame-src 'none'; child-src 'none'; worker-src 'none'; connect-src https:; manifest-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'"
 
     /// P3-9, revisited for A4-3: the `sandbox` directive on the page's CSP, per policy.
     ///
