@@ -67,6 +67,9 @@ In a branch of the tap, edit `Formula/marsdawn.rb`:
   what `test do` compares `marsdawn --version` against.
 - `sha256`: the checksum from step 3.
 
+Change nothing else. Don't edit the `bottle do ... end` block by hand, and don't add one for the
+new version: the publish run in step 6b writes it. The tap PR changes only `url` and `sha256`.
+
 Leave the install layout alone unless you mean to change it. The binary and its resource bundles
 (`*.bundle`: preview page, KaTeX, Mermaid) go into `libexec`, and `bin` gets a `write_exec_script`
 wrapper, not a symlink. SwiftPM looks for the bundles beside the path the binary was started from,
@@ -106,7 +109,120 @@ CI does the same on a macOS runner for every pull request (step 6).
 Push the branch and open the PR against the tap. Its CI (`install-check.yml`) installs the
 formula from source on a macOS runner, runs `brew test` and `brew audit`, and exports a real PDF.
 The PR needs that run green and an independent verification before it merges. Merging it is the
-owner's call, as is cutting the tag in step 2.
+owner's call, as is cutting the tag in step 2, but "merging" here does not mean the merge button:
+the PR is published as in step 6b, never merged with the button.
+
+CI on the PR shows these checks: `install` (workflow `install-check.yml`), and `test-bot`,
+`pour-check (macos-15)`, `pour-check (macos-26)` and `refuses-without-xcode-26` (workflow
+`tests.yml`, named "brew test-bot").
+
+## 6b. Publish the bottle
+
+A tap PR is published, not merged. The bottle comes from the PR's CI run: publishing downloads it,
+uploads it to a release on the tap, writes the `bottle do` block into the formula, and pushes all of
+it to `main`. The merge button skips all of that and leaves the previous version's `bottle do` block
+on `main`. Nothing stops the button: publishing does not need the PR merged first, and the tap's
+`main` has no branch protection, so this document is the only guard.
+
+In this step, `<version>` is the tag from step 2.
+
+1. Check that the PR changes only `url` and `sha256` in `Formula/marsdawn.rb`. If it touches the
+   `bottle do` block, take that change out first.
+2. Wait until the PR's checks are all green: `test-bot`, `pour-check (macos-15)` and
+   `pour-check (macos-26)`, plus `install` and `refuses-without-xcode-26`. `pour-check` is skipped
+   when a PR changes no formula, so a skipped `pour-check` on a version bump is not a pass: find out
+   why. If any check is red, fix it before going on; do not publish.
+3. Get the verifier's confirmation of the PR's head commit. Do not press merge.
+4. Read the head SHA and start the publish run (this is item 4, not step 4 of this file). Only someone with write access to the tap can start
+   it. Set `PR` to the tap PR's number, digits only (the number at the end of the PR's URL):
+
+   ```sh
+   PR=<the tap PR number>
+   HEAD_SHA=$(gh pr view "$PR" -R redtear1115/homebrew-tap --json headRefOid -q .headRefOid)
+   echo "$HEAD_SHA"   # must be 40 characters and the commit the verifier confirmed
+   gh workflow run publish.yml -R redtear1115/homebrew-tap -f pull_request="$PR" -f head_sha="$HEAD_SHA"
+   ```
+
+   Always pass `head_sha`. The workflow treats it as optional, but without it a commit pushed to the
+   PR after verification could be published without anyone having looked at it. With it, the run is
+   told which commit to expect (`brew pr-pull --head-sha`), which is what `publish.yml`'s header
+   comment says it is for. If the PR gets a new commit after the verifier looked, the verifier must
+   confirm the new head, and you read it again.
+
+   Then watch the run. The workflow is named "brew pr-pull" and its single job is `pr-pull`;
+   `<run id>` is the ID that `gh run list` prints:
+
+   ```sh
+   gh run list -R redtear1115/homebrew-tap --workflow publish.yml --limit 1
+   gh run watch <run id> -R redtear1115/homebrew-tap --exit-status
+   ```
+
+   Expected: the run finishes green and `gh run watch` exits 0.
+5. Check what the run did. Use the same terminal as item 4, so `PR` is still set:
+
+   ```sh
+   VERSION=<the tag from step 2>
+   gh release view "marsdawn-$VERSION" -R redtear1115/homebrew-tap
+   gh pr view "$PR" -R redtear1115/homebrew-tap --json state,mergedAt
+   gh api repos/redtear1115/homebrew-tap/contents/Formula/marsdawn.rb -H 'Accept: application/vnd.github.raw'
+   ```
+
+   Expected: the release `marsdawn-<version>` exists and lists the file
+   `marsdawn-<version>.arm64_sequoia.bottle.1.tar.gz`; the PR is `CLOSED` with `mergedAt` null
+   (`pr-pull` closes it; it is not merged); and the formula on `main` has a `bottle do` block whose
+   `root_url` ends in `/releases/download/marsdawn-<version>` and whose `arm64_sequoia` sha256 is new,
+   not the previous version's. A `rebuild` line may appear; that is normal:
+
+   ```ruby
+   bottle do
+     root_url "https://github.com/redtear1115/homebrew-tap/releases/download/marsdawn-<version>"
+     rebuild 1
+     sha256 cellar: :any_skip_relocation, arm64_sequoia: "<64 hex characters>"
+   end
+   ```
+
+6. Check that a user gets the bottle. Run the tap's release pour check, which installs from the
+   published tap on macos-15 and macos-26 and asserts that it poured:
+
+   ```sh
+   gh workflow run release-pour-check.yml -R redtear1115/homebrew-tap
+   gh run list -R redtear1115/homebrew-tap --workflow release-pour-check.yml --limit 1
+   ```
+
+   Expected: both jobs (macos-15 and macos-26) finish green. A red job means the published bottle
+   does not pour; see the recovery below.
+
+   Then, on a Mac with Apple silicon:
+
+   ```sh
+   brew update && brew reinstall redtear1115/tap/marsdawn
+   marsdawn --version
+   ```
+
+   Expected: the output should contain a line starting
+   `==> Pouring marsdawn-<version>.arm64_sequoia.bottle.1.tar.gz`, and `marsdawn --version` prints
+   `<version>`. If you don't see "Pouring" (for example it runs `swift build`, or says 404),
+   something is wrong: don't tell anyone the release is out, and see the recovery below. The bottle
+   is `arm64_sequoia` only, so an Intel Mac gets no bottle (the formula requires macOS Sequoia or
+   newer, and Xcode 26 to build).
+
+**If the PR was already merged by mistake.** `main` has the new `url` and `sha256`, but its
+`bottle do` block still points at the previous version's release, so `brew install` fails with a
+404 for the new version's bottle file, and there is no `marsdawn-<version>` release. This happened
+once: the tap PR for one release was merged with the button, publishing was skipped, and that
+version's bottle 404ed until
+[homebrew-tap#37](https://github.com/redtear1115/homebrew-tap/pull/37) removed the stale block and
+was published. To recover:
+
+1. Open a new PR against the tap that removes the whole stale `bottle do ... end` block from
+   `Formula/marsdawn.rb` and changes nothing else. Don't write a bottle block for the new version by
+   hand: its sha256 must come from the bottle CI builds. With no bottle block, users build from
+   source in the meantime instead of getting a 404.
+2. Wait for `test-bot`, `pour-check (macos-15)` and `pour-check (macos-26)` to be green. This run
+   builds the new version's bottle.
+3. Get the new PR's head commit verified, and run the `gh workflow run publish.yml` command from
+   item 4 of the list above, with `PR` set to the new PR's number.
+4. Do items 5 and 6 of the list above.
 
 ## 7. Check the weekly install run
 
