@@ -133,8 +133,8 @@ In this step, `<version>` is the tag from step 2.
    when a PR changes no formula, so a skipped `pour-check` on a version bump is not a pass: find out
    why. If any check is red, fix it before going on; do not publish.
 3. Get the verifier's confirmation of the PR's head commit. Do not press merge.
-4. Read the head SHA and start the publish run (this is item 4, not step 4 of this file). Only someone with write access to the tap can start
-   it. Set `PR` to the tap PR's number, digits only (the number at the end of the PR's URL):
+4. Read the head SHA and start the publish run. Only someone with write access to the tap can
+   start it. Set `PR` to the tap PR's number, digits only (the number at the end of the PR's URL):
 
    ```sh
    PR=<the tap PR number>
@@ -190,7 +190,7 @@ In this step, `<version>` is the tag from step 2.
    ```
 
    Expected: both jobs (macos-15 and macos-26) finish green. A red job means the published bottle
-   does not pour; see the recovery below.
+   does not pour: stop, and tell the owner with the run link.
 
    Then, on a Mac with Apple silicon:
 
@@ -202,7 +202,8 @@ In this step, `<version>` is the tag from step 2.
    Expected: the output should contain a line starting
    `==> Pouring marsdawn-<version>.arm64_sequoia.bottle.1.tar.gz`, and `marsdawn --version` prints
    `<version>`. If you don't see "Pouring" (for example it runs `swift build`, or says 404),
-   something is wrong: don't tell anyone the release is out, and see the recovery below. The bottle
+   something is wrong: don't tell anyone the release is out, and tell the owner what `brew` printed.
+   If `main` still has the previous version's `bottle do` block, use the recovery below. The bottle
    is `arm64_sequoia` only, so an Intel Mac gets no bottle (the formula requires macOS Sequoia or
    newer, and Xcode 26 to build).
 
