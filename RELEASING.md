@@ -108,9 +108,9 @@ CI does the same on a macOS runner for every pull request (step 6).
 
 Push the branch and open the PR against the tap. Its CI (`install-check.yml`) installs the
 formula from source on a macOS runner, runs `brew test` and `brew audit`, and exports a real PDF.
-The PR needs that run green and an independent verification before it merges. Merging it is the
-owner's call, as is cutting the tag in step 2, but "merging" here does not mean the merge button:
-the PR is published as in step 6b, never merged with the button.
+The PR needs all its checks green (step 6b, item 2) and an independent verification before it is
+published. Publishing it is the owner's call, as is cutting the tag in step 2, but it does not mean
+the merge button: the PR is published as in step 6b, never merged with the button.
 
 CI on the PR shows these checks: `install` (workflow `install-check.yml`), and `test-bot`,
 `pour-check (macos-15)`, `pour-check (macos-26)` and `refuses-without-xcode-26` (workflow
@@ -122,7 +122,8 @@ A tap PR is published, not merged. The bottle comes from the PR's CI run: publis
 uploads it to a release on the tap, writes the `bottle do` block into the formula, and pushes all of
 it to `main`. The merge button skips all of that and leaves the previous version's `bottle do` block
 on `main`. Nothing stops the button: publishing does not need the PR merged first, and the tap's
-`main` has no branch protection, so this document is the only guard.
+rules for `main` (ruleset "protect main") only block deleting the branch and force-pushing to it,
+not the merge button, so this document is the only guard.
 
 In this step, `<version>` is the tag from step 2.
 
@@ -132,7 +133,7 @@ In this step, `<version>` is the tag from step 2.
    `pour-check (macos-26)`, plus `install` and `refuses-without-xcode-26`. `pour-check` is skipped
    when a PR changes no formula, so a skipped `pour-check` on a version bump is not a pass: find out
    why. If any check is red, fix it before going on; do not publish.
-3. Get the verifier's confirmation of the PR's head commit. Do not press merge.
+3. Get the verifier's confirmation of the PR's head commit (the one item 4 prints). Do not press merge.
 4. Read the head SHA and start the publish run. Only someone with write access to the tap can
    start it. Set `PR` to the tap PR's number, digits only (the number at the end of the PR's URL):
 
@@ -143,8 +144,10 @@ In this step, `<version>` is the tag from step 2.
    gh workflow run publish.yml -R redtear1115/homebrew-tap -f pull_request="$PR" -f head_sha="$HEAD_SHA"
    ```
 
-   Always pass `head_sha`. The workflow treats it as optional, but without it a commit pushed to the
-   PR after verification could be published without anyone having looked at it. With it, the run is
+   Always pass `head_sha`. The workflow treats it as optional: when `head_sha` is empty,
+   `publish.yml` (line 57, `if [[ -n "$HEAD_SHA" ]]`) skips the commit check and runs `brew pr-pull`
+   without `--head-sha`, so a commit pushed to the PR after verification could be published without
+   anyone having looked at it. With it, the run is
    told which commit to expect (`brew pr-pull --head-sha`), which is what `publish.yml`'s header
    comment says it is for. If the PR gets a new commit after the verifier looked, the verifier must
    confirm the new head, and you read it again.
@@ -157,7 +160,8 @@ In this step, `<version>` is the tag from step 2.
    gh run watch <run id> -R redtear1115/homebrew-tap --exit-status
    ```
 
-   Expected: the run finishes green and `gh run watch` exits 0.
+   `gh run list` can still show the previous run for a few seconds after `gh workflow run`: use the
+   run whose start time is just now. Expected: the run finishes green and `gh run watch` exits 0.
 5. Check what the run did. Use the same terminal as item 4, so `PR` is still set:
 
    ```sh
@@ -168,18 +172,21 @@ In this step, `<version>` is the tag from step 2.
    ```
 
    Expected: the release `marsdawn-<version>` exists and lists the file
-   `marsdawn-<version>.arm64_sequoia.bottle.1.tar.gz`; the PR is `CLOSED` with `mergedAt` null
+   `marsdawn-<version>.arm64_sequoia.bottle.tar.gz`; the PR is `CLOSED` with `mergedAt` null
    (`pr-pull` closes it; it is not merged); and the formula on `main` has a `bottle do` block whose
    `root_url` ends in `/releases/download/marsdawn-<version>` and whose `arm64_sequoia` sha256 is new,
-   not the previous version's. A `rebuild` line may appear; that is normal:
+   not the previous version's. A normal release has no `rebuild` line:
 
    ```ruby
    bottle do
      root_url "https://github.com/redtear1115/homebrew-tap/releases/download/marsdawn-<version>"
-     rebuild 1
      sha256 cellar: :any_skip_relocation, arm64_sequoia: "<64 hex characters>"
    end
    ```
+
+   A `rebuild 1` line, and the file name `marsdawn-<version>.arm64_sequoia.bottle.1.tar.gz`, appear
+   only when a bottle is built again for a version that already has one (a repair). On the first
+   publish of a version they are not expected: tell the owner.
 
 6. Check that a user gets the bottle. Run the tap's release pour check, which installs from the
    published tap on macos-15 and macos-26 and asserts that it poured:
@@ -187,10 +194,11 @@ In this step, `<version>` is the tag from step 2.
    ```sh
    gh workflow run release-pour-check.yml -R redtear1115/homebrew-tap
    gh run list -R redtear1115/homebrew-tap --workflow release-pour-check.yml --limit 1
+   gh run watch <run id> -R redtear1115/homebrew-tap --exit-status
    ```
 
-   Expected: both jobs (macos-15 and macos-26) finish green. A red job means the published bottle
-   does not pour: stop, and tell the owner with the run link.
+   Expected: the run is the one just started, and both jobs (macos-15 and macos-26) finish green.
+   A red job means the published bottle does not pour: stop, and tell the owner with the run link.
 
    Then, on a Mac with Apple silicon:
 
@@ -200,7 +208,7 @@ In this step, `<version>` is the tag from step 2.
    ```
 
    Expected: the output should contain a line starting
-   `==> Pouring marsdawn-<version>.arm64_sequoia.bottle.1.tar.gz`, and `marsdawn --version` prints
+   `==> Pouring marsdawn-<version>.arm64_sequoia.bottle.tar.gz`, and `marsdawn --version` prints
    `<version>`. If you don't see "Pouring" (for example it runs `swift build`, or says 404),
    something is wrong: don't tell anyone the release is out, and tell the owner what `brew` printed.
    If `main` still has the previous version's `bottle do` block, use the recovery below. The bottle
@@ -217,17 +225,19 @@ was published. To recover:
 
 1. Open a new PR against the tap that removes the whole stale `bottle do ... end` block from
    `Formula/marsdawn.rb` and changes nothing else. Don't write a bottle block for the new version by
-   hand: its sha256 must come from the bottle CI builds. With no bottle block, users build from
-   source in the meantime instead of getting a 404.
-2. Wait for `test-bot`, `pour-check (macos-15)` and `pour-check (macos-26)` to be green. This run
-   builds the new version's bottle.
-3. Get the new PR's head commit verified, and run the `gh workflow run publish.yml` command from
-   item 4 of the list above, with `PR` set to the new PR's number.
+   hand: its sha256 must come from the bottle CI builds.
+2. Wait for all five checks of item 2 above to be green: `test-bot`, `pour-check (macos-15)`,
+   `pour-check (macos-26)`, `install` and `refuses-without-xcode-26`. This run builds the new
+   version's bottle.
+3. Get the new PR's head commit verified. Then do all of item 4 above again, with `PR` set to the
+   new PR's number: read `HEAD_SHA` again from the new PR (it still holds the old PR's commit in
+   the same terminal, and is empty in a new one; empty means `publish.yml` skips the commit check),
+   check it with `echo`, start the run, and watch it until it exits 0.
 4. Do items 5 and 6 of the list above.
 
 ## 7. Check the weekly install run
 
-The same workflow also runs weekly, so a runner-image change can't break installs unnoticed. But
+`install-check.yml` also runs weekly, so a runner-image change can't break installs unnoticed. But
 GitHub turns off scheduled workflows in a public repository after 60 days without activity, and a
 tap that only changes at release time can easily go that long. A release is when someone is
 looking, so check it now:
