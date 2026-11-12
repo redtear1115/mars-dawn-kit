@@ -8,7 +8,7 @@ import Testing
 struct CalloutCSPTests {
     static let previewMeta = "default-src 'none'; script-src marsdawn-app:; style-src marsdawn-app: 'unsafe-inline'; img-src marsdawn-app: marsdawn-asset: data: __REMOTE_IMAGE_SOURCES__; font-src marsdawn-app: data:; base-uri 'none'; form-action 'none'"
     static let blocked = "default-src 'none'; img-src marsdawn-html: data:; style-src marsdawn-html: 'unsafe-inline'; font-src marsdawn-html: data:; media-src marsdawn-html:; script-src 'none'; object-src 'none'; frame-src 'none'; child-src 'none'; worker-src 'none'; connect-src 'none'; manifest-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'"
-    static let running = "default-src 'none'; img-src marsdawn-html: data: https:; style-src marsdawn-html: 'unsafe-inline' https:; font-src marsdawn-html: data: https:; media-src marsdawn-html: https:; script-src 'unsafe-inline'; object-src 'none'; frame-src 'none'; child-src 'none'; worker-src 'none'; connect-src https:; manifest-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'"
+    static let running = "default-src 'none'; img-src marsdawn-html: data: https:; style-src marsdawn-html: 'unsafe-inline' https:; font-src marsdawn-html: data: https:; media-src marsdawn-html: https:; script-src 'unsafe-inline' https:; object-src 'none'; frame-src 'none'; child-src 'none'; worker-src 'none'; connect-src https:; manifest-src 'none'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'"
 
     @Test func thePreviewPagesPolicyIsUnchanged() throws {
         let url = URL(fileURLWithPath: #filePath)
