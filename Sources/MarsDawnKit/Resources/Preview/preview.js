@@ -823,6 +823,16 @@
         });
         bar.append(button);
       }
+      if (remoteState.downloadButtonLabel) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "remote-images-download";
+        button.textContent = remoteState.downloadButtonLabel;
+        button.addEventListener("click", () => {
+          try { window.webkit.messageHandlers.downloadRemoteImages.postMessage({}); } catch (_) {}
+        });
+        bar.append(button);
+      }
     }
     if (bar.hidden === show) {
       bar.hidden = !show;
