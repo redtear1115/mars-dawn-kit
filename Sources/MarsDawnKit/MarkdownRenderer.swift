@@ -807,6 +807,7 @@ private struct HTMLVisitor: MarkupVisitor {
     /// The table of contents for `[TOC]`: a nested list linking to every heading by the `id`
     /// it was given, so the anchors cannot drift from the headings. A level that is skipped
     /// (`#` then `###`) nests one list deeper, not two. Headings with no text are left out.
+    /// Returning partway across a skipped level keeps the deeper list and adopts the new level.
     /// Only the first `[TOC]` of a document is expanded, which bounds the output at one list
     /// per document.
     private func tocHTML(lineAttribute: String) -> String {
@@ -821,18 +822,12 @@ private struct HTMLVisitor: MarkupVisitor {
                 open()
                 levels.append(entry.level)
             } else {
-                while levels.count > 1, levels[levels.count - 1] > entry.level {
+                while levels.count > 1, levels[levels.count - 2] >= entry.level {
                     html += "</li>\n</ul>\n"
                     levels.removeLast()
                 }
-                if levels[levels.count - 1] < entry.level {
-                    open()
-                    levels.append(entry.level)
-                } else {
-                    // On the root list a shallower heading than the first becomes its level.
-                    levels[levels.count - 1] = entry.level
-                    html += "</li>\n"
-                }
+                levels[levels.count - 1] = entry.level
+                html += "</li>\n"
             }
             html += "<li><a href=\"#\(escapeAttribute(headingIDs[index]))\">\(escapeHTML(entry.title))</a>"
         }
