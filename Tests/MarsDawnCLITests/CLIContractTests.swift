@@ -69,6 +69,27 @@ struct OpenJSONContractTests {
         }
     }
 
+    /// The whole command: `--background` sends `'mdBg'` on the event for a file with a line and
+    /// for one without; a plain open sends no `'mdBg'`, and none without a line sends no event.
+    @Test func backgroundSendsTheEventParameterOnBothPaths() async throws {
+        let fixture = try Fixture()
+        defer { fixture.cleanUp() }
+        let file = try fixture.file("notes.md")
+        try await fixture.run([file.path, "--background", "--json"])
+        try await fixture.run([file.path + ":3", "--background", "--json"])
+        try await fixture.run([file.path, "--json"])
+        try await fixture.run([file.path + ":3", "--json"])
+        let calls = fixture.recorder.calls
+        try #require(calls.count == 4)
+        for call in calls[0...1] {
+            #expect(call.activates == false)
+            #expect(call.event?.paramDescriptor(forKeyword: RevealEvent.backgroundKeyword)?.booleanValue == true)
+        }
+        #expect(calls[2].event == nil)
+        #expect(calls[3].event != nil)
+        #expect(calls[3].event?.paramDescriptor(forKeyword: RevealEvent.backgroundKeyword) == nil)
+    }
+
     @Test func aFileOpensWithOkAppAndItsPath() async throws {
         let fixture = try Fixture()
         defer { fixture.cleanUp() }

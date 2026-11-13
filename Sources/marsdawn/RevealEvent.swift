@@ -21,6 +21,9 @@ enum RevealEvent {
     /// put a 32-byte SelectionRange record there instead of a number, so the app should treat a
     /// non-Int32 `keyAEPosition` as absent and prefer `'mdLn'`, which only this tool sends.
     static let lineKeyword = AEKeyword(fourCharCode: "mdLn")
+    /// Our own keyword, `'mdBg'`, sent as typeBoolean, true, only with `--background`.
+    /// The app reads it to know the open was an explicit `--background`.
+    static let backgroundKeyword = AEKeyword(fourCharCode: "mdBg")
 
     /// Files that open together, all landing on `line` when one was asked for.
     struct Group: Equatable {
@@ -42,11 +45,13 @@ enum RevealEvent {
         return groups
     }
 
-    /// Builds the event: the direct object is the file-URL list, and the line goes in both
-    /// `keyAEPosition` and `'mdLn'`. Returns nil when no line was asked for, so that open keeps
+    /// Builds the event: the direct object is the file-URL list, and a requested line goes in
+    /// both `keyAEPosition` and `'mdLn'`. With `background`, adds `'mdBg'` as typeBoolean, true.
+    /// Returns nil when no line or background open was asked for, so that plain open keeps
     /// using the event AppKit builds for it, exactly as before.
-    static func openDocuments(urls: [URL], line: Int?) -> NSAppleEventDescriptor? {
-        guard let line, let position = Int32(exactly: line) else { return nil }
+    static func openDocuments(urls: [URL], line: Int?, background: Bool = false) -> NSAppleEventDescriptor? {
+        let position = line.flatMap { Int32(exactly: $0) }
+        guard position != nil || background else { return nil }
         let event = NSAppleEventDescriptor.appleEvent(
             withEventClass: AEEventClass(kCoreEventClass),
             eventID: AEEventID(kAEOpenDocuments),
@@ -59,8 +64,13 @@ enum RevealEvent {
             list.insert(NSAppleEventDescriptor(fileURL: url), at: offset + 1)
         }
         event.setParam(list, forKeyword: AEKeyword(keyDirectObject))
-        event.setParam(NSAppleEventDescriptor(int32: position), forKeyword: AEKeyword(keyAEPosition))
-        event.setParam(NSAppleEventDescriptor(int32: position), forKeyword: lineKeyword)
+        if let position {
+            event.setParam(NSAppleEventDescriptor(int32: position), forKeyword: AEKeyword(keyAEPosition))
+            event.setParam(NSAppleEventDescriptor(int32: position), forKeyword: lineKeyword)
+        }
+        if background {
+            event.setParam(NSAppleEventDescriptor(boolean: true), forKeyword: backgroundKeyword)
+        }
         return event
     }
 }
