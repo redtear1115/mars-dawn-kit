@@ -713,6 +713,32 @@ struct OpenCommandTests {
         }
     }
 
+    /// The CLI rejects these values earlier; pin the event builder's fallback separately.
+    @Test func outOfInt32LineWithoutBackgroundKeepsTheDefaultEvent() {
+        let url = URL(fileURLWithPath: "/a.md")
+        for line in [Int(Int32.max) + 1, Int(Int32.min) - 1] {
+            #expect(RevealEvent.openDocuments(urls: [url], line: line, background: false) == nil)
+        }
+    }
+
+    @Test func outOfInt32LineWithBackgroundSendsOnlyTheFileAndBackground() throws {
+        let url = URL(fileURLWithPath: "/a.md")
+        for line in [Int(Int32.max) + 1, Int(Int32.min) - 1] {
+            let event = try #require(RevealEvent.openDocuments(urls: [url], line: line, background: true))
+            #expect(event.eventClass == AEEventClass(kCoreEventClass))
+            #expect(event.eventID == AEEventID(kAEOpenDocuments))
+            let direct = try #require(event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject)))
+            #expect(direct.descriptorType == typeAEList)
+            #expect(direct.numberOfItems == 1)
+            #expect(direct.atIndex(1)?.fileURLValue?.path == url.path)
+            let flag = try #require(event.paramDescriptor(forKeyword: RevealEvent.backgroundKeyword))
+            #expect(flag.descriptorType == typeBoolean)
+            #expect(flag.booleanValue == true)
+            #expect(event.paramDescriptor(forKeyword: AEKeyword(keyAEPosition)) == nil)
+            #expect(event.paramDescriptor(forKeyword: RevealEvent.lineKeyword) == nil)
+        }
+    }
+
     @Test func withNoLineThereIsNoEventOfOurs() {
         // AppKit then builds the open-documents event itself, exactly as it did before S7.
         #expect(RevealEvent.openDocuments(urls: [URL(fileURLWithPath: "/a.md")], line: nil) == nil)
