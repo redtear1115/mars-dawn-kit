@@ -35,11 +35,19 @@ The tag is the bare version, with no `v`, because the formula's `url` interpolat
 compares it against `version`.
 
 ```sh
-VERSION=$(sed -n 's/.*static let version = "\(.*\)".*/\1/p' Sources/marsdawn/Version.swift)
-echo "$VERSION"   # check it before tagging
-git tag "$VERSION"
-git push origin "$VERSION"
+VERSION=$(sed -nE 's/^[[:space:]]*static let version = "([0-9]+\.[0-9]+\.[0-9]+)"[[:space:]]*(\/\/.*)?$/\1/p' Sources/marsdawn/Version.swift)
+if [ -n "$VERSION" ] && [ "$(printf '%s\n' "$VERSION" | wc -l)" -eq 1 ] \
+   && printf '%s\n' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+  echo "Tagging $VERSION" && git tag "$VERSION" && git push origin "$VERSION"
+else
+  echo "Version.swift must have exactly one 'static let version = \"X.Y.Z\"' line; got: '$VERSION'. Nothing tagged." >&2
+  unset VERSION
+  false
+fi
 ```
+
+The check refuses an empty value, more than one matching line, and anything that isn't `X.Y.Z`. If
+`git tag` fails, `git push` doesn't run. A failure prints the reason and leaves your shell open.
 
 Tags are immutable. A mistake gets a new patch tag, never a moved one.
 
@@ -55,7 +63,7 @@ Download exactly the archive the formula will download — GitHub generates it f
 re-downloading it later must give the same bytes.
 
 ```sh
-VERSION=<the tag from step 2>
+: "${VERSION:?run step 2 in this same shell first}"
 curl -fL -o "marsdawn-$VERSION.tar.gz" \
   "https://github.com/redtear1115/mars-dawn-kit/archive/refs/tags/$VERSION.tar.gz"
 shasum -a 256 "marsdawn-$VERSION.tar.gz"
