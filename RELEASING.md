@@ -25,8 +25,8 @@ constant, and a release bumps it by hand.
 
 ```sh
 # edit Sources/marsdawn/Version.swift so version == the tag you are about to cut
-swift test
-swift test -c release
+swift test --no-parallel
+swift test -c release --no-parallel
 ```
 
 ## 2. Tag
