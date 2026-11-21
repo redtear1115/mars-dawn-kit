@@ -13,10 +13,10 @@ struct HTMLContentRulesTests {
     }
 
     @Test func identifiersAreVersionedAndSeparateFromThePreviewLists() {
-        // v3: two policies, and the running one lifts script's neighbours but never script, so a
-        // v2 list (which had a remote-allowed state) must never be reused.
-        #expect(HTMLContentRules.identifier(for: .blocked) == "dev.southern-light.marsdawn.html-rules.v3.blocked")
-        #expect(HTMLContentRules.identifier(for: .running) == "dev.southern-light.marsdawn.html-rules.v3.running")
+        // v4: the running list lifts https script too (mars-dawn#658), so a v3 list, which
+        // didn't, must never be reused for a document the reader runs.
+        #expect(HTMLContentRules.identifier(for: .blocked) == "dev.southern-light.marsdawn.html-rules.v4.blocked")
+        #expect(HTMLContentRules.identifier(for: .running) == "dev.southern-light.marsdawn.html-rules.v4.running")
         #expect(PreviewContentRules.identifier(allowRemoteImages: false) == "dev.southern-light.marsdawn.preview-rules.v2.blocked")
         #expect(PreviewContentRules.identifier(allowRemoteImages: true) == "dev.southern-light.marsdawn.preview-rules.v2.remote-images-allowed")
     }
@@ -34,28 +34,28 @@ struct HTMLContentRulesTests {
         #expect(list.count == 2)
     }
 
-    /// Exact rules, in order. The blocks cover http and https; only https is lifted, and only for
-    /// types that are not code, so the list blocks plaintext http even for those and blocks
-    /// script at every scheme.
-    @Test func runningStateLiftsTheBlockForNonCodeTypesOverHTTPSOnly() throws {
+    /// Exact rules, in order. The blocks cover http and https; only https is lifted, so the list
+    /// blocks plaintext http of every type, script included (mars-dawn#658).
+    @Test func runningStateLiftsTheBlockOverHTTPSOnly() throws {
         let list = try rules(.running).map { $0 as NSDictionary }
         func block(_ filter: String) -> NSDictionary {
             ["trigger": ["url-filter": filter], "action": ["type": "block"]]
         }
         let lift: NSDictionary = [
             "trigger": ["url-filter": "^https:",
-                        "resource-type": ["image", "style-sheet", "font", "media", "fetch"]],
+                        "resource-type": ["script", "image", "style-sheet", "font", "media", "fetch"]],
             "action": ["type": "ignore-previous-rules"],
         ]
         #expect(list == [block("^https?:"), block("^wss?:"), lift])
     }
 
-    /// The one type that must never appear in a lift, at any scheme: a running document runs the
-    /// code it arrived with (D-1c). The rules are decoded, so each lift's own `resource-type`
-    /// list is read (the JSON is written with sorted keys, which puts `action` before `trigger`,
-    /// so a text search before the action cannot see it).
-    @Test func noPolicyEverLiftsScriptOrWebSockets() throws {
-        let forbidden: Set<String> = ["script", "raw", "websocket", "ping", "popup"]
+    /// What must never appear in a lift, at any scheme: WebSockets, pings, popups, nested
+    /// documents and `raw` (which also lifted preconnect and preload). Script may, since
+    /// mars-dawn#658, but only through the one https lift. The rules are decoded, so each lift's
+    /// own `resource-type` list is read (the JSON is written with sorted keys, which puts `action`
+    /// before `trigger`, so a text search before the action cannot see it).
+    @Test func noPolicyEverLiftsPlaintextHTTPWebSocketsOrPopups() throws {
+        let forbidden: Set<String> = ["raw", "websocket", "ping", "popup", "document", "svg-document"]
         var lifts = 0
         for policy in HTMLContentPolicy.allCases {
             let list = try rules(policy)
@@ -69,7 +69,8 @@ struct HTMLContentRulesTests {
                 #expect(!types.isEmpty)
                 #expect(Set(types).isDisjoint(with: forbidden), "lifted \(Set(types).intersection(forbidden)) in \(policy)")
                 let filter = try #require(trigger["url-filter"] as? String)
-                #expect(!filter.contains("ws"), "a lift reaches web sockets in \(policy): \(filter)")
+                // Exactly https: not `^https?:`, which would lift plaintext http, script included.
+                #expect(filter == "^https:", "a lift reaches past https in \(policy): \(filter)")
             }
         }
         #expect(lifts == 1, "the instrument must see the running policy's lift")
