@@ -234,6 +234,8 @@ img { max-width: 100%; }
   color: var(--muted);
   font-size: 0.85em;
 }
+/* Only with the second button: wrapping one button pushes it under its message in a narrow pane. */
+.remote-images-bar:has(.remote-images-download) { flex-wrap: wrap; }
 .remote-images-bar[hidden] { display: none; }
 .remote-images-bar button {
   font: inherit;
@@ -243,6 +245,10 @@ img { max-width: 100%; }
   border-radius: calc(var(--radius) * 0.6);
   padding: 3px 10px;
   cursor: pointer;
+}
+.remote-images-bar button.remote-images-download {
+  color: var(--accent);
+  background: var(--bg);
 }
 .image-placeholder button {
   font: inherit;

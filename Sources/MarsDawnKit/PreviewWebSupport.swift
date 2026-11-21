@@ -354,6 +354,9 @@ public enum PreviewWebView {
     /// Message handler the page calls when the user asks to load remote images.
     public nonisolated static let loadRemoteImagesHandlerName = "loadRemoteImages"
 
+    /// Message handler the page calls when the user asks to download remote images.
+    public nonisolated static let downloadRemoteImagesHandlerName = "downloadRemoteImages"
+
     /// Label for a blocked remote image's placeholder, e.g. "Web image: example.com". Exported
     /// and printed pages have no window to ask for this, so they use the kit's own localization
     /// rather than a caller-supplied string (matches the app's own "Web image" wording).
@@ -393,20 +396,25 @@ public enum PreviewWebView {
     ///
     /// `insecureLabel` is for `http` images, which no setting loads; it defaults to the kit's own
     /// localized wording, so a caller that has no opinion gets the right text.
+    /// A non-empty `downloadButtonLabel` adds an optional download action beside the load button.
     public nonisolated static func remoteImagesScript(
         blocked: Bool,
         message: String,
         buttonLabel: String,
         placeholderLabel: String,
-        insecureLabel: String? = nil
+        insecureLabel: String? = nil,
+        downloadButtonLabel: String? = nil
     ) -> String {
-        let state: [String: Any] = [
+        var state: [String: Any] = [
             "blocked": blocked,
             "message": message,
             "buttonLabel": buttonLabel,
             "placeholderLabel": placeholderLabel,
             "insecureLabel": insecureLabel ?? insecureImagePlaceholderLabel,
         ]
+        if let downloadButtonLabel, !downloadButtonLabel.isEmpty {
+            state["downloadButtonLabel"] = downloadButtonLabel
+        }
         let data = try! JSONSerialization.data(withJSONObject: state, options: [.sortedKeys])
         return "window.MarsDawn && MarsDawn.setRemoteImageState(\(String(decoding: data, as: UTF8.self)));"
     }
