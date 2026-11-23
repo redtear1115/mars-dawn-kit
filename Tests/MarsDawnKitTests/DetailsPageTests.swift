@@ -15,7 +15,8 @@ struct DetailsPageTests {
     /// The windows holding this test's pages. A web view with no window may never run an
     /// animation frame, and the page's scroll sync and toggle handling wait for one, as they do
     /// in the app and in Quick Look, where the view is always in a window.
-    fileprivate static var hosts: [NSWindow] = []
+    /// Track windows per test so parallel suites sharing this harness cannot close each other's pages.
+    fileprivate static var hosts: [(testID: Test.ID?, window: NSWindow)] = []
 
     /// Set `DETAILS_RAF_STANDIN=1` on a machine whose screen is locked: the page gets a
     /// `setTimeout` in place of `requestAnimationFrame`, which a hidden page never runs. That
@@ -24,8 +25,13 @@ struct DetailsPageTests {
     static let standIn = ProcessInfo.processInfo.environment["DETAILS_RAF_STANDIN"] == "1"
 
     static func closeHosts() {
-        for window in hosts { window.contentView = nil; window.close() }
-        hosts = []
+        let testID = Test.current?.id
+        hosts.removeAll { host in
+            guard host.testID == testID else { return false }
+            host.window.contentView = nil
+            host.window.close()
+            return true
+        }
     }
 
     static func loadedPreview(height: CGFloat = 800) async throws -> PreviewWKWebView {
@@ -55,7 +61,7 @@ struct DetailsPageTests {
         window.ignoresMouseEvents = true
         window.contentView = webView
         window.orderFrontRegardless()
-        hosts.append(window)
+        hosts.append((testID: Test.current?.id, window: window))
         webView.applyContentRuleList(try await PreviewContentRules.ruleList(allowRemoteImages: false))
         #expect(webView.load(URLRequest(url: PreviewSchemeHandler.pageURL(theme: .dawn))) != nil)
         let deadline = ContinuousClock.now + .seconds(20)
@@ -510,6 +516,30 @@ struct DetailsPageTests {
         """)
         let y = opened["y"] as? Double ?? -1, top = opened["top"] as? Double ?? -2, max = opened["max"] as? Double ?? -3
         #expect(abs(y - top) <= 2 || y >= max - 1, "line 15 inside the opened group: scrolled to \(y), its code block is at \(top) (max \(max))")
+    }
+
+    /// Closing a `<details>` can shorten the page below the scroll position, and the browser's own
+    /// clamp to the new bottom then arrives as a `scroll` event. That isn't the user scrolling: the
+    /// synced line still has to follow its text (kit #257).
+    @Test func closingADetailsThatShortensThePageKeepsTheSync() async throws {
+        defer { Self.closeHosts() }
+        guard let webView = try await Self.visiblePreview() else { return }
+        let inner = (1...60).map { "Inner \($0)." }.joined(separator: "\n\n")
+        let after = (1...60).map { "After \($0)." }.joined(separator: "\n\n")
+        try await Self.push("<details open>\n<summary>Long</summary>\n\n\(inner)\n\n</details>\n\n\(after)\n", to: webView)
+        let result = try await Self.json(webView, """
+            const target = [...document.querySelectorAll("#content p")].find((p) => p.textContent === "After 10.");
+            MarsDawn.scrollToLine(Number(target.dataset.line), false);
+            await new Promise((r) => setTimeout(r, 200));
+            const before = window.scrollY;
+            document.querySelector("#content summary").click();
+            await new Promise((r) => setTimeout(r, 200));
+            const want = Math.min(document.documentElement.scrollHeight - innerHeight,
+                                  target.getBoundingClientRect().top + window.scrollY);
+            return { before, y: window.scrollY, want };
+            """)
+        #expect((result["y"] as? Double ?? 0) < (result["before"] as? Double ?? 0) - 500, "positive fixture: closing moved the text up, \(result)")
+        #expect(abs((result["y"] as? Double ?? -1) - (result["want"] as? Double ?? -9)) <= 2, "\(result)")
     }
 
     // MARK: A17, toggle volume

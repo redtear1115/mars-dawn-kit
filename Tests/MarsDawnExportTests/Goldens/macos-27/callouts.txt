@@ -1,0 +1,32 @@
+OS build: Version 27.2 (Build 26B123) | WebKit: 22625.2.8.11.9 | Paper: a4
+Page count: 2
+Lines: minX minY maxX maxY | text, whole points from the page's bottom left, sorted by text; compared within 1 pt
+
+--- Page 1 ---
+45 723 198 751 | CALLHEAD01
+60 358 195 373 | CAUTBODY07 with care.
+60 383 105 397 | Caution
+60 254 117 268 | Done well
+60 488 201 502 | IMPBODY05 that matters.
+60 294 265 308 | INFOBODY08 in a HackMD container.
+60 513 118 527 | Important
+45 682 322 696 | Intro CALLINTRO02 paragraph before the callouts.
+60 618 221 632 | NOTEBODY03 with bold text.
+60 643 88 657 | Note
+60 318 88 333 | Note
+60 229 249 243 | SUCCBODY09 with an author title.
+60 553 168 567 | TIPBODY04 in a tip.
+60 578 79 592 | Tip
+60 423 191 437 | WARNBODY06 to heed.
+84 164 185 178 | WARNITEM10 first
+84 141 201 155 | WARNITEM11 second
+60 448 109 462 | Warning
+60 189 109 203 | Warning
+
+--- Page 2 ---
+45 604 147 618 | CALLENDMARK99
+60 765 130 779 | Careful now
+60 741 232 755 | DANGBODY12 before the code.
+45 662 97 676 | Open me
+45 636 212 650 | SPOILBODY14 inside a spoiler.
+73 703 262 715 | const callout = 1; // CODEIN13

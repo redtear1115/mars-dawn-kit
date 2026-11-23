@@ -15,10 +15,17 @@ public enum HTMLDocumentText {
         /// window offers to run the document at all, so that a file with no script never spends
         /// the one signal the design rests on.
         public let mightRunScript: Bool
-        /// Whether the page asks for code from the web. **Copy only, never a control** — the CSP
-        /// refuses remote code whatever this says; this is only what lets the bar explain the
-        /// refusal instead of leaving a page silently half-working.
+        /// Whether the page asks for code from the web, at any scheme. **Copy only, never a control.**
         public let asksForRemoteScript: Bool
+        /// Whether the page asks for remote code a running document still can't load: a script
+        /// `src` that is `http:`, a WebSocket scheme or protocol-relative. **Copy only, never a
+        /// control** — the CSP and the rule list refuse it whatever this says; this is what lets
+        /// the bar explain the refusal instead of leaving a page silently half-working.
+        public let asksForRefusedScript: Bool
+        /// Up to three hosts the page loads `https:` script from, as written, ASCII only, for the
+        /// bar's "code from sites including …" (mars-dawn#658). **Copy only, never a control**,
+        /// and incomplete by design: script added at run time is never scanned.
+        public let remoteScriptHosts: [String]
         /// The WHATWG name of the encoding the file was read with.
         public let encoding: String
     }
@@ -40,6 +47,8 @@ public enum HTMLDocumentText {
             html: Data(neutralizingHTMLDocumentTags(text).utf8),
             mightRunScript: mightRunScript(text),
             asksForRemoteScript: asksForRemoteScript(text),
+            asksForRefusedScript: asksForRefusedScript(text),
+            remoteScriptHosts: remoteScriptHosts(text),
             encoding: encoding
         )
     }
