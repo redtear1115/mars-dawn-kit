@@ -46,6 +46,27 @@ struct CLITests {
         #expect(help.contains("--layout") && help.contains("handbook") && help.contains("handout") && help.contains("deprecated") && help.contains("Handbook") && help.contains("<!--BREAK-->"))
     }
 
+    /// Front matter chooses the layout only when the CLI flag is absent (mars-dawn#668).
+    @Test func exportLayoutFollowsFrontMatterUnlessExplicit() throws {
+        let implicit = try MarsDawnCommand.Export.parse(["plan.md"])
+        #expect(implicit.explicitLayout == nil)
+        #expect(implicit.layout == .document)
+        let values: [(String, ExportLayout)] = [
+            ("handbook", .manual), ("handout", .handout),
+            ("standard", .document), ("document", .document), ("unknown", .document),
+        ]
+        for (value, expected) in values {
+            let markdown = "---\nlayout: \(value)\n---\n# Title"
+            #expect(MarsDawnCommand.Export.effectiveLayout(explicit: implicit.explicitLayout, markdown: markdown) == expected)
+            for flag in ["document", "handbook", "handout", "manual"] {
+                let explicit = try MarsDawnCommand.Export.parse(["plan.md", "--layout", flag])
+                #expect(explicit.explicitLayout != nil)
+                #expect(MarsDawnCommand.Export.effectiveLayout(explicit: explicit.explicitLayout, markdown: markdown) == explicit.layout)
+            }
+        }
+        #expect(MarsDawnCommand.Export.effectiveLayout(explicit: nil, markdown: "# Title") == .document)
+    }
+
     /// kit #211: completion and help list `document`, `handbook` and (mars-dawn#432 S3) `handout`;
     /// the deprecated `manual` still parses.
     @Test func layoutCompletionListsDocumentHandbookAndHandoutOnly() {

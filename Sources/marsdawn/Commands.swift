@@ -799,10 +799,15 @@ extension MarsDawnCommand {
         @Option(help: "Paper size.")
         var paper: DocumentExporter.Paper = .a4
 
-        @Option(name: .customLong("layout"), help: "Page layout: document (the default); handbook, the Handbook layout, with wider margins, a 25 mm binding side and every top-level heading on a new page, plus a cover (from the front matter's title, subtitle, version, date, author and logo), a table of contents of the level 1 and 2 headings, \"n / N\" page numbers and PDF bookmarks. handout: a blank notes column on the right of every page (a table too wide for the body may run into it), the front matter's title (or the file name) and date at the top of page 1, and a \"file name · date · n / N\" footer; the date is the front matter's date, else today's. <!--BREAK--> on its own line starts a new page in every layout. manual is deprecated: use handbook.")
-        var layoutArgument = LayoutArgument(.document)
+        @Option(name: .customLong("layout"), help: "Page layout: document (the default); handbook, the Handbook layout, with wider margins, a 25 mm binding side and every top-level heading on a new page, plus a cover (from the front matter's title, subtitle, version, date, author and logo), a table of contents of the level 1 and 2 headings, \"n / N\" page numbers and PDF bookmarks. handout: a blank notes column on the right of every page (a table too wide for the body may run into it), the front matter's title (or the file name) and date at the top of page 1, and a \"file name · date · n / N\" footer; the date is the front matter's date, else today's. <!--BREAK--> on its own line starts a new page in every layout. manual is deprecated: use handbook. Without --layout, a front-matter line layout: handbook, handout or standard picks it (another value is ignored); --layout wins.")
+        var layoutArgument: LayoutArgument?
 
-        var layout: ExportLayout { layoutArgument.layout }
+        var layout: ExportLayout { explicitLayout ?? .document }
+        var explicitLayout: ExportLayout? { layoutArgument?.layout }
+
+        static func effectiveLayout(explicit: ExportLayout?, markdown: String) -> ExportLayout {
+            explicit ?? ExportLayout.frontMatterLayout(markdown) ?? .document
+        }
 
         @Option(help: ArgumentHelp(
             "Collapsible blocks (<details>, :::spoiler, foldable callouts): expand (the default) prints every one open; as-written prints only the ones written open (<details open>, :::spoiler {state=\"open\"}, > [!tip]+), the others as their summary alone. A summary prints as a bold line either way. With --format png, expand opens every one and as-written leaves them as the preview first shows them.",
@@ -873,7 +878,7 @@ extension MarsDawnCommand {
             // No MarsDawnApp.require() here: export is the same rendering the app does, and it
             // ships in this package, so it must work with nothing else installed (Homebrew builds
             // and tests the tool on machines that have no MarsDawn.app). `open` still needs it.
-            if layoutArgument.typedManual {
+            if layoutArgument?.typedManual == true {
                 FileHandle.standardError.write(Data((LayoutArgument.deprecationWarning + "\n").utf8))
             }
             let input = try existingFile(file)
@@ -902,7 +907,7 @@ extension MarsDawnCommand {
                     allowRemoteImages: allowRemoteImages,
                     paper: paper,
                     softBreaksAsLineBreaks: breaks,
-                    layout: layout,
+                    layout: Self.effectiveLayout(explicit: explicitLayout, markdown: markdown),
                     details: details,
                     tocTitle: tocTitle,
                     // The file's name without its extension, never its folders (S3 of mars-dawn#432).
