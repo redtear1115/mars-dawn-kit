@@ -7,6 +7,7 @@
   --heading-weight: 650;
   --radius: 8px;
   --body-size: 15px;
+  --text-scale: 1;
   --line-height: 1.65;
   --code-chip: var(--surface);
   --code-chip-edge: var(--border);
@@ -20,13 +21,17 @@
   }
 }
 
-html { background: var(--bg); }
+html {
+  background: var(--bg);
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
 
 body {
   margin: 0;
   background: var(--bg);
   color: var(--fg);
-  font: var(--body-size)/var(--line-height) var(--font-body);
+  font: calc(var(--body-size) * var(--text-scale))/var(--line-height) var(--font-body);
   -webkit-font-smoothing: antialiased;
   transition: background-color 0.2s ease, color 0.2s ease;
 }
@@ -494,6 +499,12 @@ img { max-width: 100%; }
   /* Room in the margin for a heading arrow's 44 px target (an h1's arrow ends 0.1em before the
      text, so 47 px of margin is needed). */
   .markdown-body { padding-left: 50px; }
+  /* Large text (mars-dawn#652) keeps its 16 px margins, so a heading makes room for its own arrow
+     instead: the arrow sits in the heading's left padding, still ending 0.1em before the text, and
+     its 44 px target starts inside the page at every size (16 + 32 - 0.1em - 44 >= 0 while
+     1.1em <= 32 px, and 16 + 1em - 44 >= 0 above that). */
+  html[data-large-text] .markdown-body > :is(h1, h2, h3, h4, h5, h6) { padding-left: max(1.1em, 32px); }
+  html[data-large-text] .md-fold-toggle { left: calc(max(1.1em, 32px) - 1.1em); }
   .md-fold-toggle, .md-fold-block {
     opacity: 0.6;
     -webkit-tap-highlight-color: transparent;
@@ -531,10 +542,25 @@ img { max-width: 100%; }
     -webkit-tap-highlight-color: transparent;
   }
 }
+
+/* iOS Dynamic Type (mars-dawn#652): the app sets `--text-scale` on <html> (MarsDawn.setTextScale) and,
+   from 1.5x, `data-large-text`, which narrows the side margins and flattens the heading scale so
+   large text still fits a phone. Screen only: paper keeps the default layout. Mac, Quick Look and
+   export never set either, so their pages are unchanged. */
+@media screen {
+  html[data-large-text] .markdown-body { padding-inline: 16px; }
+  html[data-large-text] .markdown-body h1 { font-size: 1.5em; }
+  html[data-large-text] .markdown-body h2 { font-size: 1.3em; }
+  html[data-large-text] .markdown-body h3 { font-size: 1.15em; }
+}
+
 /* ---- Print and PDF export: light palette on white paper, paginated ----
    The page tint would stop where the content ends, so the paper stays white;
    code, tables and quotes keep their surface tones. Margins come from NSPrintInfo. */
 @media print {
+  /* Print is independent of the reader's text size (mars-dawn#652). `!important` because the
+     scale is an inline style on <html>, which a normal rule here can't override. */
+  :root { --text-scale: 1 !important; }
   .md-change { background-color: transparent !important; }
   .md-change::before, .md-change::after, tr.md-change > :first-child::before { display: none !important; }
   html, body { background: transparent; }

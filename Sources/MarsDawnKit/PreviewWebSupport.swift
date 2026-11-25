@@ -370,6 +370,12 @@ public enum PreviewWebView {
         return "window.MarsDawn && MarsDawn.scrollToLine(\(safeLine), \(atEnd));"
     }
 
+    /// JavaScript for iOS Dynamic Type. Mac, Quick Look and export never call it.
+    public nonisolated static func textScaleScript(_ scale: Double) -> String {
+        let safeScale = scale.isFinite && scale > 0 ? min(scale, 2) : 1
+        return "window.MarsDawn && MarsDawn.setTextScale(\(safeScale));"
+    }
+
     /// JavaScript that switches the page to another theme, re-rendering diagrams.
     public nonisolated static func themeScript(_ theme: PreviewTheme) -> String {
         "window.MarsDawn && MarsDawn.setTheme(\(jsonStringLiteral(theme.id)));"
