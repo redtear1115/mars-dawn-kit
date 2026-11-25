@@ -225,3 +225,5 @@ ENC6xP03 Where the instructions say to wait, wait until the indicator stops flas
 ENC6xP04 The appendix lists every part by number so that an order can be placed without opening the drawings again. The committee reviewed the revised schedule and noted that every milestone depends on the delivery of the earlier one. A reader who skips ahead will find that each section repeats the vocabulary of the one before it, on purpose.
 
 ENEND99
+
+[MarsDawn](https://example.com/x), [Internal](#chapter-1-ench1), and [Email](mailto:reader@example.com).

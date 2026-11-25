@@ -74,7 +74,7 @@
     "shared": [
       { "id": "body-text", "element": "body text", "fg": "text", "bg": "background", "kind": "text", "baseline": true,
         "css": ["html|background", "body|background", "body|color", ".math-block|color", ".math-inline|color", ".callout|color"] },
-      { "id": "muted-text", "element": "muted text", "fg": "muted", "bg": "background", "kind": "text", "css": ["h6|color"] },
+      { "id": "muted-text", "element": "muted text", "fg": "muted", "bg": "background", "kind": "text", "css": ["h6|color", ".md-fold-toggle, .md-fold-block|color"] },
       { "id": "headings", "element": "headings", "fg": "heading", "bg": "background", "kind": "text", "css": ["h1, h2, h3, h4, h5, h6|color"] },
       { "id": "links", "element": "links", "fg": "link", "bg": "background", "kind": "text", "css": ["a|color"] },
       { "id": "inline-code", "element": "inline code", "fg": "text", "bg": "chip", "kind": "text", "css": ["code|background"] },
@@ -103,7 +103,8 @@
       { "id": "banner-text", "element": "banner and placeholder text", "fg": "muted", "bg": "surface", "kind": "text", "notice": true,
         "css": [".image-placeholder|background", ".image-placeholder|color", ".remote-images-bar|background", ".remote-images-bar|color"] },
       { "id": "banner-button", "element": "banner button", "fg": "background", "bg": "accent", "kind": "text", "notice": true,
-        "css": [".remote-images-bar button|color", ".remote-images-bar button|background", ".image-placeholder button|color", ".image-placeholder button|background"] },
+        "css": [".remote-images-bar button|color", ".remote-images-bar button|background", ".image-placeholder button|color", ".image-placeholder button|background",
+                ".remote-images-bar button.remote-images-download|color", ".remote-images-bar button.remote-images-download|background"] },
       { "id": "error-text", "element": "math and diagram errors", "fg": "keyword", "bg": "background", "kind": "text", "notice": true,
         "css": [".mermaid-error|color", ".math-error|color"] },
       { "id": "footnote-target", "element": "body text on a footnote highlight", "fg": "text", "bg": "footnoteTarget", "kind": "text", "baseline": true,

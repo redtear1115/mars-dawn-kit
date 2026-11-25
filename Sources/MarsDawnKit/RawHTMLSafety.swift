@@ -289,14 +289,67 @@ func mightRunScript(_ html: String) -> Bool {
 }
 
 /// Whether the document asks for code from the web: a `<script` element whose `src` is a remote
-/// URL. **Copy only, never a control** — the CSP refuses remote script whatever this says. It is
-/// what lets the bar explain a refusal instead of leaving a page silently half-working (D-1c).
-///
-/// Its blind spot is stated rather than discovered: script added at run time that fetches further
-/// script is refused by the CSP and produces no line here, because nothing scanned it. The
-/// refusal still happens; only the explanation is missing.
+/// URL (`http:`, `https:`, `ws:`, `wss:` or protocol-relative). **Copy only, never a control**.
 func asksForRemoteScript(_ html: String) -> Bool {
+    !remoteScriptSources(html).isEmpty
+}
+
+/// Whether the document asks for remote code the running policy refuses: a remote script `src`
+/// that isn't `https:` — plaintext `http:`, a WebSocket scheme, or a protocol-relative `//host`,
+/// which resolves against the page's own `marsdawn-html:` origin and is served by nobody.
+/// **Copy only, never a control** — the CSP and the rule list refuse it whatever this says; it is
+/// what lets the bar explain a refusal instead of leaving a page silently half-working.
+///
+/// Its blind spot is stated rather than discovered: script added at run time is not scanned.
+func asksForRefusedScript(_ html: String) -> Bool {
+    remoteScriptSources(html).contains { !$0.lowercased().hasPrefix("https:") }
+}
+
+/// The hosts of the document's `https:` script sources, for the bar's "code from sites including
+/// …" (mars-dawn#658): at most `limit`, first seen first, lowercased, duplicates dropped.
+/// **Copy only, never a control**, and incomplete by design: script added at run time is not
+/// scanned, which is why the sentence says "including".
+///
+/// Only ASCII host names are returned (letters, digits, `-` and `.`): a punycode `xn--` name is
+/// shown as it is, and a host written in Unicode is left out rather than shown in a form that
+/// can imitate another name. With none left, the bar uses the sentence without names.
+func remoteScriptHosts(_ html: String, limit: Int = 3) -> [String] {
+    var hosts: [String] = []
+    for source in remoteScriptSources(html) where source.lowercased().hasPrefix("https:") {
+        guard let host = remoteScriptHost(source), !hosts.contains(host) else { continue }
+        hosts.append(host)
+        if hosts.count == limit { break }
+    }
+    return hosts
+}
+
+/// The host of an `https:` URL as written: what follows the two slashes (backslashes count, as a
+/// browser normalises them), up to the next slash, backslash, `?`, `#` or the end, without user
+/// info or port. Nil unless it is a plausible ASCII host name.
+private func remoteScriptHost(_ source: String) -> String? {
+    let slash: Set<Character> = ["/", "\\"]
+    var rest = Substring(source.dropFirst("https:".count))
+    var slashes = 0
+    while let first = rest.first, slash.contains(first), slashes < 2 {
+        rest = rest.dropFirst()
+        slashes += 1
+    }
+    guard slashes == 2 else { return nil }
+    let authority = rest.prefix { !slash.contains($0) && $0 != "?" && $0 != "#" }
+    let hostAndPort = authority.split(separator: "@", omittingEmptySubsequences: false).last ?? ""
+    let host = (hostAndPort.split(separator: ":", omittingEmptySubsequences: false).first ?? "").lowercased()
+    let allowed = Set("abcdefghijklmnopqrstuvwxyz0123456789-.")
+    guard !host.isEmpty, host.allSatisfy({ allowed.contains($0) }), host.first != ".", host.first != "-" else {
+        return nil
+    }
+    return host.hasSuffix(".") ? String(host.dropLast()) : host
+}
+
+/// The remote `src` values of the document's `<script` elements, in order, as written (entity
+/// references are not decoded, which only ever hides a source, never invents one).
+func remoteScriptSources(_ html: String) -> [String] {
     let bytes = Array(html.utf8)
+    var sources: [String] = []
     var index = 0
     while index < bytes.count {
         guard bytes[index] == UInt8(ascii: "<"), htmlTagName(scriptTagName, matches: bytes, at: index + 1) else {
@@ -310,13 +363,32 @@ func asksForRemoteScript(_ html: String) -> Bool {
                isSourceAttribute(bytes, at: cursor),
                let value = attributeValueStart(bytes, after: cursor + srcAttributeName.count),
                isRemoteURL(bytes, at: value, afterOptionalQuote: true) {
-                return true
+                sources.append(attributeValue(bytes, at: value))
+                break
             }
             cursor += 1
         }
         index = cursor
     }
-    return false
+    return sources
+}
+
+/// An attribute value starting at `start`: quoted up to its closing quote, or unquoted up to
+/// whitespace or `>`, with surrounding whitespace removed.
+private func attributeValue(_ bytes: [UInt8], at start: Int) -> String {
+    var index = skipRemoteScanWhitespace(bytes, from: start)
+    var quote: UInt8?
+    if index < bytes.count, bytes[index] == UInt8(ascii: "\"") || bytes[index] == UInt8(ascii: "'") {
+        quote = bytes[index]
+        index += 1
+    }
+    var stop = index
+    while stop < bytes.count {
+        let byte = bytes[stop]
+        if let quote { if byte == quote { break } } else if isRemoteScanWhitespace(byte) || byte == UInt8(ascii: ">") { break }
+        stop += 1
+    }
+    return String(decoding: bytes[index..<stop], as: UTF8.self).trimmingCharacters(in: .whitespaces)
 }
 
 private let scriptTagName = Array("script".utf8)

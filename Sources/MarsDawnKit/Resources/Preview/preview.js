@@ -61,9 +61,11 @@
     const dark = darkQuery.matches;
     const signature = `${theme}/${dark ? "dark" : "light"}`;
     if (signature === mermaidSignature) return false;
-    // If the bundle failed to load, diagrams fall back to their source (see renderMermaid);
-    // the rest of the page still has to render.
-    if (typeof mermaid === "undefined") return false;
+    // Not loaded: no diagram has asked for it yet (loadMermaid configures it when it arrives), or
+    // the bundle failed, and diagrams fall back to their source (see renderMermaid). Either way
+    // the rest of the page still has to render. Not `typeof mermaid`: until the bundle sets that
+    // global, an element in the document with `id="mermaid"` answers to the same name.
+    if (mermaidState !== "ready") return false;
     mermaidSignature = signature;
 
     const style = getComputedStyle(document.documentElement);
@@ -271,11 +273,66 @@
   // one at a time, each preceded by a fresh task, no matter how many changed in one update.
   // Never rejects (each render's own errors already end up in the page, not thrown), matching
   // what callers here relied on `Promise.allSettled` for before.
+  let mermaidBatches = 0;
   function renderMermaidSequentially(pairs) {
+    if (!pairs.length) return Promise.resolve();
+    // Diagrams hold their space blank until they settle, not only until the bundle arrives: an
+    // undrawn diagram would otherwise flash its source between the two.
+    const root = document.documentElement;
+    mermaidBatches += 1;
+    root.classList.add("mermaid-loading");
     return pairs.reduce(
       (chain, [block, stale]) => chain.then(() => yieldToFreshTask()).then(() => renderMermaid(block, stale)).catch(() => {}),
-      Promise.resolve()
-    );
+      mermaidLoad ? loadMermaid() : afterFirstPaint().then(loadMermaid)
+    ).then(() => {
+      mermaidBatches -= 1;
+      if (!mermaidBatches) root.classList.remove("mermaid-loading");
+    });
+  }
+
+  // The bundle is most of what a page costs (kit #265): about 80 ms and 38 MB per window, so only
+  // a document with a diagram pays for it, the first time it needs one. A `<script defer>` would
+  // not help: the navigation still waits for it. Never rejects, and loads once: after a failure
+  // `mermaid.render` throws inside renderMermaid's `try`, and the diagram keeps its source and
+  // shows the error, as when the page itself failed to load the bundle.
+  let mermaidState = "unloaded";  // then "loading", then "ready" or "failed"
+  let mermaidLoad = null;
+  // Parsing the bundle can get in ahead of the first frame, so a new window would stay empty that
+  // much longer (mars-dawn#570). It starts after two frames. A hidden page has no frames, so it
+  // goes on at the limit.
+  function afterFirstPaint() {
+    return new Promise((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(resolve));
+      setTimeout(resolve, 150);
+    });
+  }
+
+  function loadMermaid() {
+    if (mermaidLoad) return mermaidLoad;
+    mermaidState = "loading";
+    mermaidLoad = new Promise((resolve) => {
+      const script = document.createElement("script");
+      script.src = "vendor/mermaid.min.js";
+      // A bundle that loaded but set nothing usable is a failure too.
+      script.onload = () => {
+        mermaidState = typeof window.mermaid?.render === "function" ? "ready" : "failed";
+        resolve();
+      };
+      script.onerror = () => {
+        mermaidState = "failed";
+        resolve();
+      };
+      document.head.appendChild(script);
+    }).then(() => {
+      // Inside this promise a throw would reject it and skip the first diagram, which would never
+      // settle. Unconfigured, every diagram still reaches renderMermaid and ends one way or another.
+      try {
+        configureMermaid();
+      } catch {
+        mermaidState = "failed";
+      }
+    });
+    return mermaidLoad;
   }
 
   // Sequence diagram `rect rgb(...)` bands (redtear1115/mars-dawn-kit#119). The label halo
@@ -506,14 +563,28 @@
   // this listens on the capture phase. It only drops the anchors and asks for one re-sync per
   // frame, however many events arrive: a document can open thousands of `<details>` at once,
   // and nothing here may cost more than a constant per event.
+  // Viewer folding (mars-dawn#300) moves blocks the same way and shares this frame.
+  //
+  // Closing one can leave the page shorter than the scroll position, and the browser's clamp to
+  // the new bottom arrives as a `scroll` event that isn't the user's (kit #257). Before this
+  // frame the scroll listener sees `toggleFrame`; after it, the clamp may still be on its way,
+  // or the sync may already sit at the bottom and not move, so the frame opens the same window a
+  // `scrollToLine` does.
   let toggleFrame = 0;
-  document.addEventListener("toggle", () => {
+  function scheduleResync() {
     anchors = null;
     if (toggleFrame) return;
     toggleFrame = requestAnimationFrame(() => {
       toggleFrame = 0;
+      applyChangeMarks();  // what shows a mark changed with the group
+      if (lastSyncedLine) suppressScrollUntil = performance.now() + 120;
       reapplySync();
     });
+  }
+  document.addEventListener("toggle", scheduleResync, true);
+  // `toggle` is queued, so a frame can run between a click and its event. The click comes first.
+  document.addEventListener("click", (event) => {
+    if (event.target instanceof Element && event.target.closest("summary")) scheduleResync();
   }, true);
 
   function getAnchors() {
@@ -579,8 +650,44 @@
     if (lastSyncedLine) scrollToLine(lastSyncedLine.line, lastSyncedLine.atEnd);
   }
 
+  // iOS Dynamic Type (mars-dawn#652): scales the body text, which every other size follows in
+  // `em`. Not a number or not positive means the default; capped at 2. The page isn't reloaded and
+  // the same source line stays at the top, without a scroll message, so the outline doesn't move.
+  function setTextScale(value) {
+    const scale = Number.isFinite(value) && value > 0 ? Math.min(value, 2) : 1;
+    const root = document.documentElement;
+    const inlineScale = scale === 1 ? "" : String(scale);
+    const largeText = scale >= 1.5;
+    if (root.style.getPropertyValue("--text-scale") === inlineScale
+        && root.hasAttribute("data-large-text") === largeText) return scale;
+
+    invalidateAnchors();
+    // A page that doesn't scroll is at its top, not its end: pinning it to the bottom would move
+    // a short document the reader hasn't scrolled as soon as it outgrows the window.
+    const position = lastSyncedLine ? null : {
+      line: lineForTop(window.scrollY),
+      atEnd: maxScroll() > 0 && window.scrollY >= maxScroll() - 1,
+    };
+
+    if (scale === 1) root.style.removeProperty("--text-scale");
+    else root.style.setProperty("--text-scale", inlineScale);
+    root.toggleAttribute("data-large-text", largeText);
+
+    invalidateAnchors();
+    if (position) {
+      const target = position.atEnd ? maxScroll() : Math.min(maxScroll(), topForLine(position.line));
+      suppressScrollUntil = performance.now() + 120;
+      window.scrollTo(0, target);
+    } else {
+      reapplySync();
+    }
+    scheduleTallCheck();
+    return scale;
+  }
+
   window.addEventListener("scroll", () => {
     if (performance.now() < suppressScrollUntil) return;
+    if (toggleFrame && lastSyncedLine) return;  // a toggle's clamp: its frame re-syncs (see scheduleResync)
     lastSyncedLine = null;  // the user took over; don't snap back on the next update
     if (scrollFrame) return;
     scrollFrame = requestAnimationFrame(() => {
@@ -595,6 +702,7 @@
   window.addEventListener("resize", () => {
     invalidateAnchors();
     reapplySync();
+    scheduleTallCheck();
   });
 
   // Images and diagrams change heights after layout.
@@ -602,6 +710,7 @@
     if (event.target.tagName === "IMG") {
       invalidateAnchors();
       reapplySync();
+      scheduleTallCheck();
     }
   }, true);
 
@@ -750,6 +859,16 @@
         });
         bar.append(button);
       }
+      if (remoteState.downloadButtonLabel) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "remote-images-download";
+        button.textContent = remoteState.downloadButtonLabel;
+        button.addEventListener("click", () => {
+          try { window.webkit.messageHandlers.downloadRemoteImages.postMessage({}); } catch (_) {}
+        });
+        bar.append(button);
+      }
     }
     if (bar.hidden === show) {
       bar.hidden = !show;
@@ -810,6 +929,273 @@
     return tag.length <= 35 && languageTagPattern.test(tag) && /^ja(-|$)/i.test(tag) ? tag : null;
   }
 
+
+  // MARK: Viewer folding (mars-dawn#300)
+  //
+  // Folding is the reader's view of the page, never the file: nothing here posts to the host,
+  // and the state lives in this page only (no persistence). Export loads a fresh page and never
+  // folds; print CSS shows every block and hides every control, for ⌘P from the app.
+  //
+  // Blocks are never moved or wrapped: a folded block only gets a class, which screen CSS
+  // hides, so `checkVisibility` drops it (and its `data-line`s) from the scroll anchors like a
+  // collapsed `<details>`. Controls are empty `<button>`s; their visible text is CSS generated
+  // content (`attr(data-summary)`) and their name an `aria-label`, so `textContent`,
+  // `innerText`, find in page and copy never see a label. They are added after `update()` has
+  // keyed a block, and `_mdKey` always comes from the renderer's HTML, even when the first
+  // update leaves it for later (`keyUnkeyedBlocks`), so pool reuse is unaffected, and they carry no `data-line`, so `copyLineNumbers` pairs the
+  // same elements. Each control is its block's first child and absolutely positioned while the
+  // block is expanded, so it changes no layout and no `:last-child` rule.
+
+  // A code block gets a control when it has more lines than this.
+  const foldCodeMinLines = 20;
+  // An image or a diagram gets one when it is taller than this fraction of the viewport.
+  const foldTallFraction = 0.6;
+  // Localised by the host through `setLabels`; these are only the fallbacks.
+  let foldLabels = {
+    code: "Code, %d lines", image: "Image", diagram: "Diagram",
+    collapseSection: "Collapse section", expandSection: "Expand section",
+    collapse: "Collapse",
+  };
+  // Folded headings by identity (level, text, occurrence): "collapsed" hides the section;
+  // a number L (from `collapseAll(L)`) hides the section's own text and its headings deeper
+  // than L, not what is under a heading the reader has opened inside it.
+  const headingFolds = new Map();
+
+  function headingLevel(el) {
+    return /^H[1-6]$/.test(el.tagName) ? Number(el.tagName[1]) : 0;
+  }
+
+  // The top-level headings with their identities, in page order.
+  function headingIdentities() {
+    const counts = new Map();
+    const out = [];
+    for (const el of content().children) {
+      const level = headingLevel(el);
+      if (!level) continue;
+      const base = level + "\u0000" + el.textContent.replace(/\s+/g, " ").trim();
+      const n = counts.get(base) || 0;
+      counts.set(base, n + 1);
+      out.push([el, base + "\u0000" + n]);
+    }
+    return out;
+  }
+
+  function setAttr(el, name, value) {
+    if (el.getAttribute(name) !== value) el.setAttribute(name, value);
+  }
+
+  function setClass(el, name, on) {
+    if (el.classList.contains(name) !== on) el.classList.toggle(name, on);
+  }
+
+  function ownControl(el, className) {
+    const first = el.firstElementChild;
+    return first && first.classList.contains(className) ? first : null;
+  }
+
+  function labelHeadingToggle(button, expanded) {
+    setAttr(button, "aria-expanded", String(expanded));
+    setAttr(button, "aria-label", expanded ? foldLabels.collapseSection : foldLabels.expandSection);
+  }
+
+  // Hides what the folded headings cover and gives every top-level heading its arrow.
+  // One pass over the top-level blocks; drops the state of headings that are gone.
+  function applyFolds() {
+    const identities = headingIdentities();
+    const keyOf = new Map(identities);
+    const live = new Set(keyOf.values());
+    for (const key of [...headingFolds.keys()]) if (!live.has(key)) headingFolds.delete(key);
+    const stack = [];
+    for (const el of content().children) {
+      // The footnotes belong to the whole document, so the last section doesn't own them.
+      if (el.matches("section.footnotes")) stack.length = 0;
+      const level = headingLevel(el);
+      let hidden;
+      if (level) {
+        while (stack.length && stack[stack.length - 1].level >= level) stack.pop();
+        const parent = stack[stack.length - 1];
+        hidden = !!parent && (parent.hidden || parent.state === "collapsed" ||
+          (typeof parent.state === "number" && level > parent.state));
+        const state = headingFolds.get(keyOf.get(el));
+        stack.push({ level, state, hidden });
+        let button = ownControl(el, "md-fold-toggle");
+        if (!button) {
+          button = document.createElement("button");
+          button.type = "button";
+          button.className = "md-fold-toggle";
+          el.prepend(button);
+        }
+        labelHeadingToggle(button, state === undefined);
+      } else {
+        const parent = stack[stack.length - 1];
+        hidden = !!parent && (parent.hidden || parent.state !== undefined);
+      }
+      setClass(el, "md-fold-hidden", hidden);
+    }
+  }
+
+  function codeLineCount(code) {
+    const text = code.textContent.replace(/\n$/, "");
+    return text ? text.split("\n").length : 0;
+  }
+
+  function summaryFor(kind, count) {
+    if (kind === "code") return foldLabels.code.replace("%d", String(count));
+    return kind === "image" ? foldLabels.image : foldLabels.diagram;
+  }
+
+  function labelBlockControl(button) {
+    const collapsed = button.parentElement?.classList.contains("md-block-collapsed") ?? false;
+    const summary = summaryFor(button.dataset.kind, Number(button.dataset.count || 0));
+    setAttr(button, "aria-expanded", String(!collapsed));
+    // Collapsed, the name says what is folded here; `aria-expanded` says it can be opened.
+    setAttr(button, "aria-label", collapsed ? summary : foldLabels.collapse);
+    setAttr(button, "data-summary", summary);
+  }
+
+  function addBlockControl(el, kind, count) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "md-fold-block";
+    button.dataset.kind = kind;
+    if (count) button.dataset.count = String(count);
+    el.prepend(button);
+    labelBlockControl(button);
+  }
+
+  // Long code blocks among blocks the pool didn't reuse (reused ones keep theirs, and their state).
+  function addCodeControls(blocks) {
+    for (const el of blocks) {
+      const pres = el.tagName === "PRE" ? [el] : el.querySelectorAll("pre");
+      for (const pre of pres) {
+        const code = pre.querySelector(":scope > code");
+        if (!code || pre.closest(".front-matter") || ownControl(pre, "md-fold-block")) continue;
+        const lines = codeLineCount(code);
+        if (lines > foldCodeMinLines) addBlockControl(pre, "code", lines);
+      }
+    }
+  }
+
+  // A paragraph that is nothing but one image.
+  function isSoleImage(p) {
+    if (p.tagName !== "P") return false;
+    let images = 0;
+    for (const node of p.childNodes) {
+      if (node.nodeType === Node.TEXT_NODE) {
+        if (node.textContent.trim()) return false;
+      } else if (node.nodeType === Node.ELEMENT_NODE) {
+        if (node.tagName === "IMG") images++;
+        else if (!node.classList.contains("md-fold-block")) return false;
+      }
+    }
+    return images === 1;
+  }
+
+  // Tall images and diagrams: measured, so checked after layout settles, once per frame.
+  let tallFrame = 0;
+  function scheduleTallCheck() {
+    if (tallFrame) return;
+    tallFrame = requestAnimationFrame(() => {
+      tallFrame = 0;
+      refreshTallControls();
+    });
+  }
+
+  function refreshTallControls() {
+    if (tallFrame) {
+      cancelAnimationFrame(tallFrame);
+      tallFrame = 0;
+    }
+    const root = content();
+    const candidates = [...root.querySelectorAll(".mermaid-block")].map((el) => [el, "diagram"]);
+    for (const img of root.querySelectorAll("p > img")) {
+      if (isSoleImage(img.parentElement)) candidates.push([img.parentElement, "image"]);
+    }
+    const limit = window.innerHeight * foldTallFraction;
+    // All reads first, then the writes, so this lays the page out once.
+    const measured = candidates.map(([el, kind]) => {
+      const control = ownControl(el, "md-fold-block");
+      const settled = el.classList.contains("md-block-collapsed") || !isRendered(el);
+      return [el, kind, control, settled ? null : el.getBoundingClientRect().height > limit];
+    });
+    let changed = false;
+    for (const [el, kind, control, tall] of measured) {
+      if (tall === true && !control) {
+        addBlockControl(el, kind, 0);
+        changed = true;
+      } else if (tall === false && control) {
+        control.remove();
+        changed = true;
+      }
+    }
+    if (changed) invalidateAnchors();
+  }
+
+  function refreshFoldLabels() {
+    for (const button of content().querySelectorAll(".md-fold-block")) labelBlockControl(button);
+    for (const button of content().querySelectorAll(":scope > * > .md-fold-toggle")) {
+      labelHeadingToggle(button, button.getAttribute("aria-expanded") === "true");
+    }
+  }
+
+  function foldChanged() {
+    scheduleResync();
+    scheduleTallCheck();
+  }
+
+  document.addEventListener("click", (event) => {
+    const button = event.target instanceof Element ? event.target.closest(".md-fold-toggle, .md-fold-block") : null;
+    if (!button || !content().contains(button)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const block = button.parentElement;
+    if (button.classList.contains("md-fold-block")) {
+      block.classList.toggle("md-block-collapsed");
+      labelBlockControl(button);
+    } else {
+      const key = headingIdentities().find(([el]) => el === block)?.[1];
+      if (key === undefined) return;
+      if (headingFolds.has(key)) headingFolds.delete(key);
+      else headingFolds.set(key, "collapsed");
+      applyFolds();
+    }
+    foldChanged();
+  });
+
+  // Folds the page to its headings down to `level` (the app's "Collapse All to H2" passes 2):
+  // every heading at `level` is folded, and a section of a higher level shows only its
+  // headings down to `level`. Headings deeper than `level` with no heading at or above it
+  // before them are folded too. Content before the first heading stays. Code, images and
+  // diagrams keep their own state.
+  function collapseAll(level) {
+    const target = Number(level);
+    if (!Number.isInteger(target) || target < 1 || target > 6) return;
+    headingFolds.clear();
+    const stack = [];
+    for (const [el, key] of headingIdentities()) {
+      const h = headingLevel(el);
+      while (stack.length && stack[stack.length - 1] >= h) stack.pop();
+      if (h === target) headingFolds.set(key, "collapsed");
+      else if (h < target) headingFolds.set(key, target);
+      else if (!stack.some((s) => s <= target)) headingFolds.set(key, "collapsed");
+      stack.push(h);
+    }
+    applyFolds();
+    foldChanged();
+  }
+
+  // Unfolds every heading, code block, image and diagram.
+  function expandAll() {
+    headingFolds.clear();
+    for (const el of content().querySelectorAll(".md-block-collapsed")) {
+      el.classList.remove("md-block-collapsed");
+      const button = ownControl(el, "md-fold-block");
+      if (button) labelBlockControl(button);
+    }
+    applyFolds();
+    foldChanged();
+  }
+
   // The HTML's blocks as `update()` puts them on the page, before anything renders in them.
   function parseBlocks(html) {
     const template = document.createElement("template");
@@ -835,6 +1221,172 @@
     unkeyed = null;
     const pristine = parseBlocks(html).incoming;
     blocks.forEach((el, i) => { el._mdKey = blockKey(pristine[i]); });
+  }
+
+  // Change marks (mars-dawn#358): which blocks differ from a baseline the app holds. The app sends
+  // marks for the text on screen, so the page compares nothing. It keeps the last set, because an
+  // `update()` reuses blocks and moves their lines, and marks are only ever a class and an attribute
+  // on elements already there: nothing is inserted, no `data-line` changes, and a mark that isn't
+  // a whole number of lines or a known kind is dropped.
+  const changeKinds = new Set(["added", "changed", "removed"]);
+  const changeClasses = ["md-change", "md-change-added", "md-change-changed", "md-change-removed", "md-change-current"];
+  let changeMarks = [];
+  let currentChangeLine = null;
+
+  function setChangeMarks(options) {
+    const { marks, currentLine } = options ?? {};
+    currentChangeLine = Number.isInteger(currentLine) && currentLine > 0 ? currentLine : null;
+    changeMarks = (Array.isArray(marks) ? marks : []).filter((mark) =>
+      Number.isInteger(mark?.firstLine) && mark.firstLine > 0 &&
+      Number.isInteger(mark.lineCount) && mark.lineCount > 0 &&
+      changeKinds.has(mark.kind));
+    applyChangeMarks();
+  }
+
+  // The index in sorted `lines` of the first value not below `line`.
+  function firstLineIndex(lines, line) {
+    let low = 0;
+    let high = lines.length;
+    while (low < high) {
+      const middle = (low + high) >> 1;
+      if (lines[middle] < line) low = middle + 1;
+      else high = middle;
+    }
+    return low;
+  }
+
+  // How many elements get their mark before the page is made to take them. See below.
+  const changeMarkBatch = 1024;
+
+  function applyChangeMarks() {
+    const root = content();
+    const wanted = changeMarks.length ? placeChangeMarks(root) : new Map();
+    const fresh = [];
+    for (const el of root.querySelectorAll(".md-change")) {
+      if (!wanted.has(el)) clearChangeMark(el);
+    }
+    for (const [el, mark] of wanted) {
+      if (el.classList.contains("md-change")) showChangeMark(el, mark);
+      else fresh.push([el, mark]);
+    }
+    // A marked element is positioned, so WebKit gives it a layer, and to place a layer it searches
+    // the siblings after the element for the next one. Thousands marked at once, in page order,
+    // find none and search to the end: 8 s for 40,000 paragraphs. Last ones first, a batch at a
+    // time, it stops at the batch before: 0.4 s. A rewritten document marks every block.
+    for (let end = fresh.length; end > 0; end -= changeMarkBatch) {
+      const start = Math.max(end - changeMarkBatch, 0);
+      for (let at = start; at < end; at++) showChangeMark(...fresh[at]);
+      if (start > 0) getComputedStyle(fresh[start][0]).position;
+    }
+  }
+
+  function clearChangeMark(el) {
+    el.classList.remove(...changeClasses);
+    el.removeAttribute("data-change-lines");
+    if (!el.classList.length) el.removeAttribute("class");
+  }
+
+  // Only what differs is written, so a mark that stays costs the page nothing.
+  function showChangeMark(el, { changes, held }) {
+    const on = new Set(["md-change", ...changes.map((change) => `md-change-${change.kind}`)]);
+    if (held.includes(currentChangeLine)) on.add("md-change-current");
+    for (const name of changeClasses) el.classList.toggle(name, on.has(name));
+    const lines = held.join(" ");
+    if (el.getAttribute("data-change-lines") !== lines) el.setAttribute("data-change-lines", lines);
+  }
+
+  // Element -> its marks and lines, in page order.
+  function placeChangeMarks(root) {
+    const byLine = new Map();
+    const order = new Map();  // page order, for what's kept and what isn't
+    for (const el of root.querySelectorAll("[data-line]")) {
+      order.set(el, order.size);
+      const line = Number(el.getAttribute("data-line"));
+      if (!Number.isInteger(line)) continue;  // an author's own attribute, in raw HTML
+      if (!byLine.has(line)) byLine.set(line, []);
+      byLine.get(line).push(el);
+    }
+    const lines = [...byLine.keys()].sort((a, b) => a - b);
+    if (!lines.length) return new Map();
+
+    // Element -> the marks on it. `data-line` only says where a block starts, so a block runs up
+    // to the next one.
+    const marked = new Map();
+    const mark = (el, change) => {
+      const target = shownChangeTarget(el);
+      if (!marked.has(target)) marked.set(target, []);
+      marked.get(target).push(change);
+    };
+    for (const change of changeMarks) {
+      const index = firstLineIndex(lines, change.firstLine);
+      if (change.kind === "removed") {
+        // A deletion has no lines of its own: the block after it, or the last one at the end.
+        const line = lines[Math.min(index, lines.length - 1)];
+        for (const el of byLine.get(line)) mark(el, change);
+        continue;
+      }
+      // A line with no element of its own is in the block before it. Before the first block,
+      // the first block is the nearest thing there is.
+      const start = lines[index] === change.firstLine ? index : Math.max(index - 1, 0);
+      const last = change.firstLine + change.lineCount - 1;
+      for (let at = start; at < lines.length && (at === start || lines[at] <= last); at++) {
+        for (const el of byLine.get(lines[at])) mark(el, change);
+      }
+    }
+
+    // Only the innermost: a changed list item, never the whole list.
+    const firstLines = new Map([...marked].map(([el, changes]) => [el, new Set(changes.map((c) => c.firstLine))]));
+    const markedAncestors = (el) => {
+      const found = [];
+      for (let parent = el.parentElement; parent && parent !== root; parent = parent.parentElement) {
+        if (marked.has(parent)) found.push(parent);
+      }
+      return found;
+    };
+    const outer = new Set([...marked.keys()].flatMap(markedAncestors));
+
+    // A mark only an outer element held moves to the first thing kept inside it, so every mark can
+    // still be found on the page. A line something inside already holds stays where it is: a list
+    // starts on its first item's line, and that line is no business of the second item.
+    const inside = new Map();
+    const kept = [...marked.keys()].filter((el) => !outer.has(el));
+    kept.sort((a, b) => (order.get(a) ?? order.size) - (order.get(b) ?? order.size));
+    for (const el of kept) {
+      for (const parent of markedAncestors(el)) {
+        if (!inside.has(parent)) inside.set(parent, { first: el, lines: new Set() });
+        for (const line of firstLines.get(el)) inside.get(parent).lines.add(line);
+      }
+    }
+    // Innermost first, so a line two nested outer elements share moves once.
+    for (const el of [...outer].sort((a, b) => (order.get(b) ?? -1) - (order.get(a) ?? -1))) {
+      const { first, lines: held } = inside.get(el);
+      const moved = marked.get(el).filter((change) => !held.has(change.firstLine));
+      marked.get(first).push(...moved);  // the line and its kind: a deletion keeps its triangle
+      for (const { firstLine } of moved) {
+        firstLines.get(first).add(firstLine);
+        for (const parent of markedAncestors(first)) inside.get(parent).lines.add(firstLine);
+      }
+    }
+    for (const el of outer) marked.delete(el);
+
+    return new Map(kept.map((el) => [el, {
+      changes: marked.get(el),
+      held: [...firstLines.get(el)].sort((a, b) => a - b),
+    }]));
+  }
+
+  // What shows a change in `el`: `el`, unless a collapsed `<details>` hides it. Then it's the
+  // outermost one, or the block around it if it has no line of its own (raw HTML). Never opened.
+  function shownChangeTarget(el) {
+    let closed = el.closest("details:not([open])");
+    if (!closed) return el;
+    for (let next = closed.parentElement?.closest("details:not([open])"); next; ) {
+      closed = next;
+      next = closed.parentElement?.closest("details:not([open])");
+    }
+    if (closed.hasAttribute("data-line")) return closed;
+    const block = closed.parentElement?.closest("[data-line]");
+    return block && content().contains(block) ? block : closed;
   }
 
   function update(html, lines) {
@@ -903,15 +1455,22 @@
       const blocks = el.classList.contains("mermaid-block") ? [el] : el.querySelectorAll(".mermaid-block");
       for (const block of blocks) pending.push([block, staleSVGs.shift()]);
     }
+    addCodeControls(fresh);
+    applyFolds();
+    scheduleTallCheck();
     // Synchronous, and only over elements the pool didn't reuse: math whose source hasn't
     // changed keeps the KaTeX output it already has.
     renderMath();
+    applyChangeMarks();
     reapplySync();
-    pendingWork = renderMermaidSequentially(capMermaid(pending));
+    // On top of what's still going: a reused diagram isn't in `pending`, but the update that brought
+    // it may not have drawn it yet.
+    pendingWork = Promise.all([pendingWork, renderMermaidSequentially(capMermaid(pending))]);
     if (pending.length) {
       pendingWork.then(() => {
         invalidateAnchors();
         reapplySync();
+        scheduleTallCheck();
       });
     }
   }
@@ -928,6 +1487,7 @@
     renderMermaidSequentially(capMermaid(all)).then(() => {
       invalidateAnchors();
       reapplySync();
+      scheduleTallCheck();
     });
   }
 
@@ -955,14 +1515,11 @@
     refreshTheme();
   });
 
-  document.addEventListener("DOMContentLoaded", () => {
-    configureMermaid();
-  });
-
-  // Resolves once the diagrams from the latest update have rendered (or failed).
+  // Resolves once the diagrams from every update so far have rendered (or failed).
   let pendingWork = Promise.resolve();
   async function idle() {
     await pendingWork;
+    refreshTallControls();
     return content().children.length;
   }
 
@@ -986,6 +1543,17 @@
 
   function setLabels(labels) {
     if (labels && typeof labels.diagramLimitNote === "string") diagramLimitNote = labels.diagramLimitNote;
+    const fold = labels && labels.fold;
+    if (fold && typeof fold === "object") {
+      const next = { ...foldLabels };
+      for (const name of Object.keys(foldLabels)) {
+        if (typeof fold[name] === "string") next[name] = fold[name];
+      }
+      if (Object.keys(next).some((name) => next[name] !== foldLabels[name])) {
+        foldLabels = next;
+        refreshFoldLabels();
+      }
+    }
     const titles = labels && labels.calloutTitles;
     if (titles && typeof titles === "object") {
       for (const type of calloutTypes) {
@@ -996,5 +1564,5 @@
     }
   }
 
-  window.MarsDawn = { update, setLabels, setTheme, setThemes, scrollToLine, setAssetState, setRemoteImageState, restoreScroll, idle };
+  window.MarsDawn = { update, setChangeMarks, setLabels, setTheme, setThemes, scrollToLine, setTextScale, setAssetState, setRemoteImageState, restoreScroll, idle, collapseAll, expandAll };
 })();

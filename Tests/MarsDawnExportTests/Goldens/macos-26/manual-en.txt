@@ -452,6 +452,7 @@ Lines: minX minY maxX maxY | text, whole points from the page's bottom left, sor
 71 500 527 514 | ENC6xP03 Where the instructions say to wait, wait until the indicator stops flashing
 71 392 524 406 | ENC6xP04 The appendix lists every part by number so that an order can be placed
 71 284 126 298 | ENEND99
+71 252 372 266 | MarsDawn (https://example.com/x), Internal, and Email.
 71 658 514 672 | Where the instructions say to wait, wait until the indicator stops flashing and only
 71 677 513 691 | and at the end of the period, and the difference between them is reported below.
 71 353 525 367 | and noted that every milestone depends on the delivery of the earlier one. A reader

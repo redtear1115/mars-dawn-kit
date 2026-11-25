@@ -33,7 +33,9 @@ a newline is a space, except between two Chinese or Japanese characters, where i
 dropped.
 
 `--layout document|handbook|handout` picks the page layout (default `document`; `manual`, the 0.7.1 name,
-still works but is deprecated). `handbook` is the Handbook layout: wider margins with a 25 mm binding side, every
+still works but is deprecated). Without `--layout`, a front-matter line `layout: handbook`, `handout` or
+`standard` picks it (another value is ignored); `--layout` wins. `handbook` is the Handbook layout: wider
+margins with a 25 mm binding side, every
 top-level heading on a new page, a table of contents of the level 1 and 2 headings, "n / N" page
 numbers and PDF bookmarks. A cover comes first when the front matter has a `title`; it also shows
 `subtitle`, `version`, `date`, `author` and `logo` (an image path) when present.
