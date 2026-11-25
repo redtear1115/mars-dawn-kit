@@ -499,6 +499,12 @@ img { max-width: 100%; }
   /* Room in the margin for a heading arrow's 44 px target (an h1's arrow ends 0.1em before the
      text, so 47 px of margin is needed). */
   .markdown-body { padding-left: 50px; }
+  /* Large text (mars-dawn#652) keeps its 16 px margins, so a heading makes room for its own arrow
+     instead: the arrow sits in the heading's left padding, still ending 0.1em before the text, and
+     its 44 px target starts inside the page at every size (16 + 32 - 0.1em - 44 >= 0 while
+     1.1em <= 32 px, and 16 + 1em - 44 >= 0 above that). */
+  html[data-large-text] .markdown-body > :is(h1, h2, h3, h4, h5, h6) { padding-left: max(1.1em, 32px); }
+  html[data-large-text] .md-fold-toggle { left: calc(max(1.1em, 32px) - 1.1em); }
   .md-fold-toggle, .md-fold-block {
     opacity: 0.6;
     -webkit-tap-highlight-color: transparent;

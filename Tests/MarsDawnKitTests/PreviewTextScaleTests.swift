@@ -128,7 +128,11 @@ struct PreviewTextScaleTests {
             \(Self.readStyles)
             return { ...readStyles(), conditions };
             """)
-        #expect(state["conditions"] as? [String] == ["screen", "screen", "screen", "screen"])
+        // Four layout rules for every screen, two more for touch (the heading arrows); none for paper.
+        let conditions = try #require(state["conditions"] as? [String])
+        #expect(conditions.filter { $0 == "screen" }.count == 4)
+        #expect(conditions.filter { $0 == "screen and (pointer: coarse)" }.count == 2)
+        #expect(conditions.count == 6)
         #expect(state["inline"] as? String == "2")
         #expect(state["large"] as? Bool == true)
         #expect(state["scale"] as? String == "1")
@@ -172,6 +176,73 @@ struct PreviewTextScaleTests {
             #expect(abs(current - top) <= 4)
         }
         #expect(state["marker"] as? Int == 1)
+    }
+
+    private static let positionScript = """
+        const nextFrame = () => new Promise(resolve => requestAnimationFrame(resolve));
+        const maxScroll = () => Math.max(0, document.documentElement.scrollHeight - innerHeight);
+        const anchors = [...document.querySelectorAll('.markdown-body [data-line]')];
+        const position = () => ({ y: scrollY, max: maxScroll(),
+                                  first: anchors.find(el => el.getBoundingClientRect().bottom > 0).textContent });
+        """
+
+    /// A document that fits the window isn't at its end: when large text makes it scroll, it stays
+    /// at its first line instead of jumping to the new bottom.
+    @Test func shortDocumentStaysAtItsFirstLineWhenItOutgrowsTheWindow() async throws {
+        defer { DetailsPageTests.closeHosts() }
+        let webView = try await DetailsPageTests.loadedPreview(height: 844)
+        webView.window?.setContentSize(NSSize(width: 390, height: 844))
+        let markdown = (1...12).map { "Paragraph \($0)." }.joined(separator: "\n\n")
+        try await DetailsPageTests.push(markdown, to: webView)
+        let state = try await DetailsPageTests.json(webView, Self.positionScript + """
+            const before = position();
+            \(PreviewWebView.textScaleScript(2))
+            await nextFrame();
+            const enlarged = position();
+            \(PreviewWebView.textScaleScript(1))
+            await nextFrame();
+            return { before, enlarged, restored: position() };
+            """)
+        let before = try #require(state["before"] as? [String: Any])
+        #expect(before["max"] as? Double == 0, "positive fixture: the document fits the window")
+        let enlarged = try #require(state["enlarged"] as? [String: Any])
+        #expect(try #require(enlarged["max"] as? Double) > 0, "positive fixture: large text makes it scroll")
+        for key in ["before", "enlarged", "restored"] {
+            let position = try #require(state[key] as? [String: Any])
+            #expect(position["y"] as? Double == 0, "\(key): \(position)")
+            #expect(position["first"] as? String == "Paragraph 1.", "\(key): \(position)")
+        }
+    }
+
+    /// A long document the reader left at its top or bottom stays there across rescaling.
+    @Test(arguments: ["top", "bottom"])
+    func longDocumentKeepsItsTopAndBottom(edge: String) async throws {
+        defer { DetailsPageTests.closeHosts() }
+        let webView = try await DetailsPageTests.loadedPreview()
+        let markdown = (1...200).map { "## Heading \($0)\n\nParagraph \($0)." }.joined(separator: "\n\n")
+        try await DetailsPageTests.push(markdown, to: webView)
+        let state = try await DetailsPageTests.json(webView, Self.positionScript + """
+            window.scrollTo(0, \(edge == "bottom" ? "maxScroll()" : "0"));
+            await nextFrame();
+            const before = position();
+            \(PreviewWebView.textScaleScript(2))
+            await nextFrame();
+            const enlarged = position();
+            \(PreviewWebView.textScaleScript(1))
+            await nextFrame();
+            return { before, enlarged, restored: position() };
+            """)
+        for key in ["before", "enlarged", "restored"] {
+            let position = try #require(state[key] as? [String: Any])
+            let y = try #require(position["y"] as? Double)
+            let max = try #require(position["max"] as? Double)
+            #expect(max > 0, "positive fixture: the document scrolls (\(key))")
+            if edge == "bottom" {
+                #expect(abs(y - max) <= 1, "\(key) stays at the bottom: \(position)")
+            } else {
+                #expect(y == 0, "\(key) stays at the top: \(position)")
+            }
+        }
     }
 
     @Test func swiftBridgeClampsBeforeGeneratingJavaScript() {

@@ -662,9 +662,11 @@
         && root.hasAttribute("data-large-text") === largeText) return scale;
 
     invalidateAnchors();
+    // A page that doesn't scroll is at its top, not its end: pinning it to the bottom would move
+    // a short document the reader hasn't scrolled as soon as it outgrows the window.
     const position = lastSyncedLine ? null : {
       line: lineForTop(window.scrollY),
-      atEnd: window.scrollY >= maxScroll() - 1,
+      atEnd: maxScroll() > 0 && window.scrollY >= maxScroll() - 1,
     };
 
     if (scale === 1) root.style.removeProperty("--text-scale");

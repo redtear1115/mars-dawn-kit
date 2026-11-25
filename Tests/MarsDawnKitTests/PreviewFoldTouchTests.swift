@@ -188,5 +188,85 @@ extension DetailsPageTests {
         #expect(collapsed["opacity"] as? String == "1")
         #expect(collapsed["headingOpacity"] as? String == "1")
     }
+
+    private static let largeTextHeadings = """
+        # One
+
+        one body
+
+        ## [Linked](https://example.com/two) two
+
+        two body
+
+        ### Three
+
+        three body
+
+        #### Four
+
+        four body
+        """
+
+    /// Large text (mars-dawn#652) keeps 16 px margins, so on touch each heading makes room for its
+    /// own arrow: the h1–h4 targets stay 44 px and inside the page, and a heading's text, a link at
+    /// its start included, still takes the tap. A fine pointer keeps the arrow in the margin.
+    @Test(arguments: [1.5, 2.0], [390.0, 320.0])
+    func coarsePointerLargeTextKeepsHeadingArrowsInsidePage(scale: Double, width: Double) async throws {
+        defer { Self.closeHosts() }
+        let webView = try await Self.loadedPreview()
+        webView.window?.setContentSize(NSSize(width: width, height: 800))
+        try await Self.push(Self.largeTextHeadings, to: webView)
+        let fine = try await Self.json(webView, PreviewWebView.textScaleScript(scale) + """
+            return {
+              large: document.documentElement.hasAttribute('data-large-text'),
+              innerWidth,
+              headings: [...document.querySelectorAll('.markdown-body > :is(h1, h2, h3, h4)')].map(h => {
+                const style = getComputedStyle(h);
+                const toggle = getComputedStyle(h.querySelector(':scope > .md-fold-toggle'));
+                return { padding: style.paddingLeft, left: parseFloat(toggle.left) / parseFloat(style.fontSize) };
+              })
+            };
+            """)
+        #expect(fine["large"] as? Bool == true)
+        #expect(abs((fine["innerWidth"] as? Double ?? 0) - width) <= 1, "positive fixture: the page is \(width) wide")
+        let fineHeadings = try #require(fine["headings"] as? [[String: Any]])
+        #expect(fineHeadings.count == 4)
+        for heading in fineHeadings {
+            #expect(heading["padding"] as? String == "0px", "a fine pointer is unchanged: \(heading)")
+            #expect(abs(try #require(heading["left"] as? Double) + 1.1) < 0.01, "\(heading)")
+        }
+
+        let conditions = try await Self.liftTouchRules(webView)
+        #expect(conditions.count == 1)
+
+        let state = try await Self.json(webView, Self.hitScript + """
+            const content = getComputedStyle(document.querySelector('.markdown-body'));
+            const out = [];
+            for (const h of document.querySelectorAll('.markdown-body > :is(h1, h2, h3, h4)')) {
+              const toggle = h.querySelector(':scope > .md-fold-toggle');
+              const hit = hitBox(toggle);
+              const box = toggle.getBoundingClientRect();
+              const range = document.createRange();
+              range.selectNodeContents(h);
+              range.setStartAfter(toggle);
+              const text = range.getClientRects()[0];
+              const atText = document.elementFromPoint(text.left + 2, box.top + box.height / 2);
+              out.push({ name: h.tagName, hit, onArrow: toggle.contains(atText), onLink: !!atText?.closest('a') });
+            }
+            return { padding: [content.paddingLeft, content.paddingRight], out };
+            """)
+        #expect(state["padding"] as? [String] == ["16px", "16px"], "large text keeps its narrow margins")
+        let headings = try #require(state["out"] as? [[String: Any]])
+        #expect(headings.map { $0["name"] as? String } == ["H1", "H2", "H3", "H4"])
+        for heading in headings {
+            let hit = try #require(heading["hit"] as? [String: Any])
+            #expect(try #require(hit["width"] as? Double) >= 44, "taps land on \(heading)")
+            #expect(try #require(hit["height"] as? Double) >= 44, "taps land on \(heading)")
+            #expect(hit["contiguous"] as? Bool == true, "\(heading)")
+            #expect(try #require(hit["left"] as? Double) >= 0, "inside the page: \(heading)")
+            #expect(heading["onArrow"] as? Bool == false, "the heading's text isn't the arrow's: \(heading)")
+        }
+        #expect(headings.count == 4 && headings[1]["onLink"] as? Bool == true, "a link at the start of a heading takes the tap")
+    }
 }
 #endif
