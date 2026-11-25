@@ -644,7 +644,7 @@ extension MarsDawnCommand {
                 try await ColdLaunchEnvironment.gate.run(app: app) {
                     for group in RevealEvent.groups(for: targets) {
                         let configuration = openConfiguration()
-                        configuration.appleEvent = RevealEvent.openDocuments(urls: group.urls, line: group.line)
+                        configuration.appleEvent = RevealEvent.openDocuments(urls: group.urls, line: group.line, background: background)
                         if let opener = Self.opener {
                             try await opener.call(group.urls, app, configuration)
                         } else {
