@@ -650,6 +650,39 @@
     if (lastSyncedLine) scrollToLine(lastSyncedLine.line, lastSyncedLine.atEnd);
   }
 
+  // iOS Dynamic Type (mars-dawn#652): scales the body text, which every other size follows in
+  // `em`. Not a number or not positive means the default; capped at 2. The page isn't reloaded and
+  // the same source line stays at the top, without a scroll message, so the outline doesn't move.
+  function setTextScale(value) {
+    const scale = Number.isFinite(value) && value > 0 ? Math.min(value, 2) : 1;
+    const root = document.documentElement;
+    const inlineScale = scale === 1 ? "" : String(scale);
+    const largeText = scale >= 1.5;
+    if (root.style.getPropertyValue("--text-scale") === inlineScale
+        && root.hasAttribute("data-large-text") === largeText) return scale;
+
+    invalidateAnchors();
+    const position = lastSyncedLine ? null : {
+      line: lineForTop(window.scrollY),
+      atEnd: window.scrollY >= maxScroll() - 1,
+    };
+
+    if (scale === 1) root.style.removeProperty("--text-scale");
+    else root.style.setProperty("--text-scale", inlineScale);
+    root.toggleAttribute("data-large-text", largeText);
+
+    invalidateAnchors();
+    if (position) {
+      const target = position.atEnd ? maxScroll() : Math.min(maxScroll(), topForLine(position.line));
+      suppressScrollUntil = performance.now() + 120;
+      window.scrollTo(0, target);
+    } else {
+      reapplySync();
+    }
+    scheduleTallCheck();
+    return scale;
+  }
+
   window.addEventListener("scroll", () => {
     if (performance.now() < suppressScrollUntil) return;
     if (toggleFrame && lastSyncedLine) return;  // a toggle's clamp: its frame re-syncs (see scheduleResync)
@@ -1527,5 +1560,5 @@
     }
   }
 
-  window.MarsDawn = { update, setChangeMarks, setLabels, setTheme, setThemes, scrollToLine, setAssetState, setRemoteImageState, restoreScroll, idle, collapseAll, expandAll };
+  window.MarsDawn = { update, setChangeMarks, setLabels, setTheme, setThemes, scrollToLine, setTextScale, setAssetState, setRemoteImageState, restoreScroll, idle, collapseAll, expandAll };
 })();
