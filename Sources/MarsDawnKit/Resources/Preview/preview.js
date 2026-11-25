@@ -61,9 +61,11 @@
     const dark = darkQuery.matches;
     const signature = `${theme}/${dark ? "dark" : "light"}`;
     if (signature === mermaidSignature) return false;
-    // If the bundle failed to load, diagrams fall back to their source (see renderMermaid);
-    // the rest of the page still has to render.
-    if (typeof mermaid === "undefined") return false;
+    // Not loaded: no diagram has asked for it yet (loadMermaid configures it when it arrives), or
+    // the bundle failed, and diagrams fall back to their source (see renderMermaid). Either way
+    // the rest of the page still has to render. Not `typeof mermaid`: until the bundle sets that
+    // global, an element in the document with `id="mermaid"` answers to the same name.
+    if (mermaidState !== "ready") return false;
     mermaidSignature = signature;
 
     const style = getComputedStyle(document.documentElement);
@@ -271,11 +273,66 @@
   // one at a time, each preceded by a fresh task, no matter how many changed in one update.
   // Never rejects (each render's own errors already end up in the page, not thrown), matching
   // what callers here relied on `Promise.allSettled` for before.
+  let mermaidBatches = 0;
   function renderMermaidSequentially(pairs) {
+    if (!pairs.length) return Promise.resolve();
+    // Diagrams hold their space blank until they settle, not only until the bundle arrives: an
+    // undrawn diagram would otherwise flash its source between the two.
+    const root = document.documentElement;
+    mermaidBatches += 1;
+    root.classList.add("mermaid-loading");
     return pairs.reduce(
       (chain, [block, stale]) => chain.then(() => yieldToFreshTask()).then(() => renderMermaid(block, stale)).catch(() => {}),
-      Promise.resolve()
-    );
+      mermaidLoad ? loadMermaid() : afterFirstPaint().then(loadMermaid)
+    ).then(() => {
+      mermaidBatches -= 1;
+      if (!mermaidBatches) root.classList.remove("mermaid-loading");
+    });
+  }
+
+  // The bundle is most of what a page costs (kit #265): about 80 ms and 38 MB per window, so only
+  // a document with a diagram pays for it, the first time it needs one. A `<script defer>` would
+  // not help: the navigation still waits for it. Never rejects, and loads once: after a failure
+  // `mermaid.render` throws inside renderMermaid's `try`, and the diagram keeps its source and
+  // shows the error, as when the page itself failed to load the bundle.
+  let mermaidState = "unloaded";  // then "loading", then "ready" or "failed"
+  let mermaidLoad = null;
+  // Parsing the bundle can get in ahead of the first frame, so a new window would stay empty that
+  // much longer (mars-dawn#570). It starts after two frames. A hidden page has no frames, so it
+  // goes on at the limit.
+  function afterFirstPaint() {
+    return new Promise((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(resolve));
+      setTimeout(resolve, 150);
+    });
+  }
+
+  function loadMermaid() {
+    if (mermaidLoad) return mermaidLoad;
+    mermaidState = "loading";
+    mermaidLoad = new Promise((resolve) => {
+      const script = document.createElement("script");
+      script.src = "vendor/mermaid.min.js";
+      // A bundle that loaded but set nothing usable is a failure too.
+      script.onload = () => {
+        mermaidState = typeof window.mermaid?.render === "function" ? "ready" : "failed";
+        resolve();
+      };
+      script.onerror = () => {
+        mermaidState = "failed";
+        resolve();
+      };
+      document.head.appendChild(script);
+    }).then(() => {
+      // Inside this promise a throw would reject it and skip the first diagram, which would never
+      // settle. Unconfigured, every diagram still reaches renderMermaid and ends one way or another.
+      try {
+        configureMermaid();
+      } catch {
+        mermaidState = "failed";
+      }
+    });
+    return mermaidLoad;
   }
 
   // Sequence diagram `rect rgb(...)` bands (redtear1115/mars-dawn-kit#119). The label halo
@@ -519,6 +576,7 @@
     if (toggleFrame) return;
     toggleFrame = requestAnimationFrame(() => {
       toggleFrame = 0;
+      applyChangeMarks();  // what shows a mark changed with the group
       if (lastSyncedLine) suppressScrollUntil = performance.now() + 120;
       reapplySync();
     });
@@ -590,6 +648,41 @@
 
   function reapplySync() {
     if (lastSyncedLine) scrollToLine(lastSyncedLine.line, lastSyncedLine.atEnd);
+  }
+
+  // iOS Dynamic Type (mars-dawn#652): scales the body text, which every other size follows in
+  // `em`. Not a number or not positive means the default; capped at 2. The page isn't reloaded and
+  // the same source line stays at the top, without a scroll message, so the outline doesn't move.
+  function setTextScale(value) {
+    const scale = Number.isFinite(value) && value > 0 ? Math.min(value, 2) : 1;
+    const root = document.documentElement;
+    const inlineScale = scale === 1 ? "" : String(scale);
+    const largeText = scale >= 1.5;
+    if (root.style.getPropertyValue("--text-scale") === inlineScale
+        && root.hasAttribute("data-large-text") === largeText) return scale;
+
+    invalidateAnchors();
+    // A page that doesn't scroll is at its top, not its end: pinning it to the bottom would move
+    // a short document the reader hasn't scrolled as soon as it outgrows the window.
+    const position = lastSyncedLine ? null : {
+      line: lineForTop(window.scrollY),
+      atEnd: maxScroll() > 0 && window.scrollY >= maxScroll() - 1,
+    };
+
+    if (scale === 1) root.style.removeProperty("--text-scale");
+    else root.style.setProperty("--text-scale", inlineScale);
+    root.toggleAttribute("data-large-text", largeText);
+
+    invalidateAnchors();
+    if (position) {
+      const target = position.atEnd ? maxScroll() : Math.min(maxScroll(), topForLine(position.line));
+      suppressScrollUntil = performance.now() + 120;
+      window.scrollTo(0, target);
+    } else {
+      reapplySync();
+    }
+    scheduleTallCheck();
+    return scale;
   }
 
   window.addEventListener("scroll", () => {
@@ -763,6 +856,16 @@
         button.textContent = remoteState.buttonLabel;
         button.addEventListener("click", () => {
           try { window.webkit.messageHandlers.loadRemoteImages.postMessage({ scrollY: window.scrollY }); } catch (_) {}
+        });
+        bar.append(button);
+      }
+      if (remoteState.downloadButtonLabel) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "remote-images-download";
+        button.textContent = remoteState.downloadButtonLabel;
+        button.addEventListener("click", () => {
+          try { window.webkit.messageHandlers.downloadRemoteImages.postMessage({}); } catch (_) {}
         });
         bar.append(button);
       }
@@ -1120,6 +1223,172 @@
     blocks.forEach((el, i) => { el._mdKey = blockKey(pristine[i]); });
   }
 
+  // Change marks (mars-dawn#358): which blocks differ from a baseline the app holds. The app sends
+  // marks for the text on screen, so the page compares nothing. It keeps the last set, because an
+  // `update()` reuses blocks and moves their lines, and marks are only ever a class and an attribute
+  // on elements already there: nothing is inserted, no `data-line` changes, and a mark that isn't
+  // a whole number of lines or a known kind is dropped.
+  const changeKinds = new Set(["added", "changed", "removed"]);
+  const changeClasses = ["md-change", "md-change-added", "md-change-changed", "md-change-removed", "md-change-current"];
+  let changeMarks = [];
+  let currentChangeLine = null;
+
+  function setChangeMarks(options) {
+    const { marks, currentLine } = options ?? {};
+    currentChangeLine = Number.isInteger(currentLine) && currentLine > 0 ? currentLine : null;
+    changeMarks = (Array.isArray(marks) ? marks : []).filter((mark) =>
+      Number.isInteger(mark?.firstLine) && mark.firstLine > 0 &&
+      Number.isInteger(mark.lineCount) && mark.lineCount > 0 &&
+      changeKinds.has(mark.kind));
+    applyChangeMarks();
+  }
+
+  // The index in sorted `lines` of the first value not below `line`.
+  function firstLineIndex(lines, line) {
+    let low = 0;
+    let high = lines.length;
+    while (low < high) {
+      const middle = (low + high) >> 1;
+      if (lines[middle] < line) low = middle + 1;
+      else high = middle;
+    }
+    return low;
+  }
+
+  // How many elements get their mark before the page is made to take them. See below.
+  const changeMarkBatch = 1024;
+
+  function applyChangeMarks() {
+    const root = content();
+    const wanted = changeMarks.length ? placeChangeMarks(root) : new Map();
+    const fresh = [];
+    for (const el of root.querySelectorAll(".md-change")) {
+      if (!wanted.has(el)) clearChangeMark(el);
+    }
+    for (const [el, mark] of wanted) {
+      if (el.classList.contains("md-change")) showChangeMark(el, mark);
+      else fresh.push([el, mark]);
+    }
+    // A marked element is positioned, so WebKit gives it a layer, and to place a layer it searches
+    // the siblings after the element for the next one. Thousands marked at once, in page order,
+    // find none and search to the end: 8 s for 40,000 paragraphs. Last ones first, a batch at a
+    // time, it stops at the batch before: 0.4 s. A rewritten document marks every block.
+    for (let end = fresh.length; end > 0; end -= changeMarkBatch) {
+      const start = Math.max(end - changeMarkBatch, 0);
+      for (let at = start; at < end; at++) showChangeMark(...fresh[at]);
+      if (start > 0) getComputedStyle(fresh[start][0]).position;
+    }
+  }
+
+  function clearChangeMark(el) {
+    el.classList.remove(...changeClasses);
+    el.removeAttribute("data-change-lines");
+    if (!el.classList.length) el.removeAttribute("class");
+  }
+
+  // Only what differs is written, so a mark that stays costs the page nothing.
+  function showChangeMark(el, { changes, held }) {
+    const on = new Set(["md-change", ...changes.map((change) => `md-change-${change.kind}`)]);
+    if (held.includes(currentChangeLine)) on.add("md-change-current");
+    for (const name of changeClasses) el.classList.toggle(name, on.has(name));
+    const lines = held.join(" ");
+    if (el.getAttribute("data-change-lines") !== lines) el.setAttribute("data-change-lines", lines);
+  }
+
+  // Element -> its marks and lines, in page order.
+  function placeChangeMarks(root) {
+    const byLine = new Map();
+    const order = new Map();  // page order, for what's kept and what isn't
+    for (const el of root.querySelectorAll("[data-line]")) {
+      order.set(el, order.size);
+      const line = Number(el.getAttribute("data-line"));
+      if (!Number.isInteger(line)) continue;  // an author's own attribute, in raw HTML
+      if (!byLine.has(line)) byLine.set(line, []);
+      byLine.get(line).push(el);
+    }
+    const lines = [...byLine.keys()].sort((a, b) => a - b);
+    if (!lines.length) return new Map();
+
+    // Element -> the marks on it. `data-line` only says where a block starts, so a block runs up
+    // to the next one.
+    const marked = new Map();
+    const mark = (el, change) => {
+      const target = shownChangeTarget(el);
+      if (!marked.has(target)) marked.set(target, []);
+      marked.get(target).push(change);
+    };
+    for (const change of changeMarks) {
+      const index = firstLineIndex(lines, change.firstLine);
+      if (change.kind === "removed") {
+        // A deletion has no lines of its own: the block after it, or the last one at the end.
+        const line = lines[Math.min(index, lines.length - 1)];
+        for (const el of byLine.get(line)) mark(el, change);
+        continue;
+      }
+      // A line with no element of its own is in the block before it. Before the first block,
+      // the first block is the nearest thing there is.
+      const start = lines[index] === change.firstLine ? index : Math.max(index - 1, 0);
+      const last = change.firstLine + change.lineCount - 1;
+      for (let at = start; at < lines.length && (at === start || lines[at] <= last); at++) {
+        for (const el of byLine.get(lines[at])) mark(el, change);
+      }
+    }
+
+    // Only the innermost: a changed list item, never the whole list.
+    const firstLines = new Map([...marked].map(([el, changes]) => [el, new Set(changes.map((c) => c.firstLine))]));
+    const markedAncestors = (el) => {
+      const found = [];
+      for (let parent = el.parentElement; parent && parent !== root; parent = parent.parentElement) {
+        if (marked.has(parent)) found.push(parent);
+      }
+      return found;
+    };
+    const outer = new Set([...marked.keys()].flatMap(markedAncestors));
+
+    // A mark only an outer element held moves to the first thing kept inside it, so every mark can
+    // still be found on the page. A line something inside already holds stays where it is: a list
+    // starts on its first item's line, and that line is no business of the second item.
+    const inside = new Map();
+    const kept = [...marked.keys()].filter((el) => !outer.has(el));
+    kept.sort((a, b) => (order.get(a) ?? order.size) - (order.get(b) ?? order.size));
+    for (const el of kept) {
+      for (const parent of markedAncestors(el)) {
+        if (!inside.has(parent)) inside.set(parent, { first: el, lines: new Set() });
+        for (const line of firstLines.get(el)) inside.get(parent).lines.add(line);
+      }
+    }
+    // Innermost first, so a line two nested outer elements share moves once.
+    for (const el of [...outer].sort((a, b) => (order.get(b) ?? -1) - (order.get(a) ?? -1))) {
+      const { first, lines: held } = inside.get(el);
+      const moved = marked.get(el).filter((change) => !held.has(change.firstLine));
+      marked.get(first).push(...moved);  // the line and its kind: a deletion keeps its triangle
+      for (const { firstLine } of moved) {
+        firstLines.get(first).add(firstLine);
+        for (const parent of markedAncestors(first)) inside.get(parent).lines.add(firstLine);
+      }
+    }
+    for (const el of outer) marked.delete(el);
+
+    return new Map(kept.map((el) => [el, {
+      changes: marked.get(el),
+      held: [...firstLines.get(el)].sort((a, b) => a - b),
+    }]));
+  }
+
+  // What shows a change in `el`: `el`, unless a collapsed `<details>` hides it. Then it's the
+  // outermost one, or the block around it if it has no line of its own (raw HTML). Never opened.
+  function shownChangeTarget(el) {
+    let closed = el.closest("details:not([open])");
+    if (!closed) return el;
+    for (let next = closed.parentElement?.closest("details:not([open])"); next; ) {
+      closed = next;
+      next = closed.parentElement?.closest("details:not([open])");
+    }
+    if (closed.hasAttribute("data-line")) return closed;
+    const block = closed.parentElement?.closest("[data-line]");
+    return block && content().contains(block) ? block : closed;
+  }
+
   function update(html, lines) {
     if (lines) lineCount = lines;
     invalidateAnchors();
@@ -1192,6 +1461,7 @@
     // Synchronous, and only over elements the pool didn't reuse: math whose source hasn't
     // changed keeps the KaTeX output it already has.
     renderMath();
+    applyChangeMarks();
     reapplySync();
     // On top of what's still going: a reused diagram isn't in `pending`, but the update that brought
     // it may not have drawn it yet.
@@ -1245,10 +1515,6 @@
     refreshTheme();
   });
 
-  document.addEventListener("DOMContentLoaded", () => {
-    configureMermaid();
-  });
-
   // Resolves once the diagrams from every update so far have rendered (or failed).
   let pendingWork = Promise.resolve();
   async function idle() {
@@ -1298,5 +1564,5 @@
     }
   }
 
-  window.MarsDawn = { update, setLabels, setTheme, setThemes, scrollToLine, setAssetState, setRemoteImageState, restoreScroll, idle, collapseAll, expandAll };
+  window.MarsDawn = { update, setChangeMarks, setLabels, setTheme, setThemes, scrollToLine, setTextScale, setAssetState, setRemoteImageState, restoreScroll, idle, collapseAll, expandAll };
 })();

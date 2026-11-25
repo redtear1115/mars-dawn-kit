@@ -15,7 +15,8 @@ struct DetailsPageTests {
     /// The windows holding this test's pages. A web view with no window may never run an
     /// animation frame, and the page's scroll sync and toggle handling wait for one, as they do
     /// in the app and in Quick Look, where the view is always in a window.
-    fileprivate static var hosts: [NSWindow] = []
+    /// Track windows per test so parallel suites sharing this harness cannot close each other's pages.
+    fileprivate static var hosts: [(testID: Test.ID?, window: NSWindow)] = []
 
     /// Set `DETAILS_RAF_STANDIN=1` on a machine whose screen is locked: the page gets a
     /// `setTimeout` in place of `requestAnimationFrame`, which a hidden page never runs. That
@@ -24,8 +25,13 @@ struct DetailsPageTests {
     static let standIn = ProcessInfo.processInfo.environment["DETAILS_RAF_STANDIN"] == "1"
 
     static func closeHosts() {
-        for window in hosts { window.contentView = nil; window.close() }
-        hosts = []
+        let testID = Test.current?.id
+        hosts.removeAll { host in
+            guard host.testID == testID else { return false }
+            host.window.contentView = nil
+            host.window.close()
+            return true
+        }
     }
 
     static func loadedPreview(height: CGFloat = 800) async throws -> PreviewWKWebView {
@@ -55,7 +61,7 @@ struct DetailsPageTests {
         window.ignoresMouseEvents = true
         window.contentView = webView
         window.orderFrontRegardless()
-        hosts.append(window)
+        hosts.append((testID: Test.current?.id, window: window))
         webView.applyContentRuleList(try await PreviewContentRules.ruleList(allowRemoteImages: false))
         #expect(webView.load(URLRequest(url: PreviewSchemeHandler.pageURL(theme: .dawn))) != nil)
         let deadline = ContinuousClock.now + .seconds(20)

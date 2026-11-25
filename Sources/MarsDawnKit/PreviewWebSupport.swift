@@ -285,6 +285,36 @@ public enum PreviewWebView {
         String(localized: "Not rendered: too many diagrams in this document. Source shown.", bundle: .module)
     }
 
+    /// One run of source lines that differs from the app's baseline (mars-dawn#358). `firstLine` is
+    /// 1-based, in the text on screen; a deletion at the end of a document uses the last line.
+    public struct ChangeMark: Equatable, Sendable {
+        public enum Kind: String, Sendable { case added, changed, removed }
+
+        public let firstLine: Int
+        public let lineCount: Int
+        public let kind: Kind
+
+        public init(firstLine: Int, lineCount: Int, kind: Kind) {
+            self.firstLine = firstLine
+            self.lineCount = lineCount
+            self.kind = kind
+        }
+    }
+
+    /// JavaScript that replaces the page's change marks. An empty list clears them. Marks must be
+    /// for the text on screen: the page keeps them through `update()`, and compares nothing.
+    /// `currentLine` is the `firstLine` of the mark the reader is on, if any.
+    public nonisolated static func changeMarksScript(_ marks: [ChangeMark], currentLine: Int? = nil) -> String {
+        let payload: [String: Any] = [
+            "marks": marks.map {
+                ["firstLine": $0.firstLine, "lineCount": $0.lineCount, "kind": $0.kind.rawValue] as [String: Any]
+            },
+            "currentLine": currentLine.map { $0 as Any } ?? NSNull(),
+        ]
+        let data = try! JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys])
+        return "window.MarsDawn?.setChangeMarks?.(\(String(decoding: data, as: UTF8.self)));"
+    }
+
     // MARK: Viewer folding (mars-dawn#300)
     //
     // The reader folds the page, never the file: the page posts nothing about it, keeps no
@@ -340,6 +370,12 @@ public enum PreviewWebView {
         return "window.MarsDawn && MarsDawn.scrollToLine(\(safeLine), \(atEnd));"
     }
 
+    /// JavaScript for iOS Dynamic Type. Mac, Quick Look and export never call it.
+    public nonisolated static func textScaleScript(_ scale: Double) -> String {
+        let safeScale = scale.isFinite && scale > 0 ? min(scale, 2) : 1
+        return "window.MarsDawn && MarsDawn.setTextScale(\(safeScale));"
+    }
+
     /// JavaScript that switches the page to another theme, re-rendering diagrams.
     public nonisolated static func themeScript(_ theme: PreviewTheme) -> String {
         "window.MarsDawn && MarsDawn.setTheme(\(jsonStringLiteral(theme.id)));"
@@ -353,6 +389,9 @@ public enum PreviewWebView {
 
     /// Message handler the page calls when the user asks to load remote images.
     public nonisolated static let loadRemoteImagesHandlerName = "loadRemoteImages"
+
+    /// Message handler the page calls when the user asks to download remote images.
+    public nonisolated static let downloadRemoteImagesHandlerName = "downloadRemoteImages"
 
     /// Label for a blocked remote image's placeholder, e.g. "Web image: example.com". Exported
     /// and printed pages have no window to ask for this, so they use the kit's own localization
@@ -393,20 +432,25 @@ public enum PreviewWebView {
     ///
     /// `insecureLabel` is for `http` images, which no setting loads; it defaults to the kit's own
     /// localized wording, so a caller that has no opinion gets the right text.
+    /// A non-empty `downloadButtonLabel` adds an optional download action beside the load button.
     public nonisolated static func remoteImagesScript(
         blocked: Bool,
         message: String,
         buttonLabel: String,
         placeholderLabel: String,
-        insecureLabel: String? = nil
+        insecureLabel: String? = nil,
+        downloadButtonLabel: String? = nil
     ) -> String {
-        let state: [String: Any] = [
+        var state: [String: Any] = [
             "blocked": blocked,
             "message": message,
             "buttonLabel": buttonLabel,
             "placeholderLabel": placeholderLabel,
             "insecureLabel": insecureLabel ?? insecureImagePlaceholderLabel,
         ]
+        if let downloadButtonLabel, !downloadButtonLabel.isEmpty {
+            state["downloadButtonLabel"] = downloadButtonLabel
+        }
         let data = try! JSONSerialization.data(withJSONObject: state, options: [.sortedKeys])
         return "window.MarsDawn && MarsDawn.setRemoteImageState(\(String(decoding: data, as: UTF8.self)));"
     }
@@ -491,10 +535,7 @@ public enum PreviewContentRules {
         let identifier = identifier(allowRemoteImages: allowRemoteImages)
         let rules = encodedRules(allowRemoteImages: allowRemoteImages)
         let task = Task { @MainActor () throws -> WKContentRuleList in
-            guard let list = try await WKContentRuleListStore.default()
-                .compileContentRuleList(forIdentifier: identifier, encodedContentRuleList: rules)
-            else { throw CompileError.noList }
-            return list
+            try await ContentRuleCompile.list(identifier: identifier, rules: rules)
         }
         compiled[allowRemoteImages] = task
         do {

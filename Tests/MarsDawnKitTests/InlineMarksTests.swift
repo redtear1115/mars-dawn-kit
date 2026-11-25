@@ -357,7 +357,7 @@ struct InlineMarksTests {
         #expect(inline("==x=&bne;") == "==x==\u{20E5}")
     }
 
-    /// The #162 fixture, as a whole document: a PDF corpus fixture would need a per-OS-build
+    /// The #162 fixture, as a whole document: a PDF corpus fixture would need a per-macOS-major-version
     /// golden, which only the record workflow can write, and the rendered HTML is what matters.
     @Test func theEntityDelimitersFixtureRendersLiteral() {
         let markdown = "# Entity delimiters\n\nEDONE =&bne;x=&bne; and ==marked== EDTWO\n\n"

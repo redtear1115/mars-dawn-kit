@@ -80,3 +80,15 @@ body {
   user-select: none;
   unicode-bidi: isolate;
 }
+
+/* Touch devices only (mars-dawn#533), so the Mac and Quick Look keep their layout: rows and
+   Show More reach 44 pt, and a phone's narrow column keeps its width for deep values. */
+@media (pointer: coarse) {
+  .data-toggle { display: block; width: 100%; min-height: 44px; padding-block: calc((44px - 1.6em) / 2); -webkit-tap-highlight-color: transparent; }
+  .data-more { min-height: 44px; padding-inline: 14px; }
+}
+@media (pointer: coarse) and (max-width: 480px) {
+  .data-body { padding: 12px 12px 80px; }
+  .data-panel { padding: 8px 10px; }
+  .data-children { padding-left: 0.8em; }
+}
