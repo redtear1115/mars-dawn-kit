@@ -519,5 +519,22 @@ struct PreviewMermaidErrorTests {
     private func blockCount(in webView: WKWebView) async throws -> Int {
         try await value(##"document.querySelectorAll("#content .mermaid-block").length"##, in: webView) as? Int ?? -1
     }
+
+    /// A second update reuses the diagrams the first is still drawing, so it has none of its own to
+    /// wait for: `idle()` still waits for them (#289).
+    @Test func idleWaitsForDiagramsReusedByAnotherUpdate() async throws {
+        let webView = try await loadedPreview()
+        func update(_ words: String) -> String {
+            PreviewWebView.updateScript(html: MarkdownRenderer.render(document(valid, valid) + "\n\n\(words)\n"), lineCount: 40)
+        }
+        let drawn = try await webView.callAsyncJavaScript("""
+        \(update("First."));
+        await new Promise((next) => setTimeout(next, 0));
+        \(update("Second."));
+        await MarsDawn.idle();
+        return document.querySelectorAll(".mermaid-block.rendered svg").length;
+        """, contentWorld: .page)
+        #expect(drawn as? Int == 2)
+    }
 }
 #endif
