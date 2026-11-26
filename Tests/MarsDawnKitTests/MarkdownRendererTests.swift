@@ -152,6 +152,18 @@ struct MarkdownRendererTests {
         #expect(html.contains(#"<input type="checkbox" disabled>"#))
     }
 
+    @Test func orderedTaskListsKeepTheirClassAndStart() {
+        let html = MarkdownRenderer.render("1. [ ] ordered task\n2. [x] ordered done\n")
+        #expect(html.contains(#"<ol class="contains-task-list" data-line="1">"#))
+
+        let startingAtThree = MarkdownRenderer.render("3. plain\n4. [ ] task\n")
+        #expect(startingAtThree.contains(#"<ol class="contains-task-list" start="3" data-line="1">"#))
+
+        let plain = MarkdownRenderer.render("1. one\n2. two\n")
+        #expect(plain.contains(#"<ol data-line="1">"#))
+        #expect(!plain.contains("contains-task-list"))
+    }
+
     @Test func tablesRenderWithAlignment() {
         let html = MarkdownRenderer.render("| a | b |\n|:--|--:|\n| 1 | 2 |\n")
         #expect(html.contains(#"<th style="text-align:left">a</th>"#))
