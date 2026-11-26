@@ -6,7 +6,8 @@ import Foundation
 /// privacy stay as they are. A tag on its own line becomes a link to the canonical https URL
 /// of what it names, with a short label. A tag this does not know, one whose argument is not
 /// valid for its service, and any URL that is not https (or not on the service's own host)
-/// stays as the text the author wrote.
+/// renders as an ordinary paragraph, so smart punctuation still applies (for example,
+/// straight quotes can become curly quotes).
 ///
 /// Every character of the output is checked or escaped: ids come from a strict character set,
 /// URLs must be printable ASCII without markup characters, and `escapeAttribute` and

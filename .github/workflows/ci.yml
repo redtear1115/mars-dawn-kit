@@ -31,7 +31,12 @@ jobs:
     # measurements, which run in both the debug and release passes; 50 covers both.
     # 70, not 50: the JSON/YAML tree page (#128) added WebKit suites that run in both passes, and
     # macos-15 hit 50 twice in the release pass with every test passing (run 39231688388).
-    timeout-minutes: 70
+    # 90, not 70: macos-15 succeeded in 52 to 68 minutes across the last 12 successful runs.
+    # Run 42047469590 (kit#263) reached 70 in its last PDF corpus step with every step until then
+    # passing. That step had run 3.2 minutes and normally takes 2 to 3 minutes, so the job was slow,
+    # not hung. Splitting the PDF corpus into its own job would not help: both corpus steps
+    # together take about 6 minutes of macos-15's time, and a new job has to build again.
+    timeout-minutes: 90
     permissions:
       contents: read
     env:
@@ -201,11 +206,16 @@ jobs:
           echo "The tag and the binary agree."
 
   pdf-goldens:
-    # Tier 4 of the PDF corpus (redtear1115/mars-dawn#2): per-OS-build goldens. Its own job, so a
-    # runner-image update shows up as a distinct, clearly labelled failure instead of failing
-    # inside the `test` matrix, whose PDFCorpus run skips the goldens (they need
-    # MARSDAWN_PDF_GOLDENS). Goldens are recorded on macOS 26 only; see the "Record PDF goldens"
-    # workflow and the README's "The PDF export golden corpus" for the drift policy.
+    # Tier 4 of the PDF corpus (redtear1115/mars-dawn#2): per-macOS-major-version goldens. Its own job, so a
+    # drift shows up as its own failure instead of failing inside the `test` matrix, whose PDFCorpus
+    # run skips the goldens (they need MARSDAWN_PDF_GOLDENS). A runner-image update with no difference
+    # stays green; one with a difference fails as a golden mismatch naming both builds. This job
+    # compares Goldens/macos-26/ only; see the "Record PDF goldens" workflow and the README's "The PDF
+    # export golden corpus" for the drift policy.
+    # GitHub has no macos-27 runner, so a change that breaks macOS 27's goldens doesn't turn CI red.
+    # On a Mac running 27, record with
+    # MARSDAWN_PDF_GOLDENS=1 MARSDAWN_UPDATE_GOLDENS=1 swift test --no-parallel --filter PDFCorpus/golden
+    # and compare with the same command without MARSDAWN_UPDATE_GOLDENS.
     runs-on: macos-26
     timeout-minutes: 30
     permissions:

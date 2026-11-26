@@ -7,6 +7,7 @@
   --heading-weight: 650;
   --radius: 8px;
   --body-size: 15px;
+  --text-scale: 1;
   --line-height: 1.65;
   --code-chip: var(--surface);
   --code-chip-edge: var(--border);
@@ -20,13 +21,17 @@
   }
 }
 
-html { background: var(--bg); }
+html {
+  background: var(--bg);
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
 
 body {
   margin: 0;
   background: var(--bg);
   color: var(--fg);
-  font: var(--body-size)/var(--line-height) var(--font-body);
+  font: calc(var(--body-size) * var(--text-scale))/var(--line-height) var(--font-body);
   -webkit-font-smoothing: antialiased;
   transition: background-color 0.2s ease, color 0.2s ease;
 }
@@ -190,6 +195,67 @@ details.front-matter td { color: var(--fg); }
   overflow-wrap: anywhere;
 }
 @media print { .front-matter { display: none !important; } }
+
+/* Change marks (mars-dawn#358, styles from #605). Only out-of-flow pseudo-elements, so a mark never
+   moves a block and scroll sync stays put. */
+:root {
+  --md-change-added: #008932;
+  --md-change-changed: #1E6EF4;
+  --md-change-removed: #E9152D;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --md-change-added: #4AD968;
+    --md-change-changed: #5CB8FF;
+    --md-change-removed: #FF6165;
+  }
+}
+.md-change { position: relative; --md-change-color: var(--md-change-changed); --md-change-w: 3px; }
+.md-change-added { --md-change-color: var(--md-change-added); }
+.md-change-removed { --md-change-color: var(--md-change-removed); }
+.md-change-current { --md-change-w: 5px; background-color: color-mix(in srgb, var(--md-change-color) 10%, transparent); }
+
+/* h2's ::before and h1's ::after belong to themes (ThemeStyles.json), so h2 uses ::after. */
+.md-change:not(h2)::before, h2.md-change::after {
+  content: "" / "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -14px;
+  width: var(--md-change-w);
+  background: var(--md-change-color);
+  border-radius: 1.5px;
+  pointer-events: none;
+}
+/* changed: dashed, so it isn't told from added by colour alone. */
+.md-change-changed:not(h2)::before, h2.md-change-changed::after {
+  background: repeating-linear-gradient(to bottom, var(--md-change-color) 0 5px, transparent 5px 8px);
+  border-radius: 0;
+}
+/* removed: a triangle at the top edge, pointing at the place the text left. */
+.md-change-removed:not(h2)::before, h2.md-change-removed::after {
+  top: -6px;
+  bottom: auto;
+  width: 9px;
+  height: 12px;
+  border-radius: 0;
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
+}
+/* List items: outside the bullet. */
+li.md-change::before { left: calc(-2em + 2px); }
+/* Own overflow clips anything outside the box: inside its left edge. */
+pre.md-change::before, .math-block.md-change::before { left: 0; }
+pre.md-change-removed::before, .math-block.md-change-removed::before { top: 0; }
+/* Rows: on the first cell. A row's own pseudo-element would be clipped by the table's overflow. */
+tr.md-change { position: static; }
+tr.md-change::before { content: none; }
+tr.md-change > :first-child { position: relative; }
+tr.md-change > :first-child::before {
+  content: "" / ""; position: absolute; top: 0; bottom: 0; left: 0; width: var(--md-change-w);
+  background: var(--md-change-color); pointer-events: none;
+}
+tr.md-change-changed > :first-child::before { background: repeating-linear-gradient(to bottom, var(--md-change-color) 0 5px, transparent 5px 8px); }
+tr.md-change-removed > :first-child::before { bottom: auto; width: 9px; height: 12px; clip-path: polygon(0 0, 100% 50%, 0 100%); }
 pre code {
   display: block;
   background: transparent;
@@ -237,6 +303,8 @@ img { max-width: 100%; }
   color: var(--muted);
   font-size: 0.85em;
 }
+/* Only with the second button: wrapping one button pushes it under its message in a narrow pane. */
+.remote-images-bar:has(.remote-images-download) { flex-wrap: wrap; }
 .remote-images-bar[hidden] { display: none; }
 .remote-images-bar button {
   font: inherit;
@@ -246,6 +314,10 @@ img { max-width: 100%; }
   border-radius: calc(var(--radius) * 0.6);
   padding: 3px 10px;
   cursor: pointer;
+}
+.remote-images-bar button.remote-images-download {
+  color: var(--accent);
+  background: var(--bg);
 }
 .image-placeholder button {
   font: inherit;
@@ -274,6 +346,7 @@ img { max-width: 100%; }
 .mermaid-block { position: relative; text-align: center; }
 .mermaid-block .mermaid-source { text-align: left; }
 .mermaid-block.rendered .mermaid-source { display: none; }
+.mermaid-loading .mermaid-block:not(.rendered):not(.skipped):not(.error) .mermaid-source { visibility: hidden; }
 .mermaid-output svg { max-width: 100%; height: auto; }
 .mermaid-block.stale .mermaid-output { opacity: 0.55; transition: opacity 0.15s; }
 .mermaid-error {
@@ -360,10 +433,139 @@ img { max-width: 100%; }
    selector-list checks that this splice must keep passing. */
 /* MARSDAWN-GENERATED-THEME-RULES */
 
+/* Viewer folding (mars-dawn#300). The page only: the file is never changed, and print shows
+   everything (the rules that hide are screen-only, and print hides the controls below).
+   Controls are empty buttons: the visible text is generated content, so no label reaches
+   copy, find or the text the app reads. While a block is expanded its control is absolutely
+   positioned, so it changes no layout; it shows on hover or keyboard focus. */
+@media screen {
+  .md-fold-hidden { display: none !important; }
+  .md-block-collapsed > :not(.md-fold-block) { display: none !important; }
+  .markdown-body > :is(h1, h2, h3, h4, h5, h6), pre:has(> .md-fold-block),
+  p:has(> .md-fold-block) { position: relative; }
+}
+.md-fold-toggle, .md-fold-block {
+  -webkit-appearance: none;
+  appearance: none;
+  -webkit-user-select: none;
+  user-select: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+  opacity: 0;
+}
+.md-fold-toggle {
+  position: absolute;
+  left: -1.1em;
+  top: 0;
+  width: 1em;
+  height: 1.25em;
+  line-height: 1.25em;
+  text-align: center;
+}
+.md-fold-toggle::before { content: "▾"; font-size: 0.6em; }
+.md-fold-toggle[aria-expanded="false"]::before { content: "▸"; }
+.md-fold-block {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 1;
+  padding: 0 6px;
+  font-family: var(--font-body);
+  font-size: 12px;
+  line-height: 20px;
+}
+.md-fold-block::before { content: "▾"; }
+.md-block-collapsed > .md-fold-block {
+  position: static;
+  display: block;
+  width: 100%;
+  padding: 0;
+  text-align: left;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.md-block-collapsed > .md-fold-block::before { content: "▸ " attr(data-summary); }
+:hover > .md-fold-toggle, :hover > .md-fold-block, .md-fold-toggle:focus-visible, .md-fold-block:focus-visible,
+.md-fold-toggle[aria-expanded="false"], .md-block-collapsed > .md-fold-block { opacity: 1; }
+@media (prefers-reduced-motion: no-preference) {
+  .md-fold-toggle, .md-fold-block { transition: opacity 0.15s ease; }
+}
+/* Touch has no hover: keep folding discoverable and meet the HIG's 44 pt targets. What counts is
+   where a tap lands, not a box's size: nothing here may reach past the page's left edge or be
+   clipped by a scrolling `pre`. */
+@media screen and (pointer: coarse) {
+  /* Room in the margin for a heading arrow's 44 px target (an h1's arrow ends 0.1em before the
+     text, so 47 px of margin is needed). */
+  .markdown-body { padding-left: 50px; }
+  /* Large text (mars-dawn#652) keeps its 16 px margins, so a heading makes room for its own arrow
+     instead: the arrow sits in the heading's left padding, still ending 0.1em before the text, and
+     its 44 px target starts inside the page at every size (16 + 32 - 0.1em - 44 >= 0 while
+     1.1em <= 32 px, and 16 + 1em - 44 >= 0 above that). */
+  html[data-large-text] .markdown-body > :is(h1, h2, h3, h4, h5, h6) { padding-left: max(1.1em, 32px); }
+  html[data-large-text] .md-fold-toggle { left: calc(max(1.1em, 32px) - 1.1em); }
+  .md-fold-toggle, .md-fold-block {
+    opacity: 0.6;
+    -webkit-tap-highlight-color: transparent;
+  }
+  /* A heading's arrow grows into the margin, not over the heading's text, so a link at the start
+     of a heading still takes the tap. */
+  .md-fold-toggle::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    right: 0;
+    width: 44px;
+    height: 44px;
+    transform: translateY(-50%);
+  }
+  /* A block's control is itself the target: a pseudo-element around it would be clipped by a
+     `pre`, which scrolls. It sits in the block's top right corner, inside the block. */
+  .md-fold-block {
+    top: 0;
+    right: 0;
+    min-width: 44px;
+    height: 44px;
+    line-height: 44px;
+    padding: 0 6px;
+  }
+  .md-block-collapsed > .md-fold-block {
+    min-height: 44px;
+    height: auto;
+    line-height: 44px;
+  }
+  details > summary {
+    box-sizing: border-box;
+    min-height: 44px;
+    padding-block: max(0px, calc((44px - 1lh) / 2));
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+/* iOS Dynamic Type (mars-dawn#652): the app sets `--text-scale` on <html> (MarsDawn.setTextScale) and,
+   from 1.5x, `data-large-text`, which narrows the side margins and flattens the heading scale so
+   large text still fits a phone. Screen only: paper keeps the default layout. Mac, Quick Look and
+   export never set either, so their pages are unchanged. */
+@media screen {
+  html[data-large-text] .markdown-body { padding-inline: 16px; }
+  html[data-large-text] .markdown-body h1 { font-size: 1.5em; }
+  html[data-large-text] .markdown-body h2 { font-size: 1.3em; }
+  html[data-large-text] .markdown-body h3 { font-size: 1.15em; }
+}
+
 /* ---- Print and PDF export: light palette on white paper, paginated ----
    The page tint would stop where the content ends, so the paper stays white;
    code, tables and quotes keep their surface tones. Margins come from NSPrintInfo. */
 @media print {
+  /* Print is independent of the reader's text size (mars-dawn#652). `!important` because the
+     scale is an inline style on <html>, which a normal rule here can't override. */
+  :root { --text-scale: 1 !important; }
+  .md-change { background-color: transparent !important; }
+  .md-change::before, .md-change::after, tr.md-change > :first-child::before { display: none !important; }
   html, body { background: transparent; }
   body {
     -webkit-print-color-adjust: exact;
@@ -418,6 +620,8 @@ img { max-width: 100%; }
   a:hover { text-decoration: none; }
   .image-placeholder button { display: none; }
   .remote-images-bar { display: none !important; }
+  /* Viewer folding (mars-dawn#300): print is the file, so no control shows. */
+  .md-fold-toggle, .md-fold-block { display: none !important; }
   .mermaid-block.stale .mermaid-output { opacity: 1; }
 
   /* Collapsible blocks (redtear1115/mars-dawn#300). Paper can't be clicked, so a summary

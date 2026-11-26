@@ -1,5 +1,6 @@
 #if os(macOS)
 import AppKit
+import MarsDawnKit
 
 /// How an exported PDF is laid out on the page (mars-dawn#432).
 public enum ExportLayout: String, CaseIterable, Sendable {
@@ -12,6 +13,28 @@ public enum ExportLayout: String, CaseIterable, Sendable {
     /// column on the right of every page, a title header on page 1 and a "name · date · n / N"
     /// footer (mars-dawn#432 S3).
     case handout
+
+    /// The first front-matter `layout` value, ignoring unknown or empty values (mars-dawn#668).
+    /// Values are case-insensitive, with one matching pair of surrounding quotes removed.
+    public static func frontMatterLayout(_ markdown: String) -> ExportLayout? {
+        guard let frontMatter = FrontMatter.split(markdown).frontMatter else { return nil }
+        for line in frontMatter.lines {
+            guard let pair = FrontMatter.keyValue(in: line), pair.key == "layout" else { continue }
+            // One matching pair of surrounding quotes, as `ManualLayout.unquoted` (main-actor) does.
+            var raw = pair.value
+            if raw.count >= 2, let first = raw.first, first == raw.last, first == "\"" || first == "'" {
+                raw = String(raw.dropFirst().dropLast())
+            }
+            let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            switch value.lowercased() {
+            case "handbook": return .manual
+            case "handout": return .handout
+            case "standard", "document": return .document
+            default: return nil
+            }
+        }
+        return nil
+    }
 
     /// Page margins in points. The exporter lays the page out at the paper width minus the left
     /// and right margins, and prints with the same margins: setting only one of the two moves

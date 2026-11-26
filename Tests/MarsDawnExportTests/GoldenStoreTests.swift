@@ -12,6 +12,43 @@ struct GoldenStoreTests {
 
     static let page = [line("Title", 45, 760), line("first", 45, 700), line("second", 45, 680), line("1", 188, 375, width: 5)]
 
+    @Test func pathsAreSelectedByMajorVersion() {
+        for major in [26, 27] {
+            let url = GoldenStore.url(for: "blocks", major: major)
+            #expect(url.lastPathComponent == "blocks.txt")
+            #expect(url.deletingLastPathComponent().lastPathComponent == "macos-\(major)")
+            #expect(url.deletingLastPathComponent().deletingLastPathComponent().lastPathComponent == "Goldens")
+        }
+        #expect(GoldenStore.url(for: "blocks") == GoldenStore.url(
+            for: "blocks", major: ProcessInfo.processInfo.operatingSystemVersion.majorVersion
+        ))
+    }
+
+    @Test func recordingAndMissingFilesStayWithinTheirMajorVersion() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let content = GoldenStore.render(
+            header: GoldenHeader(osBuild: "b", webKit: "w", paper: "a4"), pages: [Self.page]
+        )
+        let recorded = GoldenStore.url(for: "blocks", major: 26, root: root)
+        try FileManager.default.createDirectory(at: recorded.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try content.write(to: recorded, atomically: true, encoding: .utf8)
+        #expect(try String(contentsOf: recorded, encoding: .utf8) == content)
+
+        // A fixture in 26 must not hide the missing recording for 27.
+        let missing = GoldenStore.url(for: "blocks", major: 27, root: root)
+        #expect(!FileManager.default.fileExists(atPath: missing.path))
+        #expect(throws: (any Error).self) { try String(contentsOf: missing, encoding: .utf8) }
+
+        try FileManager.default.createDirectory(at: missing.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let updated = GoldenStore.render(
+            header: GoldenHeader(osBuild: "new-build", webKit: "w", paper: "a4"), pages: [Self.page]
+        )
+        try updated.write(to: missing, atomically: true, encoding: .utf8)
+        #expect(try String(contentsOf: missing, encoding: .utf8) == updated)
+        #expect(try String(contentsOf: recorded, encoding: .utf8) == content)
+    }
+
     @Test func theOrderOfExtractionDoesNotMatter() {
         #expect(GoldenStore.differences(recorded: [Self.page], current: [Self.page.reversed()]).isEmpty)
         // The F6 case: the same lines, written sorted, parsed back, compared with a reshuffle.

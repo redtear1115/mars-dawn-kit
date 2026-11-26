@@ -191,6 +191,7 @@ Lines: minX minY maxX maxY | text, whole points from the page's bottom left, sor
 45 475 378 489 | HOAP10 A reader who skips ahead will find that each section
 45 387 376 401 | HOAP11 A reader who skips ahead will find that each section
 45 298 102 312 | HOEND99
+45 266 347 281 | MarsDawn (https://example.com/x), Internal, and Email.
 45 703 370 718 | Measurements were taken at the start and at the end of the
 45 615 370 629 | Measurements were taken at the start and at the end of the
 45 526 370 540 | Measurements were taken at the start and at the end of the

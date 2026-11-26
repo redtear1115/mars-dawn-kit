@@ -392,6 +392,180 @@ struct HTMLDocumentEndToEndTests {
         #expect(target.accepts == 0, "a static document reached the network: \(target.paths)")
     }
 
+    // MARK: 3c. https script for a document the reader runs (mars-dawn#658)
+
+    /// The script a test server hands out: it reports by fetching a path back from the server it
+    /// came from, so arriving there proves it ran. `document.currentScript` is a classic script's
+    /// own element while it first runs; a module knows its own URL as `import.meta.url`.
+    private nonisolated static func reporting(_ body: String, module: Bool = false) -> RecordingServer.Response {
+        // Read once, now: `document.currentScript` is null again by the time a callback runs.
+        let base = module ? "import.meta.url" : "document.currentScript.src"
+        let js = "const reportBase = \(base);\nconst report = (path) => fetch(new URL(path, reportBase)).catch(() => {});\n" + body
+        // A module from another origin needs CORS, as a CDN sends it; a classic script doesn't.
+        return .init(contentType: "text/javascript", headers: ["Access-Control-Allow-Origin": "*"], body: Data(js.utf8))
+    }
+
+    /// Classic, module and dynamically imported script all load over https and run, and the page's
+    /// own inline script still runs beside them. Red control: `script` out of the running lift.
+    @Test(.enabled(if: TestTLS.isAvailable))
+    func aRunningDocumentRunsScriptFromHTTPS() async throws {
+        guard #available(macOS 26, *) else { return }
+        let tls = try TestTLSIdentity.make()
+        let cdn = try await RecordingServer.start(identity: tls.identity) { request in
+            switch request.path {
+            case "/lib.js": return Self.reporting("report('/ran-classic');")
+            case "/mod.js": return Self.reporting("report('/ran-module'); import('./dyn.js');", module: true)
+            case "/dyn.js": return Self.reporting("report('/ran-dynamic');", module: true)
+            default: return .init(contentType: "text/plain", body: Data())
+            }
+        }
+        defer { cdn.stop() }
+        let base = "https://127.0.0.1:\(cdn.port)"
+        let html = """
+        <!doctype html><html><body>
+        <script src="\(base)/lib.js"></script>
+        <script type=module src="\(base)/mod.js"></script>
+        <script>fetch("\(base)/ran-inline").catch(() => {});</script>
+        </body></html>
+        """
+        let harness = try await load(html: html, remote: true, javaScript: true, trusting: tls.certificate)
+        defer { harness.remove() }
+        let expected: Set<String> = ["/lib.js", "/mod.js", "/dyn.js", "/ran-classic", "/ran-module", "/ran-dynamic", "/ran-inline"]
+        try await waitUntil(timeout: .seconds(8)) { expected.isSubset(of: Set(cdn.paths)) }
+        print("658-record running https script paths=\(cdn.paths)")
+        #expect(expected.isSubset(of: Set(cdn.paths)), "arrived: \(cdn.paths)")
+    }
+
+    /// The same page, not running, loads none of it and runs nothing.
+    @Test(.enabled(if: TestTLS.isAvailable))
+    func aStaticDocumentLoadsNoScriptFromHTTPS() async throws {
+        guard #available(macOS 26, *) else { return }
+        let tls = try TestTLSIdentity.make()
+        let cdn = try await RecordingServer.start(identity: tls.identity) { _ in Self.reporting("report('/ran');") }
+        defer { cdn.stop() }
+        let html = """
+        <!doctype html><html><body><script src="https://127.0.0.1:\(cdn.port)/lib.js"></script></body></html>
+        """
+        let harness = try await load(html: html, remote: false, javaScript: true, trusting: tls.certificate)
+        defer { harness.remove() }
+        try await Task.sleep(for: Self.window)
+        #expect(cdn.accepts == 0, "a static document reached the network: \(cdn.paths)")
+    }
+
+    /// Plaintext http script, a redirect from https down to http, and a WebSocket opened by a
+    /// remote script all stay refused while running. The https script around them still runs, so
+    /// a page that ran nothing can't pass this.
+    @Test(.enabled(if: TestTLS.isAvailable))
+    func aRunningDocumentStillRefusesHTTPScriptRedirectsDownAndWebSockets() async throws {
+        guard #available(macOS 26, *) else { return }
+        let tls = try TestTLSIdentity.make()
+        let plain = try await RecordingServer.start { _ in Self.reporting("report('/ran-plain');") }
+        defer { plain.stop() }
+        let socket = try await RecordingServer.start(identity: tls.identity)
+        defer { socket.stop() }
+        let plainPort = plain.port, socketPort = socket.port
+        let cdn = try await RecordingServer.start(identity: tls.identity) { request in
+            switch request.path {
+            case "/down.js":
+                return .init(status: 302, contentType: "text/plain", headers: ["Location": "http://127.0.0.1:\(plainPort)/redirected.js"])
+            case "/lib.js":
+                return Self.reporting("""
+                report('/ran-classic');
+                try { new WebSocket('wss://127.0.0.1:\(socketPort)/ws'); } catch (e) { report('/ws-threw'); }
+                """)
+            default: return .init(contentType: "text/plain", body: Data())
+            }
+        }
+        defer { cdn.stop() }
+        let html = """
+        <!doctype html><html><body>
+        <script src="http://127.0.0.1:\(plainPort)/plain.js"></script>
+        <script src="https://127.0.0.1:\(cdn.port)/down.js"></script>
+        <script src="https://127.0.0.1:\(cdn.port)/lib.js"></script>
+        </body></html>
+        """
+        let harness = try await load(html: html, remote: true, javaScript: true, trusting: tls.certificate)
+        defer { harness.remove() }
+        try await waitUntil(timeout: .seconds(8)) { cdn.paths.contains("/ran-classic") }
+        try await Task.sleep(for: Self.window)
+        print("658-record refused: plain accepts=\(plain.accepts) paths=\(plain.paths) socket accepts=\(socket.accepts) cdn=\(cdn.paths)")
+        #expect(cdn.paths.contains("/ran-classic"), "positive control: the https script ran")
+        #expect(plain.accepts == 0, "plaintext http script, direct or redirected, connected")
+        #expect(socket.accepts == 0, "a WebSocket connected")
+    }
+
+    /// Remote script gets what inline script has and no more. It can't run the reader's own `.js`
+    /// beside the document, can't turn text into code, and can't read a neighbour's contents (the
+    /// opaque origin taints a sibling image and hides a sibling style sheet's rules). Workers,
+    /// windows and forms are locked by the policy text (`HTMLRemoteScriptPolicyTests`). Each check
+    /// reports which way it went; the positive control
+    /// is the script having run at all. Red controls: `'unsafe-eval'`, `allow-same-origin`, or
+    /// `marsdawn-html:` in `script-src` with `.js` served.
+    @Test(.enabled(if: TestTLS.isAvailable))
+    func remoteScriptGetsNothingInlineScriptLacks() async throws {
+        guard #available(macOS 26, *) else { return }
+        let tls = try TestTLSIdentity.make()
+        let cdn = try await RecordingServer.start(identity: tls.identity) { request in
+            guard request.path == "/probe.js" else { return .init(contentType: "text/plain", body: Data()) }
+            return Self.reporting("""
+            report('/ran');
+            try { eval('1'); report('/eval-ran'); } catch (e) { report('/eval-refused'); }
+            try { new Function('return 1')(); report('/function-ran'); } catch (e) { report('/function-refused'); }
+            const neighbours = () => {
+              report('/neighbours-checked');
+              try {
+                const rules = document.styleSheets[0].cssRules;
+                report(rules ? '/css-read' : '/css-refused');
+              } catch (e) { report('/css-refused'); }
+              try {
+                const canvas = document.createElement('canvas');
+                canvas.width = 1; canvas.height = 1;
+                const context = canvas.getContext('2d');
+                context.drawImage(document.getElementById('neighbour'), 0, 0);
+                context.getImageData(0, 0, 1, 1);
+                report('/canvas-read');
+              } catch (e) { report('/canvas-refused'); }
+            };
+            // Once the neighbours have loaded; a timer as well, so a load event that comes late
+            // can't leave the checks unrun.
+            let checked = false;
+            const once = () => { if (!checked) { checked = true; neighbours(); } };
+            report('/state-' + document.readyState);
+            if (document.readyState === 'complete') { once(); } else { window.addEventListener('load', once); setTimeout(once, 1500); }
+            """)
+        }
+        defer { cdn.stop() }
+        let beacon = "https://127.0.0.1:\(cdn.port)/local-js-ran"
+        let html = """
+        <!doctype html><html><head><link rel=stylesheet href="neighbour.css"></head><body>
+        <img id=neighbour src="neighbour.png">
+        <script src="local.js"></script>
+        <script src="https://127.0.0.1:\(cdn.port)/probe.js"></script>
+        </body></html>
+        """
+        let harness = try await load(
+            html: html,
+            files: [
+                "site/pages/neighbour.css": Data("p{color:red}".utf8),
+                "site/pages/neighbour.png": RecordingServer.png,
+                "site/pages/local.js": Data("fetch('\(beacon)').catch(() => {});".utf8),
+            ],
+            remote: true, javaScript: true, trusting: tls.certificate
+        )
+        defer { harness.remove() }
+        let verdicts: Set<String> = ["/eval-refused", "/function-refused", "/neighbours-checked", "/css-refused", "/canvas-refused"]
+        try await waitUntil(timeout: .seconds(8)) { Set(cdn.paths).isSuperset(of: verdicts) }
+        try await Task.sleep(for: Self.window)
+        print("658-record probe paths=\(cdn.paths) served=\(harness.served())")
+        #expect(cdn.paths.contains("/ran"), "positive control: the remote script ran")
+        #expect(Set(cdn.paths).isSuperset(of: verdicts), "arrived: \(cdn.paths)")
+        for granted in ["/eval-ran", "/function-ran", "/css-read", "/canvas-read", "/local-js-ran"] {
+            #expect(!cdn.paths.contains(granted), "\(granted)")
+        }
+        #expect(!harness.served().contains(["site", "pages", "local.js"]), "the reader's .js was served")
+        #expect(harness.served().contains(["site", "pages", "neighbour.png"]), "positive control: the neighbour image was served")
+    }
+
     // MARK: 4. Media
 
     /// Ranged serving, observed through this handler rather than through `evaluateJavaScript`.
