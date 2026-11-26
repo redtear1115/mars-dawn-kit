@@ -33,8 +33,6 @@ struct TableOfContentsTests {
         <li><a href="#a">A</a>
         <ul>
         <li><a href="#c">C</a></li>
-        </ul>
-        <ul>
         <li><a href="#b">B</a>
         <ul>
         <li><a href="#d">D</a></li>
@@ -46,6 +44,85 @@ struct TableOfContentsTests {
         </div>
 
         """))
+    }
+
+    @Test func returningPartwayAcrossASkippedLevelKeepsOneList() {
+        let html = render("### Starts deep\n\n# Top\n\n[toc]\n\n#### Skips a level\n\n## Back up\n")
+        #expect(html.contains("""
+        <div class="toc" data-line="5">
+        <ul>
+        <li><a href="#starts-deep">Starts deep</a></li>
+        <li><a href="#top">Top</a>
+        <ul>
+        <li><a href="#skips-a-level">Skips a level</a></li>
+        <li><a href="#back-up">Back up</a></li>
+        </ul>
+        </li>
+        </ul>
+        </div>
+
+        """))
+        #expect(html.components(separatedBy: "<ul>").count - 1 == 2)
+    }
+
+    @Test func aDeeperHeadingNestsUnderTheAdoptedLevel() {
+        let html = render("[toc]\n\n# A\n\n#### B\n\n## C\n\n### D\n")
+        #expect(html.hasPrefix("""
+        <div class="toc" data-line="1">
+        <ul>
+        <li><a href="#a">A</a>
+        <ul>
+        <li><a href="#b">B</a></li>
+        <li><a href="#c">C</a>
+        <ul>
+        <li><a href="#d">D</a></li>
+        </ul>
+        </li>
+        </ul>
+        </li>
+        </ul>
+        </div>
+
+        """))
+    }
+
+    @Test func returningPartwayKeepsSiblingsInTheDeeperList() {
+        let html = render("[toc]\n\n# A\n\n## B\n\n#### C\n\n### D\n")
+        #expect(html.hasPrefix("""
+        <div class="toc" data-line="1">
+        <ul>
+        <li><a href="#a">A</a>
+        <ul>
+        <li><a href="#b">B</a>
+        <ul>
+        <li><a href="#c">C</a></li>
+        <li><a href="#d">D</a></li>
+        </ul>
+        </li>
+        </ul>
+        </li>
+        </ul>
+        </div>
+
+        """))
+    }
+
+    @Test func returningToRootClosesTheSkippedLevelList() {
+        let html = render("[toc]\n\n# A\n\n#### B\n\n# C\n")
+        #expect(html.hasPrefix("""
+        <div class="toc" data-line="1">
+        <ul>
+        <li><a href="#a">A</a>
+        <ul>
+        <li><a href="#b">B</a></li>
+        </ul>
+        </li>
+        <li><a href="#c">C</a></li>
+        </ul>
+        </div>
+
+        """))
+        #expect(html.components(separatedBy: "<ul>").count - 1 == 2)
     }
 
     @Test func aFirstHeadingDeeperThanTheRestIsFine() {
