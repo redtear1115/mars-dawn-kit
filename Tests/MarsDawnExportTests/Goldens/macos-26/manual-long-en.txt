@@ -79,7 +79,7 @@ Lines: minX minY maxX maxY | text, whole points from the page's bottom left, sor
 71 93 106 107 | below.
 71 417 214 431 | delivery of the earlier one.
 71 581 392 595 | every milestone depends on the delivery of the earlier one.
-71 309 346 325 | full load. See the maintenance portal for updates.1
+71 309 532 325 | full load. See the maintenance portal (https://example.com/manual/1/0) for updates.1
 71 151 525 165 | has run for an hour at full load. A reader who skips ahead will find that each section
 71 328 536 342 | is checked twice, once when the pump is cold and once after it has run for an hour at
 71 201 150 215 | it, on purpose.
@@ -141,7 +141,7 @@ Lines: minX minY maxX maxY | text, whole points from the page's bottom left, sor
 71 474 513 488 | and at the end of the period, and the difference between them is reported below.
 71 277 524 291 | and only then continue with the next step. The appendix lists every part by number
 71 347 529 361 | appendix lists every part by number so that an order can be placed without opening
-71 544 329 558 | below. See the maintenance portal for updates.
+71 544 515 558 | below. See the maintenance portal (https://example.com/manual/1/2) for updates.
 71 219 214 234 | delivery of the earlier one.
 71 601 535 615 | it has run for an hour at full load. A reader who skips ahead will find that each section
 71 652 150 666 | it, on purpose.
@@ -191,30 +191,31 @@ Lines: minX minY maxX maxY | text, whole points from the page's bottom left, sor
 293 22 316 34 | 5 / 42
 71 729 481 743 | MLC1S5P1 A reader who skips ahead will find that each section repeats the
 71 620 524 635 | MLC1S5P2 Measurements were taken at the start and at the end of the period, and
-71 512 527 527 | MLC1S5P3 Where the instructions say to wait, wait until the indicator stops flashing
-71 404 524 419 | MLC1S5P4 The appendix lists every part by number so that an order can be placed
-71 296 502 310 | MLC1S5P5 The committee reviewed the revised schedule and noted that every
+71 493 527 507 | MLC1S5P3 Where the instructions say to wait, wait until the indicator stops flashing
+71 385 524 399 | MLC1S5P4 The appendix lists every part by number so that an order can be placed
+71 277 502 291 | MLC1S5P5 The committee reviewed the revised schedule and noted that every
 71 763 226 784 | Notes on chapter 1
 71 671 514 685 | Where the instructions say to wait, wait until the indicator stops flashing and only
 71 690 513 704 | and at the end of the period, and the difference between them is reported below.
-71 366 537 380 | and noted that every milestone depends on the delivery of the earlier one. Each valve
-71 493 524 507 | and only then continue with the next step. The appendix lists every part by number
+71 347 537 361 | and noted that every milestone depends on the delivery of the earlier one. Each valve
+71 474 524 488 | and only then continue with the next step. The appendix lists every part by number
 71 563 529 577 | appendix lists every part by number so that an order can be placed without opening
-71 436 214 450 | delivery of the earlier one.
-71 328 118 342 | full load.
-71 347 536 361 | is checked twice, once when the pump is cold and once after it has run for an hour at
-71 219 150 234 | it, on purpose.
-71 277 517 291 | milestone depends on the delivery of the earlier one. Each valve is checked twice,
-71 258 538 272 | once when the pump is cold and once after it has run for an hour at full load. A reader
-71 455 499 469 | reviewed the revised schedule and noted that every milestone depends on the
-71 474 525 488 | so that an order can be placed without opening the drawings again. The committee
+71 416 214 431 | delivery of the earlier one.
+71 308 118 322 | full load.
+71 328 536 342 | is checked twice, once when the pump is cold and once after it has run for an hour at
+71 200 150 214 | it, on purpose.
+71 258 517 272 | milestone depends on the delivery of the earlier one. Each valve is checked twice,
+71 239 538 253 | once when the pump is cold and once after it has run for an hour at full load. A reader
+71 436 499 450 | reviewed the revised schedule and noted that every milestone depends on the
+71 455 525 469 | so that an order can be placed without opening the drawings again. The committee
 71 601 522 615 | the difference between them is reported below. Where the instructions say to wait,
-71 544 401 558 | the drawings again. See the maintenance portal for updates.
+71 544 536 558 | the drawings again. See the maintenance portal (https://example.com/manual/1/4) for
 71 652 250 666 | then continue with the next step.
+71 524 119 539 | updates.
 71 709 521 723 | vocabulary of the one before it, on purpose. Measurements were taken at the start
 71 582 528 596 | wait until the indicator stops flashing and only then continue with the next step. The
-71 239 531 253 | who skips ahead will find that each section repeats the vocabulary of the one before
-71 385 524 399 | without opening the drawings again. The committee reviewed the revised schedule
+71 219 531 234 | who skips ahead will find that each section repeats the vocabulary of the one before
+71 366 524 380 | without opening the drawings again. The committee reviewed the revised schedule
 
 --- Page 9 ---
 293 22 316 34 | 6 / 42
@@ -222,93 +223,95 @@ Lines: minX minY maxX maxY | text, whole points from the page's bottom left, sor
 71 716 535 730 | MLC2INTRO Where the instructions say to wait, wait until the indicator stops flashing
 71 532 522 547 | MLC2S1P1 The appendix lists every part by number so that an order can be placed
 71 424 502 439 | MLC2S1P2 The committee reviewed the revised schedule and noted that every
-71 316 529 330 | MLC2S1P3 Each valve is checked twice, once when the pump is cold and once after
-71 208 483 222 | MLC2S1P4 A reader who skips ahead will find that each section repeats the
-71 100 524 114 | MLC2S1P5 Measurements were taken at the start and at the end of the period, and
+71 297 529 311 | MLC2S1P3 Each valve is checked twice, once when the pump is cold and once after
+71 189 483 203 | MLC2S1P4 A reader who skips ahead will find that each section repeats the
 71 567 149 588 | Overview
-71 151 514 165 | Where the instructions say to wait, wait until the indicator stops flashing and only
-71 170 513 184 | and at the end of the period, and the difference between them is reported below.
+71 131 514 146 | Where the instructions say to wait, wait until the indicator stops flashing and only
+71 151 513 165 | and at the end of the period, and the difference between them is reported below.
 71 494 537 508 | and noted that every milestone depends on the delivery of the earlier one. Each valve
 71 620 331 634 | and once after it has run for an hour at full load.
 71 697 524 711 | and only then continue with the next step. The appendix lists every part by number
-71 239 106 254 | below.
+71 220 106 234 | below.
 71 639 529 653 | delivery of the earlier one. Each valve is checked twice, once when the pump is cold
 71 456 118 470 | full load.
 71 475 536 489 | is checked twice, once when the pump is cold and once after it has run for an hour at
-71 297 535 311 | it has run for an hour at full load. A reader who skips ahead will find that each section
-71 348 379 364 | it, on purpose. See the maintenance portal for updates.2
+71 278 535 292 | it has run for an hour at full load. A reader who skips ahead will find that each section
+71 348 510 362 | it, on purpose. See the maintenance portal (https://example.com/manual/2/0) for
 71 405 517 419 | milestone depends on the delivery of the earlier one. Each valve is checked twice,
 71 386 538 400 | once when the pump is cold and once after it has run for an hour at full load. A reader
-71 278 537 292 | repeats the vocabulary of the one before it, on purpose. Measurements were taken at
+71 259 537 273 | repeats the vocabulary of the one before it, on purpose. Measurements were taken at
 71 658 499 672 | reviewed the revised schedule and noted that every milestone depends on the
 71 677 525 691 | so that an order can be placed without opening the drawings again. The committee
-71 81 522 95 | the difference between them is reported below. Where the instructions say to wait,
-71 259 524 273 | the start and at the end of the period, and the difference between them is reported
-71 131 250 146 | then continue with the next step.
-71 189 521 203 | vocabulary of the one before it, on purpose. Measurements were taken at the start
-71 62 528 76 | wait until the indicator stops flashing and only then continue with the next step. The
+71 239 524 254 | the start and at the end of the period, and the difference between them is reported
+71 112 250 126 | then continue with the next step.
+71 328 125 344 | updates.2
+71 170 521 184 | vocabulary of the one before it, on purpose. Measurements were taken at the start
 71 367 531 381 | who skips ahead will find that each section repeats the vocabulary of the one before
 71 513 524 527 | without opening the drawings again. The committee reviewed the revised schedule
 
 --- Page 10 ---
 293 22 316 34 | 7 / 42
-71 661 502 675 | MLC2S2P1 The committee reviewed the revised schedule and noted that every
-71 553 530 567 | MLC2S2P2 Each valve is checked twice, once when the pump is cold and once after
-71 445 485 459 | MLC2S2P3 A reader who skips ahead will find that each section repeats the
-71 337 525 351 | MLC2S2P4 Measurements were taken at the start and at the end of the period, and
-71 229 529 243 | MLC2S2P5 Where the instructions say to wait, wait until the indicator stops flashing
-71 696 184 717 | Procedure 2.1
-71 388 514 402 | Where the instructions say to wait, wait until the indicator stops flashing and only
-71 407 513 421 | and at the end of the period, and the difference between them is reported below.
-71 210 524 224 | and only then continue with the next step. The appendix lists every part by number
-71 768 529 782 | appendix lists every part by number so that an order can be placed without opening
-71 280 529 294 | appendix lists every part by number so that an order can be placed without opening
-71 476 106 491 | below.
-71 152 214 166 | delivery of the earlier one.
-71 534 535 548 | it has run for an hour at full load. A reader who skips ahead will find that each section
-71 584 150 599 | it, on purpose.
-71 642 517 656 | milestone depends on the delivery of the earlier one. Each valve is checked twice,
-71 623 538 637 | once when the pump is cold and once after it has run for an hour at full load. A reader
-71 515 537 529 | repeats the vocabulary of the one before it, on purpose. Measurements were taken at
-71 171 499 186 | reviewed the revised schedule and noted that every milestone depends on the
-71 191 525 205 | so that an order can be placed without opening the drawings again. The committee
-71 318 522 332 | the difference between them is reported below. Where the instructions say to wait,
-71 749 178 763 | the drawings again.
-71 260 178 274 | the drawings again.
-71 496 524 510 | the start and at the end of the period, and the difference between them is reported
-71 368 250 382 | then continue with the next step.
-71 426 521 440 | vocabulary of the one before it, on purpose. Measurements were taken at the start
-71 299 528 313 | wait until the indicator stops flashing and only then continue with the next step. The
-71 604 531 618 | who skips ahead will find that each section repeats the vocabulary of the one before
+71 768 524 782 | MLC2S1P5 Measurements were taken at the start and at the end of the period, and
+71 604 502 618 | MLC2S2P1 The committee reviewed the revised schedule and noted that every
+71 496 530 510 | MLC2S2P2 Each valve is checked twice, once when the pump is cold and once after
+71 388 485 402 | MLC2S2P3 A reader who skips ahead will find that each section repeats the
+71 280 525 294 | MLC2S2P4 Measurements were taken at the start and at the end of the period, and
+71 171 529 186 | MLC2S2P5 Where the instructions say to wait, wait until the indicator stops flashing
+71 638 184 660 | Procedure 2.1
+71 330 514 344 | Where the instructions say to wait, wait until the indicator stops flashing and only
+71 349 513 363 | and at the end of the period, and the difference between them is reported below.
+71 152 524 166 | and only then continue with the next step. The appendix lists every part by number
+71 710 529 724 | appendix lists every part by number so that an order can be placed without opening
+71 222 529 236 | appendix lists every part by number so that an order can be placed without opening
+71 419 106 433 | below.
+71 95 214 109 | delivery of the earlier one.
+71 476 535 491 | it has run for an hour at full load. A reader who skips ahead will find that each section
+71 527 150 541 | it, on purpose.
+71 584 517 599 | milestone depends on the delivery of the earlier one. Each valve is checked twice,
+71 565 538 579 | once when the pump is cold and once after it has run for an hour at full load. A reader
+71 457 537 471 | repeats the vocabulary of the one before it, on purpose. Measurements were taken at
+71 114 499 128 | reviewed the revised schedule and noted that every milestone depends on the
+71 133 525 147 | so that an order can be placed without opening the drawings again. The committee
+71 749 522 763 | the difference between them is reported below. Where the instructions say to wait,
+71 260 522 274 | the difference between them is reported below. Where the instructions say to wait,
+71 691 178 705 | the drawings again.
+71 203 178 217 | the drawings again.
+71 438 524 452 | the start and at the end of the period, and the difference between them is reported
+71 311 250 325 | then continue with the next step.
+71 368 521 382 | vocabulary of the one before it, on purpose. Measurements were taken at the start
+71 729 528 743 | wait until the indicator stops flashing and only then continue with the next step. The
+71 241 528 255 | wait until the indicator stops flashing and only then continue with the next step. The
+71 546 531 560 | who skips ahead will find that each section repeats the vocabulary of the one before
 
 --- Page 11 ---
+71 524 325 539 | (https://example.com/manual/2/2) for updates.
 293 22 316 34 | 8 / 42
 71 729 529 743 | MLC2S3P1 Each valve is checked twice, once when the pump is cold and once after
 71 620 485 635 | MLC2S3P2 A reader who skips ahead will find that each section repeats the
-71 512 526 527 | MLC2S3P3 Measurements were taken at the start and at the end of the period, and
-71 404 529 419 | MLC2S3P4 Where the instructions say to wait, wait until the indicator stops flashing
-71 296 526 310 | MLC2S3P5 The appendix lists every part by number so that an order can be placed
+71 493 526 507 | MLC2S3P3 Measurements were taken at the start and at the end of the period, and
+71 385 529 399 | MLC2S3P4 Where the instructions say to wait, wait until the indicator stops flashing
+71 277 526 291 | MLC2S3P5 The appendix lists every part by number so that an order can be placed
 71 763 187 784 | Procedure 2.2
 71 563 514 577 | Where the instructions say to wait, wait until the indicator stops flashing and only
 71 582 513 596 | and at the end of the period, and the difference between them is reported below.
-71 258 537 272 | and noted that every milestone depends on the delivery of the earlier one. Each valve
-71 385 524 399 | and only then continue with the next step. The appendix lists every part by number
-71 455 529 469 | appendix lists every part by number so that an order can be placed without opening
+71 239 537 253 | and noted that every milestone depends on the delivery of the earlier one. Each valve
+71 366 524 380 | and only then continue with the next step. The appendix lists every part by number
+71 436 529 450 | appendix lists every part by number so that an order can be placed without opening
 71 652 106 666 | below.
-71 328 214 342 | delivery of the earlier one.
-71 219 118 234 | full load.
-71 239 536 253 | is checked twice, once when the pump is cold and once after it has run for an hour at
+71 308 214 322 | delivery of the earlier one.
+71 200 118 214 | full load.
+71 219 536 234 | is checked twice, once when the pump is cold and once after it has run for an hour at
 71 709 535 723 | it has run for an hour at full load. A reader who skips ahead will find that each section
 71 690 537 704 | repeats the vocabulary of the one before it, on purpose. Measurements were taken at
-71 347 499 361 | reviewed the revised schedule and noted that every milestone depends on the
-71 366 525 380 | so that an order can be placed without opening the drawings again. The committee
-71 493 522 507 | the difference between them is reported below. Where the instructions say to wait,
-71 436 178 450 | the drawings again.
+71 328 499 342 | reviewed the revised schedule and noted that every milestone depends on the
+71 347 525 361 | so that an order can be placed without opening the drawings again. The committee
+71 474 522 488 | the difference between them is reported below. Where the instructions say to wait,
+71 416 178 431 | the drawings again.
 71 671 524 685 | the start and at the end of the period, and the difference between them is reported
-71 544 473 558 | then continue with the next step. See the maintenance portal for updates.
+71 544 404 558 | then continue with the next step. See the maintenance portal
 71 601 521 615 | vocabulary of the one before it, on purpose. Measurements were taken at the start
-71 474 528 488 | wait until the indicator stops flashing and only then continue with the next step. The
-71 277 524 291 | without opening the drawings again. The committee reviewed the revised schedule
+71 455 528 469 | wait until the indicator stops flashing and only then continue with the next step. The
+71 258 524 272 | without opening the drawings again. The committee reviewed the revised schedule
 
 --- Page 12 ---
 293 22 316 34 | 9 / 42
@@ -340,33 +343,34 @@ Lines: minX minY maxX maxY | text, whole points from the page's bottom left, sor
 71 385 524 399 | without opening the drawings again. The committee reviewed the revised schedule
 
 --- Page 13 ---
+71 524 325 539 | (https://example.com/manual/2/4) for updates.
 290 22 319 34 | 10 / 42
 71 729 524 743 | MLC2S5P1 Measurements were taken at the start and at the end of the period, and
 71 620 529 635 | MLC2S5P2 Where the instructions say to wait, wait until the indicator stops flashing
-71 512 526 527 | MLC2S5P3 The appendix lists every part by number so that an order can be placed
-71 404 504 419 | MLC2S5P4 The committee reviewed the revised schedule and noted that every
-71 296 531 310 | MLC2S5P5 Each valve is checked twice, once when the pump is cold and once after
+71 493 526 507 | MLC2S5P3 The appendix lists every part by number so that an order can be placed
+71 385 504 399 | MLC2S5P4 The committee reviewed the revised schedule and noted that every
+71 277 531 291 | MLC2S5P5 Each valve is checked twice, once when the pump is cold and once after
 71 763 228 784 | Notes on chapter 2
-71 474 537 488 | and noted that every milestone depends on the delivery of the earlier one. Each valve
+71 455 537 469 | and noted that every milestone depends on the delivery of the earlier one. Each valve
 71 601 524 615 | and only then continue with the next step. The appendix lists every part by number
 71 671 529 685 | appendix lists every part by number so that an order can be placed without opening
-71 219 106 234 | below.
-71 544 437 558 | delivery of the earlier one. See the maintenance portal for updates.
-71 436 118 450 | full load.
-71 455 536 469 | is checked twice, once when the pump is cold and once after it has run for an hour at
-71 277 535 291 | it has run for an hour at full load. A reader who skips ahead will find that each section
-71 328 150 342 | it, on purpose.
-71 385 517 399 | milestone depends on the delivery of the earlier one. Each valve is checked twice,
-71 366 538 380 | once when the pump is cold and once after it has run for an hour at full load. A reader
-71 258 537 272 | repeats the vocabulary of the one before it, on purpose. Measurements were taken at
+71 200 106 214 | below.
+71 544 367 558 | delivery of the earlier one. See the maintenance portal
+71 416 118 431 | full load.
+71 436 536 450 | is checked twice, once when the pump is cold and once after it has run for an hour at
+71 258 535 272 | it has run for an hour at full load. A reader who skips ahead will find that each section
+71 308 150 322 | it, on purpose.
+71 366 517 380 | milestone depends on the delivery of the earlier one. Each valve is checked twice,
+71 347 538 361 | once when the pump is cold and once after it has run for an hour at full load. A reader
+71 239 537 253 | repeats the vocabulary of the one before it, on purpose. Measurements were taken at
 71 563 499 577 | reviewed the revised schedule and noted that every milestone depends on the
 71 582 525 596 | so that an order can be placed without opening the drawings again. The committee
 71 709 522 723 | the difference between them is reported below. Where the instructions say to wait,
 71 652 178 666 | the drawings again.
-71 239 524 253 | the start and at the end of the period, and the difference between them is reported
+71 219 524 234 | the start and at the end of the period, and the difference between them is reported
 71 690 528 704 | wait until the indicator stops flashing and only then continue with the next step. The
-71 347 531 361 | who skips ahead will find that each section repeats the vocabulary of the one before
-71 493 524 507 | without opening the drawings again. The committee reviewed the revised schedule
+71 328 531 342 | who skips ahead will find that each section repeats the vocabulary of the one before
+71 474 524 488 | without opening the drawings again. The committee reviewed the revised schedule
 
 --- Page 14 ---
 290 22 319 34 | 11 / 42
@@ -383,7 +387,7 @@ Lines: minX minY maxX maxY | text, whole points from the page's bottom left, sor
 71 677 537 691 | and noted that every milestone depends on the delivery of the earlier one. Each valve
 71 81 524 95 | and only then continue with the next step. The appendix lists every part by number
 71 151 529 165 | appendix lists every part by number so that an order can be placed without opening
-71 348 335 364 | below. See the maintenance portal for updates.3
+71 348 524 364 | below. See the maintenance portal (https://example.com/manual/3/0) for updates.3
 71 639 533 653 | full load. A reader who skips ahead will find that each section repeats the vocabulary
 71 658 536 672 | is checked twice, once when the pump is cold and once after it has run for an hour at
 71 405 535 419 | it has run for an hour at full load. A reader who skips ahead will find that each section
@@ -437,30 +441,31 @@ Lines: minX minY maxX maxY | text, whole points from the page's bottom left, sor
 290 22 319 34 | 13 / 42
 71 729 483 743 | MLC3S3P1 A reader who skips ahead will find that each section repeats the
 71 620 526 635 | MLC3S3P2 Measurements were taken at the start and at the end of the period, and
-71 512 529 527 | MLC3S3P3 Where the instructions say to wait, wait until the indicator stops flashing
-71 404 526 419 | MLC3S3P4 The appendix lists every part by number so that an order can be placed
-71 296 504 310 | MLC3S3P5 The committee reviewed the revised schedule and noted that every
+71 493 529 507 | MLC3S3P3 Where the instructions say to wait, wait until the indicator stops flashing
+71 385 526 399 | MLC3S3P4 The appendix lists every part by number so that an order can be placed
+71 277 504 291 | MLC3S3P5 The committee reviewed the revised schedule and noted that every
 71 763 188 784 | Procedure 3.2
 71 671 514 685 | Where the instructions say to wait, wait until the indicator stops flashing and only
 71 690 513 704 | and at the end of the period, and the difference between them is reported below.
-71 366 537 380 | and noted that every milestone depends on the delivery of the earlier one. Each valve
-71 493 524 507 | and only then continue with the next step. The appendix lists every part by number
+71 347 537 361 | and noted that every milestone depends on the delivery of the earlier one. Each valve
+71 474 524 488 | and only then continue with the next step. The appendix lists every part by number
 71 563 529 577 | appendix lists every part by number so that an order can be placed without opening
-71 436 214 450 | delivery of the earlier one.
-71 328 118 342 | full load.
-71 347 536 361 | is checked twice, once when the pump is cold and once after it has run for an hour at
-71 219 150 234 | it, on purpose.
-71 277 517 291 | milestone depends on the delivery of the earlier one. Each valve is checked twice,
-71 258 538 272 | once when the pump is cold and once after it has run for an hour at full load. A reader
-71 455 499 469 | reviewed the revised schedule and noted that every milestone depends on the
-71 474 525 488 | so that an order can be placed without opening the drawings again. The committee
+71 416 214 431 | delivery of the earlier one.
+71 308 118 322 | full load.
+71 328 536 342 | is checked twice, once when the pump is cold and once after it has run for an hour at
+71 200 150 214 | it, on purpose.
+71 258 517 272 | milestone depends on the delivery of the earlier one. Each valve is checked twice,
+71 239 538 253 | once when the pump is cold and once after it has run for an hour at full load. A reader
+71 436 499 450 | reviewed the revised schedule and noted that every milestone depends on the
+71 455 525 469 | so that an order can be placed without opening the drawings again. The committee
 71 601 522 615 | the difference between them is reported below. Where the instructions say to wait,
-71 544 401 558 | the drawings again. See the maintenance portal for updates.
+71 544 538 558 | the drawings again. See the maintenance portal (https://example.com/manual/3/2) for
 71 652 250 666 | then continue with the next step.
+71 524 119 539 | updates.
 71 709 521 723 | vocabulary of the one before it, on purpose. Measurements were taken at the start
 71 582 528 596 | wait until the indicator stops flashing and only then continue with the next step. The
-71 239 531 253 | who skips ahead will find that each section repeats the vocabulary of the one before
-71 385 524 399 | without opening the drawings again. The committee reviewed the revised schedule
+71 219 531 234 | who skips ahead will find that each section repeats the vocabulary of the one before
+71 366 524 380 | without opening the drawings again. The committee reviewed the revised schedule
 
 --- Page 17 ---
 290 22 319 34 | 14 / 42
@@ -505,7 +510,7 @@ Lines: minX minY maxX maxY | text, whole points from the page's bottom left, sor
 71 709 524 723 | and only then continue with the next step. The appendix lists every part by number
 71 328 106 342 | below.
 71 652 214 666 | delivery of the earlier one.
-71 544 341 558 | full load. See the maintenance portal for updates.
+71 544 529 558 | full load. See the maintenance portal (https://example.com/manual/3/4) for updates.
 71 563 536 577 | is checked twice, once when the pump is cold and once after it has run for an hour at
 71 385 535 399 | it has run for an hour at full load. A reader who skips ahead will find that each section
 71 436 150 450 | it, on purpose.
@@ -521,98 +526,100 @@ Lines: minX minY maxX maxY | text, whole points from the page's bottom left, sor
 71 601 524 615 | without opening the drawings again. The committee reviewed the revised schedule
 
 --- Page 19 ---
+71 328 332 344 | (https://example.com/manual/4/0) for updates.4
 290 22 319 34 | 16 / 42
 71 756 271 784 | Chapter 4 MLCH4
 71 716 511 730 | MLC4INTRO The committee reviewed the revised schedule and noted that every
 71 532 538 547 | MLC4S1P1 Each valve is checked twice, once when the pump is cold and once after it
 71 424 483 439 | MLC4S1P2 A reader who skips ahead will find that each section repeats the
-71 316 524 330 | MLC4S1P3 Measurements were taken at the start and at the end of the period, and
-71 208 527 222 | MLC4S1P4 Where the instructions say to wait, wait until the indicator stops flashing
-71 100 524 114 | MLC4S1P5 The appendix lists every part by number so that an order can be placed
+71 297 524 311 | MLC4S1P3 Measurements were taken at the start and at the end of the period, and
+71 189 527 203 | MLC4S1P4 Where the instructions say to wait, wait until the indicator stops flashing
 71 567 149 588 | Overview
 71 367 514 381 | Where the instructions say to wait, wait until the indicator stops flashing and only
 71 386 513 400 | and at the end of the period, and the difference between them is reported below.
-71 62 537 76 | and noted that every milestone depends on the delivery of the earlier one. Each valve
-71 189 524 203 | and only then continue with the next step. The appendix lists every part by number
+71 170 524 184 | and only then continue with the next step. The appendix lists every part by number
 71 620 354 634 | and the difference between them is reported below.
-71 259 529 273 | appendix lists every part by number so that an order can be placed without opening
+71 239 529 254 | appendix lists every part by number so that an order can be placed without opening
 71 456 106 470 | below.
-71 131 214 146 | delivery of the earlier one.
+71 112 214 126 | delivery of the earlier one.
 71 513 525 527 | has run for an hour at full load. A reader who skips ahead will find that each section
 71 639 520 653 | it, on purpose. Measurements were taken at the start and at the end of the period,
 71 697 517 711 | milestone depends on the delivery of the earlier one. Each valve is checked twice,
 71 677 538 691 | once when the pump is cold and once after it has run for an hour at full load. A reader
 71 494 537 508 | repeats the vocabulary of the one before it, on purpose. Measurements were taken at
-71 151 499 165 | reviewed the revised schedule and noted that every milestone depends on the
-71 170 525 184 | so that an order can be placed without opening the drawings again. The committee
-71 297 522 311 | the difference between them is reported below. Where the instructions say to wait,
-71 239 178 254 | the drawings again.
+71 131 499 146 | reviewed the revised schedule and noted that every milestone depends on the
+71 151 525 165 | so that an order can be placed without opening the drawings again. The committee
+71 278 522 292 | the difference between them is reported below. Where the instructions say to wait,
+71 220 178 234 | the drawings again.
 71 475 524 489 | the start and at the end of the period, and the difference between them is reported
-71 348 480 364 | then continue with the next step. See the maintenance portal for updates.4
+71 348 404 362 | then continue with the next step. See the maintenance portal
 71 405 521 419 | vocabulary of the one before it, on purpose. Measurements were taken at the start
-71 278 528 292 | wait until the indicator stops flashing and only then continue with the next step. The
+71 259 528 273 | wait until the indicator stops flashing and only then continue with the next step. The
 71 658 531 672 | who skips ahead will find that each section repeats the vocabulary of the one before
-71 81 524 95 | without opening the drawings again. The committee reviewed the revised schedule
 
 --- Page 20 ---
 290 22 319 34 | 17 / 42
-71 661 483 675 | MLC4S2P1 A reader who skips ahead will find that each section repeats the
-71 553 526 567 | MLC4S2P2 Measurements were taken at the start and at the end of the period, and
-71 445 529 459 | MLC4S2P3 Where the instructions say to wait, wait until the indicator stops flashing
-71 337 526 351 | MLC4S2P4 The appendix lists every part by number so that an order can be placed
-71 229 504 243 | MLC4S2P5 The committee reviewed the revised schedule and noted that every
-71 696 185 717 | Procedure 4.1
-71 604 514 618 | Where the instructions say to wait, wait until the indicator stops flashing and only
-71 623 513 637 | and at the end of the period, and the difference between them is reported below.
-71 299 537 313 | and noted that every milestone depends on the delivery of the earlier one. Each valve
-71 426 524 440 | and only then continue with the next step. The appendix lists every part by number
-71 496 529 510 | appendix lists every part by number so that an order can be placed without opening
-71 368 214 382 | delivery of the earlier one.
-71 749 118 763 | full load.
-71 260 118 274 | full load.
-71 768 536 782 | is checked twice, once when the pump is cold and once after it has run for an hour at
-71 280 536 294 | is checked twice, once when the pump is cold and once after it has run for an hour at
-71 152 150 166 | it, on purpose.
-71 210 517 224 | milestone depends on the delivery of the earlier one. Each valve is checked twice,
-71 191 538 205 | once when the pump is cold and once after it has run for an hour at full load. A reader
-71 388 499 402 | reviewed the revised schedule and noted that every milestone depends on the
-71 407 525 421 | so that an order can be placed without opening the drawings again. The committee
-71 534 522 548 | the difference between them is reported below. Where the instructions say to wait,
-71 476 178 491 | the drawings again.
-71 584 250 599 | then continue with the next step.
-71 642 521 656 | vocabulary of the one before it, on purpose. Measurements were taken at the start
-71 515 528 529 | wait until the indicator stops flashing and only then continue with the next step. The
-71 171 531 186 | who skips ahead will find that each section repeats the vocabulary of the one before
-71 318 524 332 | without opening the drawings again. The committee reviewed the revised schedule
+71 768 524 782 | MLC4S1P5 The appendix lists every part by number so that an order can be placed
+71 604 483 618 | MLC4S2P1 A reader who skips ahead will find that each section repeats the
+71 496 526 510 | MLC4S2P2 Measurements were taken at the start and at the end of the period, and
+71 388 529 402 | MLC4S2P3 Where the instructions say to wait, wait until the indicator stops flashing
+71 280 526 294 | MLC4S2P4 The appendix lists every part by number so that an order can be placed
+71 171 504 186 | MLC4S2P5 The committee reviewed the revised schedule and noted that every
+71 638 185 660 | Procedure 4.1
+71 546 514 560 | Where the instructions say to wait, wait until the indicator stops flashing and only
+71 565 513 579 | and at the end of the period, and the difference between them is reported below.
+71 729 537 743 | and noted that every milestone depends on the delivery of the earlier one. Each valve
+71 241 537 255 | and noted that every milestone depends on the delivery of the earlier one. Each valve
+71 368 524 382 | and only then continue with the next step. The appendix lists every part by number
+71 438 529 452 | appendix lists every part by number so that an order can be placed without opening
+71 311 214 325 | delivery of the earlier one.
+71 691 118 705 | full load.
+71 203 118 217 | full load.
+71 710 536 724 | is checked twice, once when the pump is cold and once after it has run for an hour at
+71 222 536 236 | is checked twice, once when the pump is cold and once after it has run for an hour at
+71 95 150 109 | it, on purpose.
+71 152 517 166 | milestone depends on the delivery of the earlier one. Each valve is checked twice,
+71 133 538 147 | once when the pump is cold and once after it has run for an hour at full load. A reader
+71 330 499 344 | reviewed the revised schedule and noted that every milestone depends on the
+71 349 525 363 | so that an order can be placed without opening the drawings again. The committee
+71 476 522 491 | the difference between them is reported below. Where the instructions say to wait,
+71 419 178 433 | the drawings again.
+71 527 250 541 | then continue with the next step.
+71 584 521 599 | vocabulary of the one before it, on purpose. Measurements were taken at the start
+71 457 528 471 | wait until the indicator stops flashing and only then continue with the next step. The
+71 114 531 128 | who skips ahead will find that each section repeats the vocabulary of the one before
+71 749 524 763 | without opening the drawings again. The committee reviewed the revised schedule
+71 260 524 274 | without opening the drawings again. The committee reviewed the revised schedule
 
 --- Page 21 ---
+71 524 325 539 | (https://example.com/manual/4/2) for updates.
 290 22 319 34 | 18 / 42
 71 729 524 743 | MLC4S3P1 Measurements were taken at the start and at the end of the period, and
 71 620 529 635 | MLC4S3P2 Where the instructions say to wait, wait until the indicator stops flashing
-71 512 526 527 | MLC4S3P3 The appendix lists every part by number so that an order can be placed
-71 404 504 419 | MLC4S3P4 The committee reviewed the revised schedule and noted that every
-71 296 531 310 | MLC4S3P5 Each valve is checked twice, once when the pump is cold and once after
+71 493 526 507 | MLC4S3P3 The appendix lists every part by number so that an order can be placed
+71 385 504 399 | MLC4S3P4 The committee reviewed the revised schedule and noted that every
+71 277 531 291 | MLC4S3P5 Each valve is checked twice, once when the pump is cold and once after
 71 763 188 784 | Procedure 4.2
-71 474 537 488 | and noted that every milestone depends on the delivery of the earlier one. Each valve
+71 455 537 469 | and noted that every milestone depends on the delivery of the earlier one. Each valve
 71 601 524 615 | and only then continue with the next step. The appendix lists every part by number
 71 671 529 685 | appendix lists every part by number so that an order can be placed without opening
-71 219 106 234 | below.
-71 544 437 558 | delivery of the earlier one. See the maintenance portal for updates.
-71 436 118 450 | full load.
-71 455 536 469 | is checked twice, once when the pump is cold and once after it has run for an hour at
-71 277 535 291 | it has run for an hour at full load. A reader who skips ahead will find that each section
-71 328 150 342 | it, on purpose.
-71 385 517 399 | milestone depends on the delivery of the earlier one. Each valve is checked twice,
-71 366 538 380 | once when the pump is cold and once after it has run for an hour at full load. A reader
-71 258 537 272 | repeats the vocabulary of the one before it, on purpose. Measurements were taken at
+71 200 106 214 | below.
+71 544 367 558 | delivery of the earlier one. See the maintenance portal
+71 416 118 431 | full load.
+71 436 536 450 | is checked twice, once when the pump is cold and once after it has run for an hour at
+71 258 535 272 | it has run for an hour at full load. A reader who skips ahead will find that each section
+71 308 150 322 | it, on purpose.
+71 366 517 380 | milestone depends on the delivery of the earlier one. Each valve is checked twice,
+71 347 538 361 | once when the pump is cold and once after it has run for an hour at full load. A reader
+71 239 537 253 | repeats the vocabulary of the one before it, on purpose. Measurements were taken at
 71 563 499 577 | reviewed the revised schedule and noted that every milestone depends on the
 71 582 525 596 | so that an order can be placed without opening the drawings again. The committee
 71 709 522 723 | the difference between them is reported below. Where the instructions say to wait,
 71 652 178 666 | the drawings again.
-71 239 524 253 | the start and at the end of the period, and the difference between them is reported
+71 219 524 234 | the start and at the end of the period, and the difference between them is reported
 71 690 528 704 | wait until the indicator stops flashing and only then continue with the next step. The
-71 347 531 361 | who skips ahead will find that each section repeats the vocabulary of the one before
-71 493 524 507 | without opening the drawings again. The committee reviewed the revised schedule
+71 328 531 342 | who skips ahead will find that each section repeats the vocabulary of the one before
+71 474 524 488 | without opening the drawings again. The committee reviewed the revised schedule
 
 --- Page 22 ---
 290 22 319 34 | 19 / 42
@@ -647,28 +654,29 @@ Lines: minX minY maxX maxY | text, whole points from the page's bottom left, sor
 290 22 319 34 | 20 / 42
 71 729 524 743 | MLC4S5P1 The appendix lists every part by number so that an order can be placed
 71 620 504 635 | MLC4S5P2 The committee reviewed the revised schedule and noted that every
-71 512 531 527 | MLC4S5P3 Each valve is checked twice, once when the pump is cold and once after
-71 404 485 419 | MLC4S5P4 A reader who skips ahead will find that each section repeats the
-71 296 526 310 | MLC4S5P5 Measurements were taken at the start and at the end of the period, and
+71 493 531 507 | MLC4S5P3 Each valve is checked twice, once when the pump is cold and once after
+71 385 485 399 | MLC4S5P4 A reader who skips ahead will find that each section repeats the
+71 277 526 291 | MLC4S5P5 Measurements were taken at the start and at the end of the period, and
 71 763 229 784 | Notes on chapter 4
-71 347 514 361 | Where the instructions say to wait, wait until the indicator stops flashing and only
-71 366 513 380 | and at the end of the period, and the difference between them is reported below.
+71 328 514 342 | Where the instructions say to wait, wait until the indicator stops flashing and only
+71 347 513 361 | and at the end of the period, and the difference between them is reported below.
 71 690 537 704 | and noted that every milestone depends on the delivery of the earlier one. Each valve
-71 239 529 253 | appendix lists every part by number so that an order can be placed without opening
-71 436 106 450 | below.
+71 219 529 234 | appendix lists every part by number so that an order can be placed without opening
+71 416 106 431 | below.
 71 652 118 666 | full load.
 71 671 536 685 | is checked twice, once when the pump is cold and once after it has run for an hour at
-71 493 535 507 | it has run for an hour at full load. A reader who skips ahead will find that each section
-71 544 373 558 | it, on purpose. See the maintenance portal for updates.
+71 474 535 488 | it has run for an hour at full load. A reader who skips ahead will find that each section
+71 544 510 558 | it, on purpose. See the maintenance portal (https://example.com/manual/4/4) for
 71 601 517 615 | milestone depends on the delivery of the earlier one. Each valve is checked twice,
 71 582 538 596 | once when the pump is cold and once after it has run for an hour at full load. A reader
-71 474 537 488 | repeats the vocabulary of the one before it, on purpose. Measurements were taken at
-71 277 522 291 | the difference between them is reported below. Where the instructions say to wait,
-71 219 178 234 | the drawings again.
-71 455 524 469 | the start and at the end of the period, and the difference between them is reported
-71 328 250 342 | then continue with the next step.
-71 385 521 399 | vocabulary of the one before it, on purpose. Measurements were taken at the start
-71 258 528 272 | wait until the indicator stops flashing and only then continue with the next step. The
+71 455 537 469 | repeats the vocabulary of the one before it, on purpose. Measurements were taken at
+71 258 522 272 | the difference between them is reported below. Where the instructions say to wait,
+71 200 178 214 | the drawings again.
+71 436 524 450 | the start and at the end of the period, and the difference between them is reported
+71 308 250 322 | then continue with the next step.
+71 524 119 539 | updates.
+71 366 521 380 | vocabulary of the one before it, on purpose. Measurements were taken at the start
+71 239 528 253 | wait until the indicator stops flashing and only then continue with the next step. The
 71 563 531 577 | who skips ahead will find that each section repeats the vocabulary of the one before
 71 709 524 723 | without opening the drawings again. The committee reviewed the revised schedule
 
@@ -678,64 +686,65 @@ Lines: minX minY maxX maxY | text, whole points from the page's bottom left, sor
 71 716 538 730 | MLC5INTRO Each valve is checked twice, once when the pump is cold and once after
 71 532 481 547 | MLC5S1P1 A reader who skips ahead will find that each section repeats the
 71 424 524 439 | MLC5S1P2 Measurements were taken at the start and at the end of the period, and
-71 316 527 330 | MLC5S1P3 Where the instructions say to wait, wait until the indicator stops flashing
-71 208 524 222 | MLC5S1P4 The appendix lists every part by number so that an order can be placed
-71 100 502 114 | MLC5S1P5 The committee reviewed the revised schedule and noted that every
+71 297 527 311 | MLC5S1P3 Where the instructions say to wait, wait until the indicator stops flashing
+71 189 524 203 | MLC5S1P4 The appendix lists every part by number so that an order can be placed
 71 567 149 588 | Overview
 71 475 514 489 | Where the instructions say to wait, wait until the indicator stops flashing and only
 71 494 513 508 | and at the end of the period, and the difference between them is reported below.
-71 170 537 184 | and noted that every milestone depends on the delivery of the earlier one. Each valve
-71 297 524 311 | and only then continue with the next step. The appendix lists every part by number
+71 151 537 165 | and noted that every milestone depends on the delivery of the earlier one. Each valve
+71 278 524 292 | and only then continue with the next step. The appendix lists every part by number
 71 367 529 381 | appendix lists every part by number so that an order can be placed without opening
 71 639 526 653 | below. Where the instructions say to wait, wait until the indicator stops flashing and
-71 239 214 254 | delivery of the earlier one.
-71 131 118 146 | full load.
-71 151 536 165 | is checked twice, once when the pump is cold and once after it has run for an hour at
+71 220 214 234 | delivery of the earlier one.
+71 112 118 126 | full load.
+71 131 536 146 | is checked twice, once when the pump is cold and once after it has run for an hour at
 71 697 535 711 | it has run for an hour at full load. A reader who skips ahead will find that each section
-71 81 517 95 | milestone depends on the delivery of the earlier one. Each valve is checked twice,
-71 62 538 76 | once when the pump is cold and once after it has run for an hour at full load. A reader
 71 620 277 634 | only then continue with the next step.
 71 677 537 691 | repeats the vocabulary of the one before it, on purpose. Measurements were taken at
-71 259 499 273 | reviewed the revised schedule and noted that every milestone depends on the
-71 278 525 292 | so that an order can be placed without opening the drawings again. The committee
+71 239 499 254 | reviewed the revised schedule and noted that every milestone depends on the
+71 259 525 273 | so that an order can be placed without opening the drawings again. The committee
 71 405 522 419 | the difference between them is reported below. Where the instructions say to wait,
-71 348 407 364 | the drawings again. See the maintenance portal for updates.5
+71 348 538 362 | the drawings again. See the maintenance portal (https://example.com/manual/5/0) for
 71 658 524 672 | the start and at the end of the period, and the difference between them is reported
 71 456 250 470 | then continue with the next step.
+71 328 125 344 | updates.5
 71 513 521 527 | vocabulary of the one before it, on purpose. Measurements were taken at the start
 71 386 528 400 | wait until the indicator stops flashing and only then continue with the next step. The
-71 189 524 203 | without opening the drawings again. The committee reviewed the revised schedule
+71 170 524 184 | without opening the drawings again. The committee reviewed the revised schedule
 
 --- Page 25 ---
 290 22 319 34 | 22 / 42
-71 661 524 675 | MLC5S2P1 Measurements were taken at the start and at the end of the period, and
-71 553 529 567 | MLC5S2P2 Where the instructions say to wait, wait until the indicator stops flashing
-71 445 526 459 | MLC5S2P3 The appendix lists every part by number so that an order can be placed
-71 337 504 351 | MLC5S2P4 The committee reviewed the revised schedule and noted that every
-71 229 531 243 | MLC5S2P5 Each valve is checked twice, once when the pump is cold and once after
-71 696 185 717 | Procedure 5.1
-71 407 537 421 | and noted that every milestone depends on the delivery of the earlier one. Each valve
-71 534 524 548 | and only then continue with the next step. The appendix lists every part by number
-71 604 529 618 | appendix lists every part by number so that an order can be placed without opening
-71 152 106 166 | below.
-71 476 214 491 | delivery of the earlier one.
-71 368 118 382 | full load.
-71 388 536 402 | is checked twice, once when the pump is cold and once after it has run for an hour at
-71 210 535 224 | it has run for an hour at full load. A reader who skips ahead will find that each section
-71 749 150 763 | it, on purpose.
-71 260 150 274 | it, on purpose.
-71 318 517 332 | milestone depends on the delivery of the earlier one. Each valve is checked twice,
-71 299 538 313 | once when the pump is cold and once after it has run for an hour at full load. A reader
-71 191 537 205 | repeats the vocabulary of the one before it, on purpose. Measurements were taken at
-71 496 499 510 | reviewed the revised schedule and noted that every milestone depends on the
-71 515 525 529 | so that an order can be placed without opening the drawings again. The committee
-71 642 522 656 | the difference between them is reported below. Where the instructions say to wait,
-71 584 178 599 | the drawings again.
-71 171 524 186 | the start and at the end of the period, and the difference between them is reported
-71 623 528 637 | wait until the indicator stops flashing and only then continue with the next step. The
-71 768 531 782 | who skips ahead will find that each section repeats the vocabulary of the one before
-71 280 531 294 | who skips ahead will find that each section repeats the vocabulary of the one before
-71 426 524 440 | without opening the drawings again. The committee reviewed the revised schedule
+71 768 502 782 | MLC5S1P5 The committee reviewed the revised schedule and noted that every
+71 604 524 618 | MLC5S2P1 Measurements were taken at the start and at the end of the period, and
+71 496 529 510 | MLC5S2P2 Where the instructions say to wait, wait until the indicator stops flashing
+71 388 526 402 | MLC5S2P3 The appendix lists every part by number so that an order can be placed
+71 280 504 294 | MLC5S2P4 The committee reviewed the revised schedule and noted that every
+71 171 531 186 | MLC5S2P5 Each valve is checked twice, once when the pump is cold and once after
+71 638 185 660 | Procedure 5.1
+71 349 537 363 | and noted that every milestone depends on the delivery of the earlier one. Each valve
+71 476 524 491 | and only then continue with the next step. The appendix lists every part by number
+71 546 529 560 | appendix lists every part by number so that an order can be placed without opening
+71 95 106 109 | below.
+71 419 214 433 | delivery of the earlier one.
+71 311 118 325 | full load.
+71 330 536 344 | is checked twice, once when the pump is cold and once after it has run for an hour at
+71 152 535 166 | it has run for an hour at full load. A reader who skips ahead will find that each section
+71 691 150 705 | it, on purpose.
+71 203 150 217 | it, on purpose.
+71 749 517 763 | milestone depends on the delivery of the earlier one. Each valve is checked twice,
+71 260 517 274 | milestone depends on the delivery of the earlier one. Each valve is checked twice,
+71 729 538 743 | once when the pump is cold and once after it has run for an hour at full load. A reader
+71 241 538 255 | once when the pump is cold and once after it has run for an hour at full load. A reader
+71 133 537 147 | repeats the vocabulary of the one before it, on purpose. Measurements were taken at
+71 438 499 452 | reviewed the revised schedule and noted that every milestone depends on the
+71 457 525 471 | so that an order can be placed without opening the drawings again. The committee
+71 584 522 599 | the difference between them is reported below. Where the instructions say to wait,
+71 527 178 541 | the drawings again.
+71 114 524 128 | the start and at the end of the period, and the difference between them is reported
+71 565 528 579 | wait until the indicator stops flashing and only then continue with the next step. The
+71 710 531 724 | who skips ahead will find that each section repeats the vocabulary of the one before
+71 222 531 236 | who skips ahead will find that each section repeats the vocabulary of the one before
+71 368 524 382 | without opening the drawings again. The committee reviewed the revised schedule
 
 --- Page 26 ---
 290 22 319 34 | 23 / 42
@@ -751,7 +760,7 @@ Lines: minX minY maxX maxY | text, whole points from the page's bottom left, sor
 71 709 524 723 | and only then continue with the next step. The appendix lists every part by number
 71 328 106 342 | below.
 71 652 214 666 | delivery of the earlier one.
-71 544 341 558 | full load. See the maintenance portal for updates.
+71 544 528 558 | full load. See the maintenance portal (https://example.com/manual/5/2) for updates.
 71 563 536 577 | is checked twice, once when the pump is cold and once after it has run for an hour at
 71 385 535 399 | it has run for an hour at full load. A reader who skips ahead will find that each section
 71 436 150 450 | it, on purpose.
@@ -807,7 +816,7 @@ Lines: minX minY maxX maxY | text, whole points from the page's bottom left, sor
 71 474 513 488 | and at the end of the period, and the difference between them is reported below.
 71 277 524 291 | and only then continue with the next step. The appendix lists every part by number
 71 347 529 361 | appendix lists every part by number so that an order can be placed without opening
-71 544 329 558 | below. See the maintenance portal for updates.
+71 544 517 558 | below. See the maintenance portal (https://example.com/manual/5/4) for updates.
 71 219 214 234 | delivery of the earlier one.
 71 601 535 615 | it has run for an hour at full load. A reader who skips ahead will find that each section
 71 652 150 666 | it, on purpose.
@@ -825,29 +834,27 @@ Lines: minX minY maxX maxY | text, whole points from the page's bottom left, sor
 71 671 531 685 | who skips ahead will find that each section repeats the vocabulary of the one before
 
 --- Page 29 ---
+71 328 332 344 | (https://example.com/manual/6/0) for updates.6
 290 22 319 34 | 26 / 42
 71 756 271 784 | Chapter 6 MLCH6
 71 716 492 730 | MLC6INTRO A reader who skips ahead will find that each section repeats the
 71 532 522 547 | MLC6S1P1 Measurements were taken at the start and at the end of the period, and
 71 424 527 439 | MLC6S1P2 Where the instructions say to wait, wait until the indicator stops flashing
-71 316 524 330 | MLC6S1P3 The appendix lists every part by number so that an order can be placed
-71 208 502 222 | MLC6S1P4 The committee reviewed the revised schedule and noted that every
-71 100 529 114 | MLC6S1P5 Each valve is checked twice, once when the pump is cold and once after
+71 297 524 311 | MLC6S1P3 The appendix lists every part by number so that an order can be placed
+71 189 502 203 | MLC6S1P4 The committee reviewed the revised schedule and noted that every
 71 567 149 588 | Overview
 71 658 514 672 | Where the instructions say to wait, wait until the indicator stops flashing and only
 71 677 513 691 | and at the end of the period, and the difference between them is reported below.
-71 278 537 292 | and noted that every milestone depends on the delivery of the earlier one. Each valve
+71 259 537 273 | and noted that every milestone depends on the delivery of the earlier one. Each valve
 71 405 524 419 | and only then continue with the next step. The appendix lists every part by number
 71 475 529 489 | appendix lists every part by number so that an order can be placed without opening
-71 348 443 364 | delivery of the earlier one. See the maintenance portal for updates.6
-71 239 118 254 | full load.
-71 259 536 273 | is checked twice, once when the pump is cold and once after it has run for an hour at
-71 81 535 95 | it has run for an hour at full load. A reader who skips ahead will find that each section
-71 131 150 146 | it, on purpose.
-71 189 517 203 | milestone depends on the delivery of the earlier one. Each valve is checked twice,
-71 170 538 184 | once when the pump is cold and once after it has run for an hour at full load. A reader
+71 348 367 362 | delivery of the earlier one. See the maintenance portal
+71 220 118 234 | full load.
+71 239 536 254 | is checked twice, once when the pump is cold and once after it has run for an hour at
+71 112 150 126 | it, on purpose.
+71 170 517 184 | milestone depends on the delivery of the earlier one. Each valve is checked twice,
+71 151 538 165 | once when the pump is cold and once after it has run for an hour at full load. A reader
 71 620 382 634 | order can be placed without opening the drawings again.
-71 62 537 76 | repeats the vocabulary of the one before it, on purpose. Measurements were taken at
 71 367 499 381 | reviewed the revised schedule and noted that every milestone depends on the
 71 386 525 400 | so that an order can be placed without opening the drawings again. The committee
 71 513 522 527 | the difference between them is reported below. Where the instructions say to wait,
@@ -855,66 +862,70 @@ Lines: minX minY maxX maxY | text, whole points from the page's bottom left, sor
 71 639 531 653 | then continue with the next step. The appendix lists every part by number so that an
 71 697 521 711 | vocabulary of the one before it, on purpose. Measurements were taken at the start
 71 494 528 508 | wait until the indicator stops flashing and only then continue with the next step. The
-71 151 531 165 | who skips ahead will find that each section repeats the vocabulary of the one before
-71 297 524 311 | without opening the drawings again. The committee reviewed the revised schedule
+71 131 531 146 | who skips ahead will find that each section repeats the vocabulary of the one before
+71 278 524 292 | without opening the drawings again. The committee reviewed the revised schedule
 
 --- Page 30 ---
 290 22 319 34 | 27 / 42
-71 661 527 675 | MLC6S2P1 Where the instructions say to wait, wait until the indicator stops flashing
-71 553 526 567 | MLC6S2P2 The appendix lists every part by number so that an order can be placed
-71 445 504 459 | MLC6S2P3 The committee reviewed the revised schedule and noted that every
-71 337 531 351 | MLC6S2P4 Each valve is checked twice, once when the pump is cold and once after
-71 229 485 243 | MLC6S2P5 A reader who skips ahead will find that each section repeats the
-71 696 185 717 | Procedure 6.1
-71 171 514 186 | Where the instructions say to wait, wait until the indicator stops flashing and only
-71 191 513 205 | and at the end of the period, and the difference between them is reported below.
-71 515 537 529 | and noted that every milestone depends on the delivery of the earlier one. Each valve
-71 642 524 656 | and only then continue with the next step. The appendix lists every part by number
-71 749 106 763 | below.
-71 260 106 274 | below.
-71 584 214 599 | delivery of the earlier one.
-71 476 118 491 | full load.
-71 496 536 510 | is checked twice, once when the pump is cold and once after it has run for an hour at
-71 318 535 332 | it has run for an hour at full load. A reader who skips ahead will find that each section
-71 368 150 382 | it, on purpose.
-71 426 517 440 | milestone depends on the delivery of the earlier one. Each valve is checked twice,
-71 407 538 421 | once when the pump is cold and once after it has run for an hour at full load. A reader
-71 299 537 313 | repeats the vocabulary of the one before it, on purpose. Measurements were taken at
-71 604 499 618 | reviewed the revised schedule and noted that every milestone depends on the
-71 623 525 637 | so that an order can be placed without opening the drawings again. The committee
-71 768 524 782 | the start and at the end of the period, and the difference between them is reported
-71 280 524 294 | the start and at the end of the period, and the difference between them is reported
-71 152 250 166 | then continue with the next step.
-71 210 521 224 | vocabulary of the one before it, on purpose. Measurements were taken at the start
-71 388 531 402 | who skips ahead will find that each section repeats the vocabulary of the one before
-71 534 524 548 | without opening the drawings again. The committee reviewed the revised schedule
+71 768 529 782 | MLC6S1P5 Each valve is checked twice, once when the pump is cold and once after
+71 604 527 618 | MLC6S2P1 Where the instructions say to wait, wait until the indicator stops flashing
+71 496 526 510 | MLC6S2P2 The appendix lists every part by number so that an order can be placed
+71 388 504 402 | MLC6S2P3 The committee reviewed the revised schedule and noted that every
+71 280 531 294 | MLC6S2P4 Each valve is checked twice, once when the pump is cold and once after
+71 171 485 186 | MLC6S2P5 A reader who skips ahead will find that each section repeats the
+71 638 185 660 | Procedure 6.1
+71 114 514 128 | Where the instructions say to wait, wait until the indicator stops flashing and only
+71 133 513 147 | and at the end of the period, and the difference between them is reported below.
+71 457 537 471 | and noted that every milestone depends on the delivery of the earlier one. Each valve
+71 584 524 599 | and only then continue with the next step. The appendix lists every part by number
+71 691 106 705 | below.
+71 203 106 217 | below.
+71 527 214 541 | delivery of the earlier one.
+71 419 118 433 | full load.
+71 438 536 452 | is checked twice, once when the pump is cold and once after it has run for an hour at
+71 749 535 763 | it has run for an hour at full load. A reader who skips ahead will find that each section
+71 260 535 274 | it has run for an hour at full load. A reader who skips ahead will find that each section
+71 311 150 325 | it, on purpose.
+71 368 517 382 | milestone depends on the delivery of the earlier one. Each valve is checked twice,
+71 349 538 363 | once when the pump is cold and once after it has run for an hour at full load. A reader
+71 729 537 743 | repeats the vocabulary of the one before it, on purpose. Measurements were taken at
+71 241 537 255 | repeats the vocabulary of the one before it, on purpose. Measurements were taken at
+71 546 499 560 | reviewed the revised schedule and noted that every milestone depends on the
+71 565 525 579 | so that an order can be placed without opening the drawings again. The committee
+71 710 524 724 | the start and at the end of the period, and the difference between them is reported
+71 222 524 236 | the start and at the end of the period, and the difference between them is reported
+71 95 250 109 | then continue with the next step.
+71 152 521 166 | vocabulary of the one before it, on purpose. Measurements were taken at the start
+71 330 531 344 | who skips ahead will find that each section repeats the vocabulary of the one before
+71 476 524 491 | without opening the drawings again. The committee reviewed the revised schedule
 
 --- Page 31 ---
 290 22 319 34 | 28 / 42
 71 729 524 743 | MLC6S3P1 The appendix lists every part by number so that an order can be placed
 71 620 504 635 | MLC6S3P2 The committee reviewed the revised schedule and noted that every
-71 512 531 527 | MLC6S3P3 Each valve is checked twice, once when the pump is cold and once after
-71 404 485 419 | MLC6S3P4 A reader who skips ahead will find that each section repeats the
-71 296 526 310 | MLC6S3P5 Measurements were taken at the start and at the end of the period, and
+71 493 531 507 | MLC6S3P3 Each valve is checked twice, once when the pump is cold and once after
+71 385 485 399 | MLC6S3P4 A reader who skips ahead will find that each section repeats the
+71 277 526 291 | MLC6S3P5 Measurements were taken at the start and at the end of the period, and
 71 763 188 784 | Procedure 6.2
-71 347 514 361 | Where the instructions say to wait, wait until the indicator stops flashing and only
-71 366 513 380 | and at the end of the period, and the difference between them is reported below.
+71 328 514 342 | Where the instructions say to wait, wait until the indicator stops flashing and only
+71 347 513 361 | and at the end of the period, and the difference between them is reported below.
 71 690 537 704 | and noted that every milestone depends on the delivery of the earlier one. Each valve
-71 239 529 253 | appendix lists every part by number so that an order can be placed without opening
-71 436 106 450 | below.
+71 219 529 234 | appendix lists every part by number so that an order can be placed without opening
+71 416 106 431 | below.
 71 652 118 666 | full load.
 71 671 536 685 | is checked twice, once when the pump is cold and once after it has run for an hour at
-71 493 535 507 | it has run for an hour at full load. A reader who skips ahead will find that each section
-71 544 373 558 | it, on purpose. See the maintenance portal for updates.
+71 474 535 488 | it has run for an hour at full load. A reader who skips ahead will find that each section
+71 544 510 558 | it, on purpose. See the maintenance portal (https://example.com/manual/6/2) for
 71 601 517 615 | milestone depends on the delivery of the earlier one. Each valve is checked twice,
 71 582 538 596 | once when the pump is cold and once after it has run for an hour at full load. A reader
-71 474 537 488 | repeats the vocabulary of the one before it, on purpose. Measurements were taken at
-71 277 522 291 | the difference between them is reported below. Where the instructions say to wait,
-71 219 178 234 | the drawings again.
-71 455 524 469 | the start and at the end of the period, and the difference between them is reported
-71 328 250 342 | then continue with the next step.
-71 385 521 399 | vocabulary of the one before it, on purpose. Measurements were taken at the start
-71 258 528 272 | wait until the indicator stops flashing and only then continue with the next step. The
+71 455 537 469 | repeats the vocabulary of the one before it, on purpose. Measurements were taken at
+71 258 522 272 | the difference between them is reported below. Where the instructions say to wait,
+71 200 178 214 | the drawings again.
+71 436 524 450 | the start and at the end of the period, and the difference between them is reported
+71 308 250 322 | then continue with the next step.
+71 524 119 539 | updates.
+71 366 521 380 | vocabulary of the one before it, on purpose. Measurements were taken at the start
+71 239 528 253 | wait until the indicator stops flashing and only then continue with the next step. The
 71 563 531 577 | who skips ahead will find that each section repeats the vocabulary of the one before
 71 709 524 723 | without opening the drawings again. The committee reviewed the revised schedule
 
@@ -949,33 +960,34 @@ Lines: minX minY maxX maxY | text, whole points from the page's bottom left, sor
 71 648 531 663 | who skips ahead will find that each section repeats the vocabulary of the one before
 
 --- Page 33 ---
+71 524 326 539 | (https://example.com/manual/6/4) for updates.
 290 22 319 34 | 30 / 42
 71 763 149 784 | Checklist
 71 729 529 743 | MLC6S5P1 Each valve is checked twice, once when the pump is cold and once after
 71 620 485 635 | MLC6S5P2 A reader who skips ahead will find that each section repeats the
-71 512 526 527 | MLC6S5P3 Measurements were taken at the start and at the end of the period, and
-71 404 529 419 | MLC6S5P4 Where the instructions say to wait, wait until the indicator stops flashing
-71 296 526 310 | MLC6S5P5 The appendix lists every part by number so that an order can be placed
+71 493 526 507 | MLC6S5P3 Measurements were taken at the start and at the end of the period, and
+71 385 529 399 | MLC6S5P4 Where the instructions say to wait, wait until the indicator stops flashing
+71 277 526 291 | MLC6S5P5 The appendix lists every part by number so that an order can be placed
 71 563 514 577 | Where the instructions say to wait, wait until the indicator stops flashing and only
 71 582 513 596 | and at the end of the period, and the difference between them is reported below.
-71 258 537 272 | and noted that every milestone depends on the delivery of the earlier one. Each valve
-71 385 524 399 | and only then continue with the next step. The appendix lists every part by number
-71 455 529 469 | appendix lists every part by number so that an order can be placed without opening
+71 239 537 253 | and noted that every milestone depends on the delivery of the earlier one. Each valve
+71 366 524 380 | and only then continue with the next step. The appendix lists every part by number
+71 436 529 450 | appendix lists every part by number so that an order can be placed without opening
 71 652 106 666 | below.
-71 328 214 342 | delivery of the earlier one.
-71 219 118 234 | full load.
-71 239 536 253 | is checked twice, once when the pump is cold and once after it has run for an hour at
+71 308 214 322 | delivery of the earlier one.
+71 200 118 214 | full load.
+71 219 536 234 | is checked twice, once when the pump is cold and once after it has run for an hour at
 71 709 535 723 | it has run for an hour at full load. A reader who skips ahead will find that each section
 71 690 537 704 | repeats the vocabulary of the one before it, on purpose. Measurements were taken at
-71 347 499 361 | reviewed the revised schedule and noted that every milestone depends on the
-71 366 525 380 | so that an order can be placed without opening the drawings again. The committee
-71 493 522 507 | the difference between them is reported below. Where the instructions say to wait,
-71 436 178 450 | the drawings again.
+71 328 499 342 | reviewed the revised schedule and noted that every milestone depends on the
+71 347 525 361 | so that an order can be placed without opening the drawings again. The committee
+71 474 522 488 | the difference between them is reported below. Where the instructions say to wait,
+71 416 178 431 | the drawings again.
 71 671 524 685 | the start and at the end of the period, and the difference between them is reported
-71 544 473 558 | then continue with the next step. See the maintenance portal for updates.
+71 544 404 558 | then continue with the next step. See the maintenance portal
 71 601 521 615 | vocabulary of the one before it, on purpose. Measurements were taken at the start
-71 474 528 488 | wait until the indicator stops flashing and only then continue with the next step. The
-71 277 524 291 | without opening the drawings again. The committee reviewed the revised schedule
+71 455 528 469 | wait until the indicator stops flashing and only then continue with the next step. The
+71 258 524 272 | without opening the drawings again. The committee reviewed the revised schedule
 
 --- Page 34 ---
 290 22 319 34 | 31 / 42
@@ -1023,7 +1035,7 @@ Lines: minX minY maxX maxY | text, whole points from the page's bottom left, sor
 71 131 106 146 | below.
 71 456 214 470 | delivery of the earlier one.
 71 620 392 634 | every milestone depends on the delivery of the earlier one.
-71 348 347 364 | full load. See the maintenance portal for updates.7
+71 348 534 364 | full load. See the maintenance portal (https://example.com/manual/7/0) for updates.7
 71 367 536 381 | is checked twice, once when the pump is cold and once after it has run for an hour at
 71 189 535 203 | it has run for an hour at full load. A reader who skips ahead will find that each section
 71 239 150 254 | it, on purpose.
@@ -1083,7 +1095,7 @@ Lines: minX minY maxX maxY | text, whole points from the page's bottom left, sor
 71 474 513 488 | and at the end of the period, and the difference between them is reported below.
 71 277 524 291 | and only then continue with the next step. The appendix lists every part by number
 71 347 529 361 | appendix lists every part by number so that an order can be placed without opening
-71 544 329 558 | below. See the maintenance portal for updates.
+71 544 516 558 | below. See the maintenance portal (https://example.com/manual/7/2) for updates.
 71 219 214 234 | delivery of the earlier one.
 71 601 535 615 | it has run for an hour at full load. A reader who skips ahead will find that each section
 71 652 150 666 | it, on purpose.
@@ -1133,30 +1145,31 @@ Lines: minX minY maxX maxY | text, whole points from the page's bottom left, sor
 290 22 319 34 | 36 / 42
 71 729 483 743 | MLC7S5P1 A reader who skips ahead will find that each section repeats the
 71 620 525 635 | MLC7S5P2 Measurements were taken at the start and at the end of the period, and
-71 512 529 527 | MLC7S5P3 Where the instructions say to wait, wait until the indicator stops flashing
-71 404 525 419 | MLC7S5P4 The appendix lists every part by number so that an order can be placed
-71 296 503 310 | MLC7S5P5 The committee reviewed the revised schedule and noted that every
+71 493 529 507 | MLC7S5P3 Where the instructions say to wait, wait until the indicator stops flashing
+71 385 525 399 | MLC7S5P4 The appendix lists every part by number so that an order can be placed
+71 277 503 291 | MLC7S5P5 The committee reviewed the revised schedule and noted that every
 71 763 227 784 | Notes on chapter 7
 71 671 514 685 | Where the instructions say to wait, wait until the indicator stops flashing and only
 71 690 513 704 | and at the end of the period, and the difference between them is reported below.
-71 366 537 380 | and noted that every milestone depends on the delivery of the earlier one. Each valve
-71 493 524 507 | and only then continue with the next step. The appendix lists every part by number
+71 347 537 361 | and noted that every milestone depends on the delivery of the earlier one. Each valve
+71 474 524 488 | and only then continue with the next step. The appendix lists every part by number
 71 563 529 577 | appendix lists every part by number so that an order can be placed without opening
-71 436 214 450 | delivery of the earlier one.
-71 328 118 342 | full load.
-71 347 536 361 | is checked twice, once when the pump is cold and once after it has run for an hour at
-71 219 150 234 | it, on purpose.
-71 277 517 291 | milestone depends on the delivery of the earlier one. Each valve is checked twice,
-71 258 538 272 | once when the pump is cold and once after it has run for an hour at full load. A reader
-71 455 499 469 | reviewed the revised schedule and noted that every milestone depends on the
-71 474 525 488 | so that an order can be placed without opening the drawings again. The committee
+71 416 214 431 | delivery of the earlier one.
+71 308 118 322 | full load.
+71 328 536 342 | is checked twice, once when the pump is cold and once after it has run for an hour at
+71 200 150 214 | it, on purpose.
+71 258 517 272 | milestone depends on the delivery of the earlier one. Each valve is checked twice,
+71 239 538 253 | once when the pump is cold and once after it has run for an hour at full load. A reader
+71 436 499 450 | reviewed the revised schedule and noted that every milestone depends on the
+71 455 525 469 | so that an order can be placed without opening the drawings again. The committee
 71 601 522 615 | the difference between them is reported below. Where the instructions say to wait,
-71 544 401 558 | the drawings again. See the maintenance portal for updates.
+71 544 537 558 | the drawings again. See the maintenance portal (https://example.com/manual/7/4) for
 71 652 250 666 | then continue with the next step.
+71 524 119 539 | updates.
 71 709 521 723 | vocabulary of the one before it, on purpose. Measurements were taken at the start
 71 582 528 596 | wait until the indicator stops flashing and only then continue with the next step. The
-71 239 531 253 | who skips ahead will find that each section repeats the vocabulary of the one before
-71 385 524 399 | without opening the drawings again. The committee reviewed the revised schedule
+71 219 531 234 | who skips ahead will find that each section repeats the vocabulary of the one before
+71 366 524 380 | without opening the drawings again. The committee reviewed the revised schedule
 
 --- Page 40 ---
 290 22 319 34 | 37 / 42
@@ -1164,93 +1177,95 @@ Lines: minX minY maxX maxY | text, whole points from the page's bottom left, sor
 71 716 536 730 | MLC8INTRO Where the instructions say to wait, wait until the indicator stops flashing
 71 532 522 547 | MLC8S1P1 The appendix lists every part by number so that an order can be placed
 71 424 502 439 | MLC8S1P2 The committee reviewed the revised schedule and noted that every
-71 316 530 330 | MLC8S1P3 Each valve is checked twice, once when the pump is cold and once after
-71 208 483 222 | MLC8S1P4 A reader who skips ahead will find that each section repeats the
-71 100 524 114 | MLC8S1P5 Measurements were taken at the start and at the end of the period, and
+71 297 530 311 | MLC8S1P3 Each valve is checked twice, once when the pump is cold and once after
+71 189 483 203 | MLC8S1P4 A reader who skips ahead will find that each section repeats the
 71 567 149 588 | Overview
-71 151 514 165 | Where the instructions say to wait, wait until the indicator stops flashing and only
-71 170 513 184 | and at the end of the period, and the difference between them is reported below.
+71 131 514 146 | Where the instructions say to wait, wait until the indicator stops flashing and only
+71 151 513 165 | and at the end of the period, and the difference between them is reported below.
 71 494 537 508 | and noted that every milestone depends on the delivery of the earlier one. Each valve
 71 620 331 634 | and once after it has run for an hour at full load.
 71 697 524 711 | and only then continue with the next step. The appendix lists every part by number
-71 239 106 254 | below.
+71 220 106 234 | below.
 71 639 529 653 | delivery of the earlier one. Each valve is checked twice, once when the pump is cold
 71 456 118 470 | full load.
 71 475 536 489 | is checked twice, once when the pump is cold and once after it has run for an hour at
-71 297 535 311 | it has run for an hour at full load. A reader who skips ahead will find that each section
-71 348 380 364 | it, on purpose. See the maintenance portal for updates.8
+71 278 535 292 | it has run for an hour at full load. A reader who skips ahead will find that each section
+71 348 511 362 | it, on purpose. See the maintenance portal (https://example.com/manual/8/0) for
 71 405 517 419 | milestone depends on the delivery of the earlier one. Each valve is checked twice,
 71 386 538 400 | once when the pump is cold and once after it has run for an hour at full load. A reader
-71 278 537 292 | repeats the vocabulary of the one before it, on purpose. Measurements were taken at
+71 259 537 273 | repeats the vocabulary of the one before it, on purpose. Measurements were taken at
 71 658 499 672 | reviewed the revised schedule and noted that every milestone depends on the
 71 677 525 691 | so that an order can be placed without opening the drawings again. The committee
-71 81 522 95 | the difference between them is reported below. Where the instructions say to wait,
-71 259 524 273 | the start and at the end of the period, and the difference between them is reported
-71 131 250 146 | then continue with the next step.
-71 189 521 203 | vocabulary of the one before it, on purpose. Measurements were taken at the start
-71 62 528 76 | wait until the indicator stops flashing and only then continue with the next step. The
+71 239 524 254 | the start and at the end of the period, and the difference between them is reported
+71 112 250 126 | then continue with the next step.
+71 328 125 344 | updates.8
+71 170 521 184 | vocabulary of the one before it, on purpose. Measurements were taken at the start
 71 367 531 381 | who skips ahead will find that each section repeats the vocabulary of the one before
 71 513 524 527 | without opening the drawings again. The committee reviewed the revised schedule
 
 --- Page 41 ---
 290 22 319 34 | 38 / 42
-71 661 502 675 | MLC8S2P1 The committee reviewed the revised schedule and noted that every
-71 553 531 567 | MLC8S2P2 Each valve is checked twice, once when the pump is cold and once after
-71 445 485 459 | MLC8S2P3 A reader who skips ahead will find that each section repeats the
-71 337 526 351 | MLC8S2P4 Measurements were taken at the start and at the end of the period, and
-71 229 529 243 | MLC8S2P5 Where the instructions say to wait, wait until the indicator stops flashing
-71 696 185 717 | Procedure 8.1
-71 388 514 402 | Where the instructions say to wait, wait until the indicator stops flashing and only
-71 407 513 421 | and at the end of the period, and the difference between them is reported below.
-71 210 524 224 | and only then continue with the next step. The appendix lists every part by number
-71 768 529 782 | appendix lists every part by number so that an order can be placed without opening
-71 280 529 294 | appendix lists every part by number so that an order can be placed without opening
-71 476 106 491 | below.
-71 152 214 166 | delivery of the earlier one.
-71 534 535 548 | it has run for an hour at full load. A reader who skips ahead will find that each section
-71 584 150 599 | it, on purpose.
-71 642 517 656 | milestone depends on the delivery of the earlier one. Each valve is checked twice,
-71 623 538 637 | once when the pump is cold and once after it has run for an hour at full load. A reader
-71 515 537 529 | repeats the vocabulary of the one before it, on purpose. Measurements were taken at
-71 171 499 186 | reviewed the revised schedule and noted that every milestone depends on the
-71 191 525 205 | so that an order can be placed without opening the drawings again. The committee
-71 318 522 332 | the difference between them is reported below. Where the instructions say to wait,
-71 749 178 763 | the drawings again.
-71 260 178 274 | the drawings again.
-71 496 524 510 | the start and at the end of the period, and the difference between them is reported
-71 368 250 382 | then continue with the next step.
-71 426 521 440 | vocabulary of the one before it, on purpose. Measurements were taken at the start
-71 299 528 313 | wait until the indicator stops flashing and only then continue with the next step. The
-71 604 531 618 | who skips ahead will find that each section repeats the vocabulary of the one before
+71 768 524 782 | MLC8S1P5 Measurements were taken at the start and at the end of the period, and
+71 604 502 618 | MLC8S2P1 The committee reviewed the revised schedule and noted that every
+71 496 531 510 | MLC8S2P2 Each valve is checked twice, once when the pump is cold and once after
+71 388 485 402 | MLC8S2P3 A reader who skips ahead will find that each section repeats the
+71 280 526 294 | MLC8S2P4 Measurements were taken at the start and at the end of the period, and
+71 171 529 186 | MLC8S2P5 Where the instructions say to wait, wait until the indicator stops flashing
+71 638 185 660 | Procedure 8.1
+71 330 514 344 | Where the instructions say to wait, wait until the indicator stops flashing and only
+71 349 513 363 | and at the end of the period, and the difference between them is reported below.
+71 152 524 166 | and only then continue with the next step. The appendix lists every part by number
+71 710 529 724 | appendix lists every part by number so that an order can be placed without opening
+71 222 529 236 | appendix lists every part by number so that an order can be placed without opening
+71 419 106 433 | below.
+71 95 214 109 | delivery of the earlier one.
+71 476 535 491 | it has run for an hour at full load. A reader who skips ahead will find that each section
+71 527 150 541 | it, on purpose.
+71 584 517 599 | milestone depends on the delivery of the earlier one. Each valve is checked twice,
+71 565 538 579 | once when the pump is cold and once after it has run for an hour at full load. A reader
+71 457 537 471 | repeats the vocabulary of the one before it, on purpose. Measurements were taken at
+71 114 499 128 | reviewed the revised schedule and noted that every milestone depends on the
+71 133 525 147 | so that an order can be placed without opening the drawings again. The committee
+71 749 522 763 | the difference between them is reported below. Where the instructions say to wait,
+71 260 522 274 | the difference between them is reported below. Where the instructions say to wait,
+71 691 178 705 | the drawings again.
+71 203 178 217 | the drawings again.
+71 438 524 452 | the start and at the end of the period, and the difference between them is reported
+71 311 250 325 | then continue with the next step.
+71 368 521 382 | vocabulary of the one before it, on purpose. Measurements were taken at the start
+71 729 528 743 | wait until the indicator stops flashing and only then continue with the next step. The
+71 241 528 255 | wait until the indicator stops flashing and only then continue with the next step. The
+71 546 531 560 | who skips ahead will find that each section repeats the vocabulary of the one before
 
 --- Page 42 ---
+71 524 325 539 | (https://example.com/manual/8/2) for updates.
 290 22 319 34 | 39 / 42
 71 729 530 743 | MLC8S3P1 Each valve is checked twice, once when the pump is cold and once after
 71 620 485 635 | MLC8S3P2 A reader who skips ahead will find that each section repeats the
-71 512 526 527 | MLC8S3P3 Measurements were taken at the start and at the end of the period, and
-71 404 529 419 | MLC8S3P4 Where the instructions say to wait, wait until the indicator stops flashing
-71 296 526 310 | MLC8S3P5 The appendix lists every part by number so that an order can be placed
+71 493 526 507 | MLC8S3P3 Measurements were taken at the start and at the end of the period, and
+71 385 529 399 | MLC8S3P4 Where the instructions say to wait, wait until the indicator stops flashing
+71 277 526 291 | MLC8S3P5 The appendix lists every part by number so that an order can be placed
 71 763 188 784 | Procedure 8.2
 71 563 514 577 | Where the instructions say to wait, wait until the indicator stops flashing and only
 71 582 513 596 | and at the end of the period, and the difference between them is reported below.
-71 258 537 272 | and noted that every milestone depends on the delivery of the earlier one. Each valve
-71 385 524 399 | and only then continue with the next step. The appendix lists every part by number
-71 455 529 469 | appendix lists every part by number so that an order can be placed without opening
+71 239 537 253 | and noted that every milestone depends on the delivery of the earlier one. Each valve
+71 366 524 380 | and only then continue with the next step. The appendix lists every part by number
+71 436 529 450 | appendix lists every part by number so that an order can be placed without opening
 71 652 106 666 | below.
-71 328 214 342 | delivery of the earlier one.
-71 219 118 234 | full load.
-71 239 536 253 | is checked twice, once when the pump is cold and once after it has run for an hour at
+71 308 214 322 | delivery of the earlier one.
+71 200 118 214 | full load.
+71 219 536 234 | is checked twice, once when the pump is cold and once after it has run for an hour at
 71 709 535 723 | it has run for an hour at full load. A reader who skips ahead will find that each section
 71 690 537 704 | repeats the vocabulary of the one before it, on purpose. Measurements were taken at
-71 347 499 361 | reviewed the revised schedule and noted that every milestone depends on the
-71 366 525 380 | so that an order can be placed without opening the drawings again. The committee
-71 493 522 507 | the difference between them is reported below. Where the instructions say to wait,
-71 436 178 450 | the drawings again.
+71 328 499 342 | reviewed the revised schedule and noted that every milestone depends on the
+71 347 525 361 | so that an order can be placed without opening the drawings again. The committee
+71 474 522 488 | the difference between them is reported below. Where the instructions say to wait,
+71 416 178 431 | the drawings again.
 71 671 524 685 | the start and at the end of the period, and the difference between them is reported
-71 544 473 558 | then continue with the next step. See the maintenance portal for updates.
+71 544 404 558 | then continue with the next step. See the maintenance portal
 71 601 521 615 | vocabulary of the one before it, on purpose. Measurements were taken at the start
-71 474 528 488 | wait until the indicator stops flashing and only then continue with the next step. The
-71 277 524 291 | without opening the drawings again. The committee reviewed the revised schedule
+71 455 528 469 | wait until the indicator stops flashing and only then continue with the next step. The
+71 258 524 272 | without opening the drawings again. The committee reviewed the revised schedule
 
 --- Page 43 ---
 290 22 319 34 | 40 / 42
@@ -1282,46 +1297,47 @@ Lines: minX minY maxX maxY | text, whole points from the page's bottom left, sor
 71 385 524 399 | without opening the drawings again. The committee reviewed the revised schedule
 
 --- Page 44 ---
-72 133 82 146 | 1.
-72 104 349 117 | 2. Footnote 2 MLFN2 gives the source of the figure. ↩
-72 76 82 89 | 3.
+71 524 326 539 | (https://example.com/manual/8/4) for updates.
+72 114 82 127 | 1.
+72 85 349 98 | 2. Footnote 2 MLFN2 gives the source of the figure. ↩
 290 22 319 34 | 41 / 42
-88 133 346 146 | Footnote 1 MLFN1 gives the source of the figure. ↩
-88 76 350 89 | Footnote 3 MLFN3 gives the source of the figure. ↩
+88 114 346 127 | Footnote 1 MLFN1 gives the source of the figure. ↩
 71 729 524 743 | MLC8S5P1 Measurements were taken at the start and at the end of the period, and
 71 620 529 635 | MLC8S5P2 Where the instructions say to wait, wait until the indicator stops flashing
-71 512 526 527 | MLC8S5P3 The appendix lists every part by number so that an order can be placed
-71 404 504 419 | MLC8S5P4 The committee reviewed the revised schedule and noted that every
-71 296 531 310 | MLC8S5P5 Each valve is checked twice, once when the pump is cold and once after
-71 188 350 202 | MLEND99 This is the last paragraph of the manual.
+71 493 526 507 | MLC8S5P3 The appendix lists every part by number so that an order can be placed
+71 385 504 399 | MLC8S5P4 The committee reviewed the revised schedule and noted that every
+71 277 531 291 | MLC8S5P5 Each valve is checked twice, once when the pump is cold and once after
+71 169 350 183 | MLEND99 This is the last paragraph of the manual.
 71 763 229 784 | Notes on chapter 8
-71 474 537 488 | and noted that every milestone depends on the delivery of the earlier one. Each valve
+71 455 537 469 | and noted that every milestone depends on the delivery of the earlier one. Each valve
 71 601 524 615 | and only then continue with the next step. The appendix lists every part by number
 71 671 529 685 | appendix lists every part by number so that an order can be placed without opening
-71 219 106 234 | below.
-71 544 437 558 | delivery of the earlier one. See the maintenance portal for updates.
-71 436 118 450 | full load.
-71 455 536 469 | is checked twice, once when the pump is cold and once after it has run for an hour at
-71 277 535 291 | it has run for an hour at full load. A reader who skips ahead will find that each section
-71 328 150 342 | it, on purpose.
-71 385 517 399 | milestone depends on the delivery of the earlier one. Each valve is checked twice,
-71 366 538 380 | once when the pump is cold and once after it has run for an hour at full load. A reader
-71 258 537 272 | repeats the vocabulary of the one before it, on purpose. Measurements were taken at
+71 200 106 214 | below.
+71 544 367 558 | delivery of the earlier one. See the maintenance portal
+71 416 118 431 | full load.
+71 436 536 450 | is checked twice, once when the pump is cold and once after it has run for an hour at
+71 258 535 272 | it has run for an hour at full load. A reader who skips ahead will find that each section
+71 308 150 322 | it, on purpose.
+71 366 517 380 | milestone depends on the delivery of the earlier one. Each valve is checked twice,
+71 347 538 361 | once when the pump is cold and once after it has run for an hour at full load. A reader
+71 239 537 253 | repeats the vocabulary of the one before it, on purpose. Measurements were taken at
 71 563 499 577 | reviewed the revised schedule and noted that every milestone depends on the
 71 582 525 596 | so that an order can be placed without opening the drawings again. The committee
 71 709 522 723 | the difference between them is reported below. Where the instructions say to wait,
 71 652 178 666 | the drawings again.
-71 239 524 253 | the start and at the end of the period, and the difference between them is reported
+71 219 524 234 | the start and at the end of the period, and the difference between them is reported
 71 690 528 704 | wait until the indicator stops flashing and only then continue with the next step. The
-71 347 531 361 | who skips ahead will find that each section repeats the vocabulary of the one before
-71 493 524 507 | without opening the drawings again. The committee reviewed the revised schedule
+71 328 531 342 | who skips ahead will find that each section repeats the vocabulary of the one before
+71 474 524 488 | without opening the drawings again. The committee reviewed the revised schedule
 
 --- Page 45 ---
-72 770 350 782 | 4. Footnote 4 MLFN4 gives the source of the figure. ↩
+72 770 82 782 | 3.
+72 741 350 754 | 4. Footnote 4 MLFN4 gives the source of the figure. ↩
 290 22 319 34 | 42 / 42
-72 741 82 754 | 5.
-72 713 350 726 | 6. Footnote 6 MLFN6 gives the source of the figure. ↩
-72 684 82 697 | 7.
-72 656 350 669 | 8. Footnote 8 MLFN8 gives the source of the figure. ↩
-88 741 350 754 | Footnote 5 MLFN5 gives the source of the figure. ↩
-88 684 348 697 | Footnote 7 MLFN7 gives the source of the figure. ↩
+72 713 82 726 | 5.
+72 684 350 697 | 6. Footnote 6 MLFN6 gives the source of the figure. ↩
+72 656 82 669 | 7.
+72 627 350 640 | 8. Footnote 8 MLFN8 gives the source of the figure. ↩
+88 770 350 782 | Footnote 3 MLFN3 gives the source of the figure. ↩
+88 713 350 726 | Footnote 5 MLFN5 gives the source of the figure. ↩
+88 656 348 669 | Footnote 7 MLFN7 gives the source of the figure. ↩

@@ -11,6 +11,7 @@ final class OpenRecorder: @unchecked Sendable {
         var urls: [URL]
         var app: URL
         var activates: Bool
+        var event: NSAppleEventDescriptor?
         var description: String { "open \(urls.map(\.path)) with \(app.path), activates \(activates)" }
     }
 
@@ -21,7 +22,7 @@ final class OpenRecorder: @unchecked Sendable {
 
     var opener: @MainActor @Sendable ([URL], URL, NSWorkspace.OpenConfiguration) async throws -> Void {
         { [self] urls, app, configuration in
-            record(Call(urls: urls, app: app, activates: configuration.activates))
+            record(Call(urls: urls, app: app, activates: configuration.activates, event: configuration.appleEvent))
         }
     }
 

@@ -137,6 +137,7 @@ enum HandoutLayout {
     static let buildScript = """
     const content = document.getElementById("content");
     if (!content) return false;
+    document.body.classList.add("export-handout");
     const cls = (name) => token.toLowerCase() + "-" + name;
     document.documentElement.setAttribute("data-" + token.toLowerCase(), "");
     const style = document.createElement("style");

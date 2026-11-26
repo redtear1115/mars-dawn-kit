@@ -15,11 +15,18 @@ struct KitLocalizationCoverageTests {
     /// Keys allowed to be missing from a language, per language. A pending entry FAILS once its
     /// translation lands: delete it from here then. The callout titles of kit #135 landed in all
     /// seven with kit #183, and the JSON and YAML page's labels (kit #128) in all seven with this
-    /// change, so nothing is pending.
-    nonisolated static let pending: [String: Set<String>] = [:]
+    /// change. The viewer-folding labels (mars-dawn#300) are PROPOSED COPY pending approval, in
+    /// English and zh-Hant only (`FoldLabelsProposedCopy`); every other language falls back to
+    /// English until the approved translations land.
+    nonisolated static let pending: [String: Set<String>] = Dictionary(
+        uniqueKeysWithValues: others.map { ($0, Set(FoldLabelsProposedCopy.zhHant.keys)) }
+    )
 
-    @Test func nothingIsPending() {
-        #expect(Self.pending.isEmpty)
+    /// Nothing is pending but the folding proposals, so a missing translation can't hide here.
+    @Test func nothingElseIsPending() {
+        for (localization, keys) in Self.pending {
+            #expect(keys == Set(FoldLabelsProposedCopy.zhHant.keys), "\(localization): \(keys.sorted())")
+        }
     }
 
     nonisolated private static let tables = URL(fileURLWithPath: #filePath)

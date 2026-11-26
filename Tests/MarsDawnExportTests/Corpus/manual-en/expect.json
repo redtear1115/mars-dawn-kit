@@ -3,6 +3,9 @@
   "minPages": 10,
   "textOnEveryPage": true,
   "markers": [
+    "MarsDawn (https://example.com/x)",
+    "Internal",
+    "Email",
     "ENTITLE",
     "ENAP02",
     "ENNATURAL01",
