@@ -3,7 +3,8 @@ import AppKit
 import Foundation
 
 /// The `aevt`/`odoc` Apple Event that `marsdawn open` hands to
-/// `NSWorkspace.open(_:withApplicationAt:configuration:)` as `OpenConfiguration.appleEvent`.
+/// `NSWorkspace.open(_:withApplicationAt:configuration:)` as `OpenConfiguration.appleEvent`
+/// for every file group.
 ///
 /// The line rides inside the open-documents event itself rather than in a second message, so it
 /// arrives with the files on a cold launch and on an already-running app, and the sandbox
@@ -15,6 +16,13 @@ import Foundation
 /// The line applies to *every* file in the event, which is why `marsdawn open` only ever puts
 /// files that asked for the same line into one event.
 enum RevealEvent {
+    /// FourCharCode 'mdCl' (0x6D64436C), sent as typeBoolean true on every `aevt`/`odoc`
+    /// event `marsdawn open` sends for files. It means “this open-documents event was sent
+    /// by the marsdawn CLI” and carries no other data, including paths or extra files.
+    /// The app (mars-dawn#747) reads it to distinguish CLI opens from Finder opens.
+    /// Older apps ignore unknown optional parameters and open the files as usual.
+    static let cliKeyword = AEKeyword(fourCharCode: "mdCl")
+
     /// Our own keyword for the line, `'mdLn'`, sent beside `keyAEPosition` as an Int32.
     ///
     /// `keyAEPosition` is the keyword other editors read, so we send it as well. Other senders
@@ -45,13 +53,11 @@ enum RevealEvent {
         return groups
     }
 
-    /// Builds the event: the direct object is the file-URL list, and a requested line goes in
-    /// both `keyAEPosition` and `'mdLn'`. With `background`, adds `'mdBg'` as typeBoolean, true.
-    /// Returns nil when no line or background open was asked for, so that plain open keeps
-    /// using the event AppKit builds for it, exactly as before.
-    static func openDocuments(urls: [URL], line: Int?, background: Bool = false) -> NSAppleEventDescriptor? {
+    /// Builds an event with the file-URL list as the direct object and `'mdCl'` as typeBoolean true.
+    /// A requested line that fits in Int32 goes in both `keyAEPosition` and `'mdLn'`.
+    /// With `background`, adds `'mdBg'` as typeBoolean true.
+    static func openDocuments(urls: [URL], line: Int?, background: Bool = false) -> NSAppleEventDescriptor {
         let position = line.flatMap { Int32(exactly: $0) }
-        guard position != nil || background else { return nil }
         let event = NSAppleEventDescriptor.appleEvent(
             withEventClass: AEEventClass(kCoreEventClass),
             eventID: AEEventID(kAEOpenDocuments),
@@ -64,6 +70,7 @@ enum RevealEvent {
             list.insert(NSAppleEventDescriptor(fileURL: url), at: offset + 1)
         }
         event.setParam(list, forKeyword: AEKeyword(keyDirectObject))
+        event.setParam(NSAppleEventDescriptor(boolean: true), forKeyword: cliKeyword)
         if let position {
             event.setParam(NSAppleEventDescriptor(int32: position), forKeyword: AEKeyword(keyAEPosition))
             event.setParam(NSAppleEventDescriptor(int32: position), forKeyword: lineKeyword)
