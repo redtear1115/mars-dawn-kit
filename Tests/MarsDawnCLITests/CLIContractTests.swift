@@ -69,8 +69,7 @@ struct OpenJSONContractTests {
         }
     }
 
-    /// The whole command: `--background` sends `'mdBg'` on the event for a file with a line and
-    /// for one without; a plain open sends no `'mdBg'`, and none without a line sends no event.
+    /// Every file-open event carries `'mdCl'`. Only `--background` adds `'mdBg'`.
     @Test func backgroundSendsTheEventParameterOnBothPaths() async throws {
         let fixture = try Fixture()
         defer { fixture.cleanUp() }
@@ -85,8 +84,13 @@ struct OpenJSONContractTests {
             #expect(call.activates == false)
             #expect(call.event?.paramDescriptor(forKeyword: RevealEvent.backgroundKeyword)?.booleanValue == true)
         }
-        #expect(calls[2].event == nil)
-        #expect(calls[3].event != nil)
+        for call in calls {
+            let event = try #require(call.event)
+            #expect(event.paramDescriptor(forKeyword: RevealEvent.cliKeyword)?.booleanValue == true)
+        }
+        let plain = try #require(calls[2].event)
+        #expect(plain.paramDescriptor(forKeyword: RevealEvent.backgroundKeyword) == nil)
+        #expect(plain.paramDescriptor(forKeyword: RevealEvent.lineKeyword) == nil)
         #expect(calls[3].event?.paramDescriptor(forKeyword: RevealEvent.backgroundKeyword) == nil)
     }
 

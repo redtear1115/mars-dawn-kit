@@ -687,10 +687,14 @@ struct OpenCommandTests {
 
     @Test func theEventCarriesTheFileListAndTheLineTwice() throws {
         let url = URL(fileURLWithPath: "/Users/me/notes/plan one.md")
-        let event = try #require(RevealEvent.openDocuments(urls: [url], line: 120))
+        let event = RevealEvent.openDocuments(urls: [url], line: 120)
         #expect(event.eventClass == AEEventClass(kCoreEventClass))
         #expect(event.eventID == AEEventID(kAEOpenDocuments))
         #expect(RevealEvent.lineKeyword == 0x6D64_4C6E)  // 'mdLn'
+        let cli = try #require(event.paramDescriptor(forKeyword: RevealEvent.cliKeyword))
+        #expect(cli.descriptorType == typeBoolean)
+        #expect(cli.booleanValue == true)
+        #expect(event.paramDescriptor(forKeyword: RevealEvent.backgroundKeyword) == nil)
 
         let direct = try #require(event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject)))
         #expect(direct.descriptorType == typeAEList)
@@ -711,41 +715,37 @@ struct OpenCommandTests {
         let url = URL(fileURLWithPath: "/Users/me/notes/plan one.md")
         #expect(RevealEvent.backgroundKeyword == 0x6D64_4267)  // 'mdBg'
         for line in [120, nil] as [Int?] {
-            let event = try #require(RevealEvent.openDocuments(urls: [url], line: line, background: true))
+            let event = RevealEvent.openDocuments(urls: [url], line: line, background: true)
             let flag = try #require(event.paramDescriptor(forKeyword: RevealEvent.backgroundKeyword))
             #expect(flag.descriptorType == typeBoolean)
             #expect(flag.booleanValue == true)
+            let cli = try #require(event.paramDescriptor(forKeyword: RevealEvent.cliKeyword))
+            #expect(cli.descriptorType == typeBoolean)
+            #expect(cli.booleanValue == true)
             #expect(event.eventClass == AEEventClass(kCoreEventClass))
             #expect(event.eventID == AEEventID(kAEOpenDocuments))
             #expect(event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.atIndex(1)?.fileURLValue?.path == url.path)
             #expect((event.paramDescriptor(forKeyword: AEKeyword(keyAEPosition))?.int32Value).map(Int.init) == line)
             #expect((event.paramDescriptor(forKeyword: RevealEvent.lineKeyword)?.int32Value).map(Int.init) == line)
-
-            // The same event without --background has everything but the flag.
-            if let line {
-                let plain = try #require(RevealEvent.openDocuments(urls: [url], line: line))
-                #expect(plain.paramDescriptor(forKeyword: RevealEvent.backgroundKeyword) == nil)
-                #expect(plain.paramDescriptor(forKeyword: AEKeyword(keyAEPosition)) != nil)
-                #expect(plain.paramDescriptor(forKeyword: RevealEvent.lineKeyword) != nil)
-            } else {
-                #expect(RevealEvent.openDocuments(urls: [url], line: nil) == nil)
-                #expect(RevealEvent.openDocuments(urls: [url], line: nil, background: false) == nil)
-            }
         }
     }
 
     /// The CLI rejects these values earlier; pin the event builder's fallback separately.
-    @Test func outOfInt32LineWithoutBackgroundKeepsTheDefaultEvent() {
+    @Test func outOfInt32LineWithoutBackgroundKeepsTheCLIMarker() {
         let url = URL(fileURLWithPath: "/a.md")
         for line in [Int(Int32.max) + 1, Int(Int32.min) - 1] {
-            #expect(RevealEvent.openDocuments(urls: [url], line: line, background: false) == nil)
+            let event = RevealEvent.openDocuments(urls: [url], line: line, background: false)
+            #expect(event.paramDescriptor(forKeyword: RevealEvent.cliKeyword)?.booleanValue == true)
+            #expect(event.paramDescriptor(forKeyword: RevealEvent.backgroundKeyword) == nil)
+            #expect(event.paramDescriptor(forKeyword: AEKeyword(keyAEPosition)) == nil)
+            #expect(event.paramDescriptor(forKeyword: RevealEvent.lineKeyword) == nil)
         }
     }
 
-    @Test func outOfInt32LineWithBackgroundSendsOnlyTheFileAndBackground() throws {
+    @Test func outOfInt32LineWithBackgroundKeepsBothFlags() throws {
         let url = URL(fileURLWithPath: "/a.md")
         for line in [Int(Int32.max) + 1, Int(Int32.min) - 1] {
-            let event = try #require(RevealEvent.openDocuments(urls: [url], line: line, background: true))
+            let event = RevealEvent.openDocuments(urls: [url], line: line, background: true)
             #expect(event.eventClass == AEEventClass(kCoreEventClass))
             #expect(event.eventID == AEEventID(kAEOpenDocuments))
             let direct = try #require(event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject)))
@@ -755,14 +755,30 @@ struct OpenCommandTests {
             let flag = try #require(event.paramDescriptor(forKeyword: RevealEvent.backgroundKeyword))
             #expect(flag.descriptorType == typeBoolean)
             #expect(flag.booleanValue == true)
+            #expect(event.paramDescriptor(forKeyword: RevealEvent.cliKeyword)?.booleanValue == true)
             #expect(event.paramDescriptor(forKeyword: AEKeyword(keyAEPosition)) == nil)
             #expect(event.paramDescriptor(forKeyword: RevealEvent.lineKeyword) == nil)
         }
     }
 
-    @Test func withNoLineThereIsNoEventOfOurs() {
-        // AppKit then builds the open-documents event itself, exactly as it did before S7.
-        #expect(RevealEvent.openDocuments(urls: [URL(fileURLWithPath: "/a.md")], line: nil) == nil)
+    @Test func plainOpenCarriesTheFileListAndCLIMarker() throws {
+        let urls = [URL(fileURLWithPath: "/a.md"), URL(fileURLWithPath: "/b.md")]
+        let event = RevealEvent.openDocuments(urls: urls, line: nil)
+        #expect(event.eventClass == AEEventClass(kCoreEventClass))
+        #expect(event.eventID == AEEventID(kAEOpenDocuments))
+        #expect(RevealEvent.cliKeyword == 0x6D64_436C)
+        let cli = try #require(event.paramDescriptor(forKeyword: RevealEvent.cliKeyword))
+        #expect(cli.descriptorType == typeBoolean)
+        #expect(cli.booleanValue == true)
+        #expect(event.paramDescriptor(forKeyword: RevealEvent.lineKeyword) == nil)
+        #expect(event.paramDescriptor(forKeyword: AEKeyword(keyAEPosition)) == nil)
+        #expect(event.paramDescriptor(forKeyword: RevealEvent.backgroundKeyword) == nil)
+
+        let direct = try #require(event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject)))
+        #expect(direct.descriptorType == typeAEList)
+        #expect(direct.numberOfItems == urls.count)
+        #expect(direct.atIndex(1)?.fileURLValue?.path == urls[0].path)
+        #expect(direct.atIndex(2)?.fileURLValue?.path == urls[1].path)
     }
 
     @Test func neighboursAskingForTheSameLineShareOneEvent() {
